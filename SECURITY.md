@@ -60,6 +60,19 @@ include real credentials or unrelated personal data.
   64 unique messages, and applies the configured byte limit to inbound and outbound
   envelopes. Cross-connection replay protection remains a pairing milestone.
 - Tool names are resolved only from an in-process allowlist.
+- The Hub registry is sealed before serving. Every registered tool has a local,
+  timeout-bounded health probe; at most four probes run concurrently, and timeout,
+  exception, false, or non-Boolean results all collapse to unavailable without
+  exposing internal details.
+- Tool health can only remove or restore an already-registered SAFE definition.
+  It cannot add a tool, alter metadata, change permission, or bypass argument and
+  output validation. Admission rechecks health and arguments before `accepted`;
+  an admitted invocation uses that exact prepared state while later health changes
+  block new admissions.
+- Health checks run once before startup completes and every 30 seconds by default.
+  The unauthenticated health endpoint exposes aggregate readiness, counts, and a
+  revision only, not names or probe failures. Android discovers before every Mac
+  invocation; MCP clients must explicitly re-list tools because push is disabled.
 - Android's immutable PHONE registry is bounded to 16 entries and 32 KiB. Every
   descriptor targets PHONE, uses a closed object schema, has a 30-second maximum
   timeout, and is limited to SAFE or CONFIRM permission.
@@ -114,6 +127,7 @@ include real credentials or unrelated personal data.
 - Background camera or microphone capture
 - Disabling host security controls
 - Silent LAN or public-network exposure
+- Using health results to register tools or expand capability authority
 - Treating note text as SQL, a command, or additional authority
 - Treating PHONE capability metadata or fixtures as authorization
 - Implicit timer intents or non-allowlisted Clock-handler dispatch

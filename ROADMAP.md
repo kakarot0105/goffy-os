@@ -46,7 +46,8 @@
 - [x] Per-invocation discovery consumption, bounded timeout, and no post-send replay
 - [x] Unified, bounded PHONE capability registry with shared schema fixture
 - [x] Official MCP Streamable HTTP initialization, `tools/list`, and registry-backed `tools/call`
-- [ ] Tool-health checks and list-change notifications
+- [x] Bounded, fail-closed tool-health checks
+- [ ] Resumable MCP list-change notifications
 - [ ] Persistent, user-visible capability audit trail
 
 ## Milestones 4-8

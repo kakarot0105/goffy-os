@@ -1,6 +1,10 @@
+import platform
 from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID, uuid4
 
+import pytest
+from fastapi import FastAPI
 from pydantic import SecretStr
 from starlette.testclient import TestClient, WebSocketTestSession
 
@@ -77,6 +81,47 @@ def test_unknown_capability_discovery_returns_no_tools(client: TestClient) -> No
     assert response.message_type is MessageType.CAPABILITY_DISCOVERY_RESPONSE
     assert response.correlation_id == request.message_id
     assert payload.tools == []
+
+
+def test_unhealthy_tool_is_removed_from_android_discovery(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(platform, "system", lambda: "")
+    assert client.portal is not None
+    app = cast(FastAPI, client.app)
+    report = client.portal.call(app.state.tool_health_monitor.check_now)
+    request = discovery()
+
+    with client.websocket_connect("/ws/v1", headers=AUTH_HEADERS) as socket:
+        socket.send_text(request.model_dump_json(by_alias=True))
+        response = receive_envelope(socket)
+
+    payload = CapabilityDiscoveryResponsePayload.model_validate(response.payload)
+    assert report.changed is True
+    assert payload.tools == []
+
+
+def test_tool_becoming_unhealthy_after_discovery_is_never_accepted(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    discovery_request = discovery()
+    invocation_request = invocation()
+
+    with client.websocket_connect("/ws/v1", headers=AUTH_HEADERS) as socket:
+        socket.send_text(discovery_request.model_dump_json(by_alias=True))
+        receive_envelope(socket)
+        monkeypatch.setattr(platform, "system", lambda: "")
+        assert client.portal is not None
+        app = cast(FastAPI, client.app)
+        client.portal.call(app.state.tool_health_monitor.check_now)
+        socket.send_text(invocation_request.model_dump_json(by_alias=True))
+        error = receive_envelope(socket)
+
+    assert error.message_type is MessageType.TOOL_ERROR
+    assert error.payload["code"] == "tool_not_found"
+    assert error.correlation_id == invocation_request.message_id
 
 
 def test_invocation_before_discovery_is_blocked(client: TestClient) -> None:

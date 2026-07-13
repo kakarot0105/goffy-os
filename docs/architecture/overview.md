@@ -22,6 +22,8 @@ deterministic router
                          `--------------> FastAPI Hub -> SAFE mac.system_info
 
 Official MCP client -> authenticated POST /mcp -> MCP SDK -> same ToolRegistry
+                                                        ^
+bounded health monitor -> sealed registry availability -'
 ```
 
 All routes emit the same typed preparation, progress, result, error, and
@@ -62,6 +64,11 @@ not replayed. A whole attempt is bounded to 35 seconds.
     configured message-size limit in both transport directions.
 18. `/mcp` validates exact Host and Origin allowlists, bearer authentication,
     message bounds, and concurrency before registry execution.
+19. The Hub seals registry definitions before serving. Health probes can only
+    remove or restore those definitions and cannot mutate their policy metadata.
+20. Health never grants authority: clients see only compiled definitions that pass
+    their current bounded probe. Admission validates availability and arguments
+    before `accepted`; later health changes block new calls, not admitted work.
 
 ## Performance posture
 
@@ -70,6 +77,12 @@ camera/microphone capture initialization, no polling, and no local model. Phone 
 read only after a matching user command. Hub operations
 are asynchronous and timeout-bounded. Histories and audit retention will be
 bounded when persistence is introduced.
+
+Hub health checks are Mac-side only: one startup pass, then a 30-second default
+sleep between passes, at most four concurrent probes, and a five-second maximum
+per probe. The current probe uses local platform APIs and performs no network I/O.
+Android re-discovers before every Mac invocation. MCP clients re-run `tools/list`;
+server push remains disabled until reconnect-safe delivery is designed.
 
 The seven-envelope discovery-first MAC fixture lives at
 `protocol/fixtures/mac-system-info-flow.jsonl` and is validated by both Android
@@ -83,5 +96,7 @@ JSON Schemas. It is a compatibility artifact, not an execution allowlist.
 `/ws/v1` remains GOFFY's Android application protocol. Exact `/mcp` is a separate,
 session-aware MCP `2025-11-25` Streamable HTTP endpoint implemented by the official
 Python SDK. Sessions are credential-bound, explicitly terminable, and idle-reaped.
+The server advertises `tools.listChanged=false`; `GET` server push, event replay,
+and resumption remain disabled.
 Both transports adapt the same bounded `ToolRegistry`; neither transport defines
 or executes tools independently.

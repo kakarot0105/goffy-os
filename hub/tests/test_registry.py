@@ -1,3 +1,5 @@
+import asyncio
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -5,13 +7,16 @@ from pydantic import BaseModel, ConfigDict, create_model
 
 from goffy_hub.app import build_registry
 from goffy_hub.registry import (
+    MAX_CONCURRENT_HEALTH_PROBES,
     MAX_REGISTERED_TOOLS,
     MAX_TOOL_OUTPUT_BYTES,
     ToolArgumentsError,
     ToolDefinition,
     ToolExecutionError,
+    ToolHealthStatus,
     ToolNotFoundError,
     ToolRegistry,
+    ToolUnavailableError,
 )
 from goffy_hub.settings import HubSettings
 from goffy_protocol import ExecutionTarget, PermissionLevel, ToolAnnotations
@@ -33,6 +38,10 @@ async def failing_handler(_request: BaseModel) -> dict[str, object]:
 
 async def successful_handler(_request: BaseModel) -> dict[str, object]:
     return {"ok": True}
+
+
+async def healthy_probe() -> bool:
+    return True
 
 
 async def oversized_output_handler(_request: BaseModel) -> dict[str, object]:
@@ -57,6 +66,8 @@ def build_test_tool(
         input_model=EmptyInput,
         output_model=EmptyOutput,
         handler=successful_handler,
+        health_probe=healthy_probe,
+        health_timeout_seconds=1.0,
         annotations=annotations
         or ToolAnnotations(
             read_only_hint=True,
@@ -256,6 +267,8 @@ def test_registry_rejects_oversized_capability_metadata() -> None:
                 input_model=large_input,
                 output_model=EmptyOutput,
                 handler=successful_handler,
+                health_probe=healthy_probe,
+                health_timeout_seconds=1.0,
                 annotations=ToolAnnotations(
                     read_only_hint=True,
                     destructive_hint=False,
@@ -297,6 +310,8 @@ async def test_registry_contains_unexpected_handler_failure() -> None:
             input_model=EmptyInput,
             output_model=EmptyOutput,
             handler=failing_handler,
+            health_probe=healthy_probe,
+            health_timeout_seconds=1.0,
             annotations=ToolAnnotations(
                 read_only_hint=True,
                 destructive_hint=False,
@@ -330,6 +345,8 @@ async def test_registry_rejects_oversized_structured_output() -> None:
             input_model=EmptyInput,
             output_model=LargeOutput,
             handler=oversized_output_handler,
+            health_probe=healthy_probe,
+            health_timeout_seconds=1.0,
             annotations=ToolAnnotations(
                 read_only_hint=True,
                 destructive_hint=False,
@@ -341,3 +358,130 @@ async def test_registry_rejects_oversized_structured_output() -> None:
 
     with pytest.raises(ToolExecutionError, match="output_too_large"):
         await registry.invoke("test.large_output", {})
+
+
+@pytest.mark.asyncio
+async def test_health_transition_hides_rejects_and_restores_registered_tool() -> None:
+    healthy = True
+
+    async def probe() -> bool:
+        return healthy
+
+    registry = ToolRegistry()
+    registry.register(replace(build_test_tool(), health_probe=probe))
+    registry.seal()
+
+    initial = await registry.refresh_health()
+    healthy = False
+    unavailable = await registry.refresh_health()
+    unchanged = await registry.refresh_health()
+
+    assert initial.changed is True
+    assert unavailable.changed is True
+    assert unavailable.revision == 2
+    assert unavailable.available_tool_names == ()
+    assert unavailable.tools[0].status is ToolHealthStatus.UNAVAILABLE
+    assert unchanged.changed is False
+    assert unchanged.revision == 2
+    assert registry.describe() == []
+    assert registry.discover("test.tool") == []
+    with pytest.raises(ToolUnavailableError):
+        await registry.invoke("test.tool", {})
+
+    healthy = True
+    restored = await registry.refresh_health()
+
+    assert restored.changed is True
+    assert restored.revision == 3
+    assert restored.available_tool_names == ("test.tool",)
+    assert restored.tools[0].status is ToolHealthStatus.HEALTHY
+    assert (await registry.invoke("test.tool", {})).structured_content == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_health_change_does_not_revoke_prepared_invocation() -> None:
+    registry = ToolRegistry()
+    registry.register(build_test_tool())
+    registry.seal()
+    await registry.refresh_health()
+    prepared = registry.preflight("test.tool", {})
+
+    await registry.mark_all_unavailable()
+    result = await registry.invoke_prepared(prepared)
+
+    assert result.structured_content == {"ok": True}
+    with pytest.raises(ToolUnavailableError):
+        registry.preflight("test.tool", {})
+
+
+@pytest.mark.asyncio
+async def test_health_timeout_exception_and_non_boolean_fail_closed() -> None:
+    async def timeout_probe() -> bool:
+        await asyncio.sleep(1)
+        return True
+
+    async def exception_probe() -> bool:
+        raise RuntimeError("sensitive health detail")
+
+    async def non_boolean_probe() -> bool:
+        return 1  # type: ignore[return-value]
+
+    registry = ToolRegistry()
+    registry.register(
+        replace(
+            build_test_tool(name="health.timeout"),
+            health_probe=timeout_probe,
+            health_timeout_seconds=0.01,
+        )
+    )
+    registry.register(
+        replace(build_test_tool(name="health.exception"), health_probe=exception_probe)
+    )
+    registry.register(
+        replace(build_test_tool(name="health.non_boolean"), health_probe=non_boolean_probe)
+    )
+
+    report = await registry.refresh_health()
+
+    assert report.changed is True
+    assert report.available_tool_names == ()
+    assert {snapshot.status for snapshot in report.tools} == {ToolHealthStatus.UNAVAILABLE}
+
+
+@pytest.mark.asyncio
+async def test_health_probe_concurrency_is_bounded() -> None:
+    active = 0
+    maximum_active = 0
+    release = asyncio.Event()
+
+    async def probe() -> bool:
+        nonlocal active, maximum_active
+        active += 1
+        maximum_active = max(maximum_active, active)
+        if active == MAX_CONCURRENT_HEALTH_PROBES:
+            release.set()
+        await release.wait()
+        active -= 1
+        return True
+
+    registry = ToolRegistry()
+    for index in range(MAX_CONCURRENT_HEALTH_PROBES * 2):
+        registry.register(replace(build_test_tool(name=f"health.{index}"), health_probe=probe))
+
+    report = await registry.refresh_health()
+
+    assert report.changed is False
+    assert maximum_active == MAX_CONCURRENT_HEALTH_PROBES
+
+
+def test_registry_seal_and_health_timeout_bounds_fail_closed() -> None:
+    registry = ToolRegistry()
+    registry.register(build_test_tool())
+    registry.seal()
+
+    with pytest.raises(RuntimeError, match="sealed"):
+        registry.register(build_test_tool(name="test.late"))
+    with pytest.raises(ValueError, match="health timeout"):
+        ToolRegistry().register(replace(build_test_tool(), health_timeout_seconds=0))
+    with pytest.raises(ValueError, match="health timeout"):
+        ToolRegistry().register(replace(build_test_tool(), health_timeout_seconds=5.1))

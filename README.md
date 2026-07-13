@@ -28,6 +28,7 @@ tools are the capability boundary.
 - GOFFY protocol `0.2.0` with MCP `2025-11-25`-aligned tool metadata
 - Official, authenticated MCP Streamable HTTP endpoint at exact `/mcp`
 - MCP initialization, `tools/list`, and registry-backed `tools/call`
+- Bounded, fail-closed Hub tool-health checks
 - Allowlisted, read-only `SAFE mac.system_info` tool
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
@@ -79,6 +80,13 @@ GOFFY_HUB_TOKEN='replace-with-the-same-development-token' .venv/bin/python scrip
 `/mcp` is the separate session-aware MCP `2025-11-25` JSON-RPC endpoint. Both are
 backed by the same fail-closed typed tool registry; neither provides arbitrary
 shell execution.
+
+The Hub seals its registry before serving, checks registered tools locally at
+startup and every 30 seconds by default, and removes an unhealthy tool from both
+Android discovery and MCP execution. Android discovers before each invocation;
+MCP clients must re-run `tools/list` because server push remains disabled. `/health`
+reports aggregate readiness, bounded tool counts, and registry revision without
+exposing probe errors or tool names.
 
 ## Android setup
 

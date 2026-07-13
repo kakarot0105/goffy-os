@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from uuid import UUID
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -18,13 +19,13 @@ from goffy_hub.registry import (
     ToolRegistry,
 )
 from goffy_hub.settings import HubSettings
+from goffy_hub.tool_health import ToolHealthMonitor
 from goffy_hub.tools import build_mac_system_tool
 from goffy_protocol import (
     MCP_PROTOCOL_VERSION,
     PROTOCOL_VERSION,
     CapabilityDiscoveryRequestPayload,
     CapabilityDiscoveryResponsePayload,
-    ExecutionTarget,
     MessageEnvelope,
     MessageType,
     ToolErrorPayload,
@@ -46,35 +47,66 @@ class HealthResponse(BaseModel):
     status: str
     protocol_version: str
     tool_access: str
+    healthy_tool_count: int
+    unavailable_tool_count: int
+    tool_registry_revision: int
 
 
 def build_registry(settings: HubSettings) -> ToolRegistry:
     registry = ToolRegistry()
-    registry.register(build_mac_system_tool(settings.tool_timeout_seconds))
+    registry.register(
+        build_mac_system_tool(
+            settings.tool_timeout_seconds,
+            settings.tool_health_timeout_seconds,
+        )
+    )
     return registry
 
 
-def create_app(settings: HubSettings | None = None) -> FastAPI:
+def create_app(
+    settings: HubSettings | None = None,
+    *,
+    registry: ToolRegistry | None = None,
+) -> FastAPI:
     resolved_settings = settings or HubSettings.from_environment()
-    registry = build_registry(resolved_settings)
+    registry = registry or build_registry(resolved_settings)
+    registry.seal()
     mcp_runtime = build_mcp_runtime(resolved_settings, registry)
+    tool_health_monitor = ToolHealthMonitor(
+        registry,
+        interval_seconds=resolved_settings.tool_health_interval_seconds,
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        await tool_health_monitor.initialize()
         async with mcp_runtime.session_manager.run():
-            yield
+            monitor_task = asyncio.create_task(tool_health_monitor.run())
+            try:
+                yield
+            finally:
+                monitor_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await monitor_task
 
     app = FastAPI(title="GOFFY Hub", version="0.2.0", docs_url="/docs", lifespan=lifespan)
     app.state.settings = resolved_settings
     app.state.registry = registry
     app.state.mcp_runtime = mcp_runtime
+    app.state.tool_health_monitor = tool_health_monitor
 
     @app.get("/health", response_model=HealthResponse, response_model_by_alias=True)
     async def health() -> HealthResponse:
+        tool_health = registry.health_report()
+        healthy_tool_count = len(tool_health.available_tool_names)
+        total_tool_count = len(tool_health.tools)
         return HealthResponse(
-            status="ok",
+            status="ok" if healthy_tool_count == total_tool_count else "degraded",
             protocol_version=PROTOCOL_VERSION,
             tool_access="enabled" if resolved_settings.auth_token else "disabled",
+            healthy_tool_count=healthy_tool_count,
+            unavailable_tool_count=total_tool_count - healthy_tool_count,
+            tool_registry_revision=tool_health.revision,
         )
 
     @app.websocket("/ws/v1")
@@ -234,21 +266,8 @@ async def _handle_message(
         )
         return
 
-    if not await send_event(
-        MessageType.TOOL_PROGRESS,
-        ToolProgressPayload(
-            tool_name=invocation.tool_name,
-            execution_target=ExecutionTarget.MAC,
-            stage="accepted",
-            sequence=0,
-            message="Invocation accepted by the Hub.",
-        ),
-        envelope.message_id,
-    ):
-        return
-
     try:
-        result = await registry.invoke(invocation.tool_name, invocation.arguments)
+        prepared = registry.preflight(invocation.tool_name, invocation.arguments)
     except ToolNotFoundError:
         await _send_error(
             send_event,
@@ -265,6 +284,22 @@ async def _handle_message(
             correlation_id=envelope.message_id,
         )
         return
+
+    if not await send_event(
+        MessageType.TOOL_PROGRESS,
+        ToolProgressPayload(
+            tool_name=invocation.tool_name,
+            execution_target=prepared.definition.execution_target,
+            stage="accepted",
+            sequence=0,
+            message="Invocation accepted by the Hub.",
+        ),
+        envelope.message_id,
+    ):
+        return
+
+    try:
+        result = await registry.invoke_prepared(prepared)
     except ToolExecutionError:
         LOGGER.exception("Tool execution failed for %s", invocation.tool_name)
         await _send_error(

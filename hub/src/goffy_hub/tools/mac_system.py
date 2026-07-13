@@ -42,6 +42,18 @@ class MacSystemInfoOutput(BaseModel):
 
 
 async def read_mac_system_info(_request: BaseModel) -> dict[str, Any]:
+    return _mac_system_snapshot()
+
+
+async def check_mac_system_info_health() -> bool:
+    try:
+        MacSystemInfoOutput.model_validate(_mac_system_snapshot())
+    except ValueError:
+        return False
+    return True
+
+
+def _mac_system_snapshot() -> dict[str, Any]:
     return {
         "status": "available",
         "operating_system": platform.system(),
@@ -49,7 +61,10 @@ async def read_mac_system_info(_request: BaseModel) -> dict[str, Any]:
     }
 
 
-def build_mac_system_tool(timeout_seconds: float) -> ToolDefinition:
+def build_mac_system_tool(
+    timeout_seconds: float,
+    health_timeout_seconds: float = 1.0,
+) -> ToolDefinition:
     return ToolDefinition(
         name="mac.system_info",
         title="Mac system information",
@@ -61,6 +76,8 @@ def build_mac_system_tool(timeout_seconds: float) -> ToolDefinition:
         input_model=MacSystemInfoInput,
         output_model=MacSystemInfoOutput,
         handler=read_mac_system_info,
+        health_probe=check_mac_system_info_health,
+        health_timeout_seconds=health_timeout_seconds,
         annotations=ToolAnnotations(
             read_only_hint=True,
             destructive_hint=False,

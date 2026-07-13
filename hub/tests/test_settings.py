@@ -71,6 +71,8 @@ def test_mcp_environment_allowlists_are_parsed(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("GOFFY_MCP_ALLOWED_ORIGINS", "https://goffy.local:8787")
     monkeypatch.setenv("GOFFY_MCP_MAX_CONCURRENT_CALLS", "3")
     monkeypatch.setenv("GOFFY_MCP_MAX_ACTIVE_SESSIONS", "4")
+    monkeypatch.setenv("GOFFY_TOOL_HEALTH_TIMEOUT_SECONDS", "2")
+    monkeypatch.setenv("GOFFY_TOOL_HEALTH_INTERVAL_SECONDS", "45")
 
     settings = HubSettings.from_environment()
 
@@ -78,3 +80,19 @@ def test_mcp_environment_allowlists_are_parsed(monkeypatch: pytest.MonkeyPatch) 
     assert settings.mcp_allowed_origins == ("https://goffy.local:8787",)
     assert settings.mcp_max_concurrent_calls == 3
     assert settings.mcp_max_active_sessions == 4
+    assert settings.tool_health_timeout_seconds == 2
+    assert settings.tool_health_interval_seconds == 45
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("tool_health_timeout_seconds", 0),
+        ("tool_health_timeout_seconds", 5.1),
+        ("tool_health_interval_seconds", 4.9),
+        ("tool_health_interval_seconds", 301),
+    ],
+)
+def test_tool_health_settings_are_bounded(field: str, value: float) -> None:
+    with pytest.raises(ValidationError):
+        HubSettings.model_validate({field: value})

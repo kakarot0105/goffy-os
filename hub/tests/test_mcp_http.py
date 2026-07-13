@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import platform
 from dataclasses import replace
 from typing import Any
 
@@ -99,6 +100,53 @@ async def test_official_client_initializes_lists_and_calls_registry_tool() -> No
     assert json.loads(result.content[0].text) == result.structuredContent
     assert unknown_error.value.error.code == types.INVALID_PARAMS
     assert "unauthorized" in unknown_error.value.error.message.lower()
+
+
+@pytest.mark.asyncio
+async def test_official_client_relists_after_tool_health_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(platform, "machine", lambda: "arm64")
+    app = create_app(HubSettings(auth_token=SecretStr("test-token-that-is-long-enough")))
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with (
+            httpx.AsyncClient(
+                transport=transport,
+                base_url="http://127.0.0.1:8787",
+                headers={"Authorization": AUTHORIZATION},
+                timeout=5,
+            ) as http_client,
+            streamable_http_client(
+                "http://127.0.0.1:8787/mcp",
+                http_client=http_client,
+            ) as (read_stream, write_stream, _get_session_id),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            initialization = await session.initialize()
+            initial_tools = await session.list_tools()
+            monkeypatch.setattr(platform, "system", lambda: "")
+
+            unavailable = await app.state.tool_health_monitor.check_now()
+            unavailable_tools = await session.list_tools()
+            with pytest.raises(McpError) as unavailable_call:
+                await session.call_tool("mac.system_info", {})
+            monkeypatch.setattr(platform, "system", lambda: "Darwin")
+
+            restored = await app.state.tool_health_monitor.check_now()
+            restored_tools = await session.list_tools()
+
+    assert initialization.capabilities.tools is not None
+    assert initialization.capabilities.tools.listChanged is False
+    assert [tool.name for tool in initial_tools.tools] == ["mac.system_info"]
+    assert unavailable.changed is True
+    assert unavailable_tools.tools == []
+    assert unavailable_call.value.error.code == types.INVALID_PARAMS
+    assert "unauthorized" in unavailable_call.value.error.message.lower()
+    assert restored.changed is True
+    assert [tool.name for tool in restored_tools.tools] == ["mac.system_info"]
 
 
 @pytest.mark.parametrize("authorization", [None, "Bearer incorrect-token-that-is-long-enough"])
@@ -341,14 +389,15 @@ def test_mcp_replaces_oversized_response_with_bounded_error() -> None:
         auth_token=SecretStr("test-token-that-is-long-enough"),
         max_message_bytes=1_024,
     )
-    app = create_app(settings)
-    app.state.registry.register(
+    registry = build_registry(settings)
+    registry.register(
         replace(
             build_mac_system_tool(settings.tool_timeout_seconds),
             name="mac.system_info.secondary",
             title="Secondary Mac system information",
         )
     )
+    app = create_app(settings, registry=registry)
 
     with TestClient(app, base_url="http://127.0.0.1:8787") as bounded_client:
         session_id = initialize_http_session(bounded_client)
@@ -408,10 +457,7 @@ def test_stateful_mcp_declines_get_and_terminates_session(client: TestClient) ->
         "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
         "MCP-Session-Id": session_id,
     }
-    get_response = client.get(
-        "/mcp",
-        headers=session_headers,
-    )
+    get_response = client.get("/mcp", headers=session_headers)
     delete_response = client.delete(
         "/mcp",
         headers=session_headers,

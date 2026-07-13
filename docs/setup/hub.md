@@ -10,6 +10,8 @@ export GOFFY_HUB_TOKEN='replace-with-a-long-random-development-token'
 ```
 
 `GET /health` is intentionally unauthenticated and returns no private host data.
+It reports `degraded` when any registered tool is unavailable and includes
+healthy/unavailable counts plus a registry revision, but no names or probe details.
 `/ws/v1` requires `Authorization: Bearer <token>`. If the token is absent from
 Hub configuration, every WebSocket and MCP tool request is rejected. Each Android
 Mac task opens its own authenticated WebSocket, sends a
@@ -28,7 +30,7 @@ Exact `/mcp` supports MCP `2025-11-25` initialization, `tools/list`, and
 `tools/call` through the official Python SDK. It returns JSON and requires the
 session ID issued during initialization for subsequent operations. Authenticated
 `DELETE` terminates a session, and idle sessions are reaped after 60 seconds.
-`GET` is disabled because this slice has no SSE subscription, server push, or
+`GET` is disabled because this slice has no reconnect-safe server push or
 resumption. Run the Hub, then use the repository's official-client demo:
 
 ```bash
@@ -48,6 +50,8 @@ export GOFFY_MCP_ALLOWED_HOSTS='127.0.0.1:8787,localhost:8787'
 export GOFFY_MCP_ALLOWED_ORIGINS='http://127.0.0.1:8787,http://localhost:8787'
 export GOFFY_MCP_MAX_CONCURRENT_CALLS='2'
 export GOFFY_MCP_MAX_ACTIVE_SESSIONS='8'
+export GOFFY_TOOL_HEALTH_TIMEOUT_SECONDS='1'
+export GOFFY_TOOL_HEALTH_INTERVAL_SECONDS='30'
 ```
 
 Wildcards are rejected. A native MCP client usually sends no `Origin`; if it does,
@@ -55,6 +59,15 @@ the value must match exactly. Non-local binding additionally requires explicit
 LAN mode, TLS files, and `GOFFY_MCP_ALLOWED_HOSTS`. These checks do not make LAN
 operation production-ready: pairing, revocation, trusted certificate provisioning,
 and the MCP authorization profile are still absent.
+
+The Hub seals the registry and completes one health pass before accepting traffic.
+It then checks only compiled local probes at the configured interval, with a
+five-second hard configuration maximum and four-probe concurrency cap. Unhealthy
+tools disappear from `/ws/v1` discovery and MCP `tools/list`; calls fail with the
+same generic unknown-or-unauthorized error. Recovery restores the original typed
+definition. Android discovers before every Mac invocation, while MCP clients must
+explicitly re-run `tools/list`. No network health probe or busy polling is used by
+the current `mac.system_info` tool.
 
 Non-local binding requires `GOFFY_HUB_ALLOW_LAN=true` plus existing
 `GOFFY_HUB_TLS_CERT_FILE` and `GOFFY_HUB_TLS_KEY_FILE` paths. This is a transport

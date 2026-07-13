@@ -20,6 +20,8 @@ class HubSettings(BaseModel):
     tls_key_file: Path | None = None
     max_message_bytes: int = Field(default=32_768, ge=1_024, le=1_048_576)
     tool_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+    tool_health_timeout_seconds: float = Field(default=1.0, gt=0, le=5)
+    tool_health_interval_seconds: float = Field(default=30.0, ge=5, le=300)
     mcp_allowed_hosts: tuple[str, ...] = ()
     mcp_allowed_origins: tuple[str, ...] = ()
     mcp_max_concurrent_calls: int = Field(default=2, ge=1, le=8)
@@ -86,6 +88,10 @@ class HubSettings(BaseModel):
             auth_token=SecretStr(token) if token else None,
             tls_cert_file=_optional_path("GOFFY_HUB_TLS_CERT_FILE"),
             tls_key_file=_optional_path("GOFFY_HUB_TLS_KEY_FILE"),
+            tool_health_timeout_seconds=float(os.getenv("GOFFY_TOOL_HEALTH_TIMEOUT_SECONDS", "1")),
+            tool_health_interval_seconds=float(
+                os.getenv("GOFFY_TOOL_HEALTH_INTERVAL_SECONDS", "30")
+            ),
             mcp_allowed_hosts=_comma_separated("GOFFY_MCP_ALLOWED_HOSTS"),
             mcp_allowed_origins=_comma_separated("GOFFY_MCP_ALLOWED_ORIGINS"),
             mcp_max_concurrent_calls=int(os.getenv("GOFFY_MCP_MAX_CONCURRENT_CALLS", "2")),

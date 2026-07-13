@@ -4,6 +4,7 @@ import asyncio
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
@@ -18,10 +19,13 @@ from goffy_protocol import (
 )
 
 ToolHandler = Callable[[BaseModel], Awaitable[dict[str, Any]]]
+ToolHealthProbe = Callable[[], Awaitable[bool]]
 MAX_REGISTERED_TOOLS = 32
 MAX_TOOL_CAPABILITY_BYTES = 8_192
 MAX_REGISTRY_CAPABILITY_BYTES = 24_576
 MAX_TOOL_OUTPUT_BYTES = 8_192
+MAX_CONCURRENT_HEALTH_PROBES = 4
+MAX_TOOL_HEALTH_TIMEOUT_SECONDS = 5.0
 
 
 class ToolRegistryError(Exception):
@@ -29,6 +33,10 @@ class ToolRegistryError(Exception):
 
 
 class ToolNotFoundError(ToolRegistryError):
+    pass
+
+
+class ToolUnavailableError(ToolNotFoundError):
     pass
 
 
@@ -52,6 +60,8 @@ class ToolDefinition:
     input_model: type[BaseModel]
     output_model: type[BaseModel]
     handler: ToolHandler
+    health_probe: ToolHealthProbe
+    health_timeout_seconds: float
     annotations: ToolAnnotations
 
     def describe(self) -> ToolCapability:
@@ -77,13 +87,44 @@ class ToolInvocationResult:
     structured_content: dict[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class PreparedToolInvocation:
+    definition: ToolDefinition
+    parsed_input: BaseModel
+
+
+class ToolHealthStatus(StrEnum):
+    HEALTHY = "healthy"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class ToolHealthSnapshot:
+    name: str
+    status: ToolHealthStatus
+
+
+@dataclass(frozen=True, slots=True)
+class ToolHealthReport:
+    revision: int
+    changed: bool
+    available_tool_names: tuple[str, ...]
+    tools: tuple[ToolHealthSnapshot, ...]
+
+
 class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, ToolDefinition] = {}
         self._capabilities: dict[str, ToolCapability] = {}
+        self._healthy: dict[str, bool] = {}
         self._capability_bytes = 0
+        self._health_revision = 0
+        self._health_lock = asyncio.Lock()
+        self._sealed = False
 
     def register(self, definition: ToolDefinition) -> None:
+        if self._sealed:
+            raise RuntimeError("tool registry is sealed")
         if definition.name in self._tools:
             raise ValueError(f"tool already registered: {definition.name}")
         if len(self._tools) >= MAX_REGISTERED_TOOLS:
@@ -92,6 +133,10 @@ class ToolRegistry:
             raise ValueError("blocked tools cannot be registered")
         if definition.permission is not PermissionLevel.SAFE:
             raise ValueError("non-SAFE tools require an authorization policy before registration")
+        if not 0 < definition.health_timeout_seconds <= MAX_TOOL_HEALTH_TIMEOUT_SECONDS:
+            raise ValueError(
+                f"tool health timeout must be at most {MAX_TOOL_HEALTH_TIMEOUT_SECONDS:g} seconds"
+            )
         try:
             capability = definition.describe()
         except (ValidationError, ValueError) as error:
@@ -113,30 +158,99 @@ class ToolRegistry:
             raise ValueError("tool registry exceeds the metadata size limit")
         self._tools[definition.name] = definition
         self._capabilities[definition.name] = capability
+        self._healthy[definition.name] = True
         self._capability_bytes += capability_bytes
+
+    def seal(self) -> None:
+        if self._sealed:
+            return
+        self._healthy = dict.fromkeys(self._tools, False)
+        self._sealed = True
+
+    @property
+    def is_sealed(self) -> bool:
+        return self._sealed
 
     def describe(self) -> list[ToolCapability]:
         return [
-            self._capabilities[name].model_copy(deep=True) for name in sorted(self._capabilities)
+            self._capabilities[name].model_copy(deep=True)
+            for name in sorted(self._capabilities)
+            if self._healthy[name]
         ]
 
     def discover(self, name: str) -> list[ToolCapability]:
         capability = self._capabilities.get(name)
-        return [capability.model_copy(deep=True)] if capability is not None else []
+        return (
+            [capability.model_copy(deep=True)]
+            if capability is not None and self._healthy[name]
+            else []
+        )
 
-    async def invoke(self, name: str, arguments: dict[str, Any]) -> ToolInvocationResult:
+    def health_report(self) -> ToolHealthReport:
+        return self._build_health_report(changed=False)
+
+    async def refresh_health(self) -> ToolHealthReport:
+        async with self._health_lock:
+            semaphore = asyncio.Semaphore(MAX_CONCURRENT_HEALTH_PROBES)
+
+            async def check(definition: ToolDefinition) -> tuple[str, bool]:
+                async with semaphore:
+                    try:
+                        healthy = await asyncio.wait_for(
+                            definition.health_probe(),
+                            timeout=definition.health_timeout_seconds,
+                        )
+                    except TimeoutError:
+                        healthy = False
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        healthy = False
+                return definition.name, healthy is True
+
+            results = await asyncio.gather(
+                *(check(self._tools[name]) for name in sorted(self._tools))
+            )
+            previous_available = self._available_tool_names()
+            self._healthy.update(results)
+            changed = previous_available != self._available_tool_names()
+            if changed:
+                self._health_revision += 1
+            return self._build_health_report(changed=changed)
+
+    async def mark_all_unavailable(self) -> ToolHealthReport:
+        async with self._health_lock:
+            previous_available = self._available_tool_names()
+            self._healthy = dict.fromkeys(self._tools, False)
+            changed = previous_available != self._available_tool_names()
+            if changed:
+                self._health_revision += 1
+            return self._build_health_report(changed=changed)
+
+    def preflight(self, name: str, arguments: dict[str, Any]) -> PreparedToolInvocation:
         definition = self._tools.get(name)
         if definition is None:
             raise ToolNotFoundError(name)
+        if not self._healthy[name]:
+            raise ToolUnavailableError(name)
 
         try:
             parsed_input = definition.input_model.model_validate(arguments)
         except ValidationError as error:
             raise ToolArgumentsError(name) from error
+        return PreparedToolInvocation(definition=definition, parsed_input=parsed_input)
+
+    async def invoke(self, name: str, arguments: dict[str, Any]) -> ToolInvocationResult:
+        return await self.invoke_prepared(self.preflight(name, arguments))
+
+    async def invoke_prepared(self, prepared: PreparedToolInvocation) -> ToolInvocationResult:
+        definition = prepared.definition
+        if self._tools.get(definition.name) is not definition:
+            raise ToolNotFoundError(definition.name)
 
         try:
             raw_output = await asyncio.wait_for(
-                definition.handler(parsed_input),
+                definition.handler(prepared.parsed_input),
                 timeout=definition.timeout_seconds,
             )
             output = definition.output_model.model_validate(raw_output)
@@ -165,4 +279,25 @@ class ToolRegistry:
         return ToolInvocationResult(
             definition=definition,
             structured_content=structured_content,
+        )
+
+    def _available_tool_names(self) -> tuple[str, ...]:
+        return tuple(name for name in sorted(self._tools) if self._healthy[name])
+
+    def _build_health_report(self, *, changed: bool) -> ToolHealthReport:
+        return ToolHealthReport(
+            revision=self._health_revision,
+            changed=changed,
+            available_tool_names=self._available_tool_names(),
+            tools=tuple(
+                ToolHealthSnapshot(
+                    name=name,
+                    status=(
+                        ToolHealthStatus.HEALTHY
+                        if self._healthy[name]
+                        else ToolHealthStatus.UNAVAILABLE
+                    ),
+                )
+                for name in sorted(self._tools)
+            ),
         )
