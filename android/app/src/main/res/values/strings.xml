@@ -9,6 +9,15 @@
     <string name="connection_disconnected">DISCONNECTED</string>
     <string name="connection_connecting">CONNECTING</string>
     <string name="connection_connected">CONNECTED</string>
+    <string name="hub_link_title">SECURE HUB LINK</string>
+    <string name="hub_not_configured">NOT CONFIGURED</string>
+    <string name="hub_link_security_note">Credentials stay in memory and are forgotten when the app process stops.</string>
+    <string name="hub_endpoint_label">WebSocket endpoint</string>
+    <string name="hub_token_label">Development bearer token</string>
+    <string name="configure_hub">Link Hub</string>
+    <string name="forget_hub">Forget</string>
+    <string name="edit_link_setup">Edit</string>
+    <string name="hide_link_setup">Hide</string>
     <string name="target_label">EXECUTION TARGET</string>
     <string name="target_phone">PHONE</string>
     <string name="target_mac">MAC</string>
@@ -16,11 +25,11 @@
     <string name="performance_lite">GOFFY LITE</string>
     <string name="command_hint">Ask GOFFY to do something</string>
     <string name="send_command">Send</string>
+    <string name="cancel_task">Cancel</string>
     <string name="microphone_placeholder">Voice input is coming in Milestone 4</string>
     <string name="camera_placeholder">Camera input is coming in Milestone 4</string>
     <string name="microphone_short">MIC</string>
     <string name="camera_short">CAM</string>
     <string name="timeline_title">TASK TIMELINE</string>
     <string name="timeline_empty">No actions yet. Every GOFFY step will appear here.</string>
-    <string name="waiting_for_hub">Waiting for a secure Hub connection</string>
 </resources>

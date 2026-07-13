@@ -23,6 +23,12 @@ include real credentials or unrelated personal data.
 - Tool authentication is disabled unless a token is explicitly configured;
   disabled means all tool requests are rejected.
 - WebSocket tokens are passed in the `Authorization` header, never in URLs.
+- The Android client keeps the development token in memory only and excludes it
+  from saved UI state and string representations.
+- Release Android clients require `wss://`; debug cleartext is limited to
+  `localhost` and `127.0.0.1` for the documented USB port-reversal flow.
+- Automatic reconnect occurs only before an invocation is sent. Sent requests
+  are not replayed, and local cancellation does not claim Hub-side termination.
 - Tool names are resolved only from an in-process allowlist.
 - `mac.system_info` uses Python standard-library APIs and never invokes a shell.
 - Protocol inputs reject unknown fields and unsupported versions.

@@ -20,19 +20,53 @@ The first wrapper run downloads Gradle 9.4.1 and validates the distribution
 checksum. Verify the wrapper JAR checksum separately before replacing it, and
 review both published checksums during any wrapper upgrade.
 
-## Real-device smoke test
+## Current slice behavior
 
-1. On the Moto G, enable Developer options and USB debugging.
-2. Connect by USB and approve only the computer fingerprint you recognize.
-3. Select the physical device in Android Studio and run the debug app.
-4. Confirm the launcher icon is legible in standard, round, and themed modes
-   supported by the device.
-5. Verify the GOFFY title, static orb, command field, mic/camera placeholders,
-   disconnected Mac indicator, MAC target indicator, and empty timeline.
-6. Rotate the phone, background/restore the app, and confirm no crash or visible
-   input lag.
-7. Use Android Studio Profiler to record cold-start time and idle memory for the
-   device; add measured values to a future performance report.
-8. Confirm the app does not appear in cloud-backup or device-transfer data.
+- Supported commands are the exact `Show/Check [me] my Mac status` family with
+  normalized whitespace and optional trailing `.`, `!`, or `?`.
+- Any extra instruction, unrelated command, or appended authority is rejected on
+  the phone before a Hub connection opens.
+- Android treats `ToolResult` as data only. The task becomes successful only
+  after a matching `VerificationResult`.
+- Automatic reconnect is bounded to connection failures before the invocation is
+  sent: at most 2 retries and 3 total attempts. After send, the client does not
+  replay the request.
+- Cancel only stops the local job and socket. Hub-side completion is not
+  guaranteed.
+- The bearer token is entered at runtime, sent only in the `Authorization`
+  header, and kept in memory only. It is not placed in the URL, saved state, or
+  stringified config output.
 
-No microphone or camera permission should be requested in Milestone 0.
+## USB localhost debug flow
+
+1. Start the Hub on the Mac with a development token:
+
+   ```bash
+   python3 -m venv .venv
+   .venv/bin/pip install -e '.[dev]'
+   export GOFFY_HUB_TOKEN='replace-with-a-long-random-development-token'
+   .venv/bin/goffy-hub
+   ```
+
+2. On the Moto G, enable Developer options and USB debugging, then connect the
+   device by USB and approve only the computer fingerprint you recognize.
+3. Reverse the Hub port from the host to the phone:
+
+   ```bash
+   adb reverse tcp:8787 tcp:8787
+   ```
+
+4. Install and run the debug app from Android Studio or with the debug APK.
+5. In the app, configure the Hub endpoint as `ws://127.0.0.1:8787/ws/v1`, then
+   enter the same bearer token.
+6. Submit `Show my Mac status` or `Check my Mac status`.
+
+Debug cleartext is allowed only for `localhost` and `127.0.0.1` through the
+debug network security config. Release builds should use `wss://.../ws/v1`.
+LAN use is still unsupported until trusted TLS and pairing exist.
+
+## Physical-device status
+
+The USB localhost flow is implemented in software, but the full physical Moto G
+verification pass is still incomplete. Do not treat Milestone 1 as hardware
+verified yet.

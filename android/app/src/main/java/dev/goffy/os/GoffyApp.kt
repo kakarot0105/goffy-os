@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -29,6 +30,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -49,9 +51,17 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.goffy.os.agent.TaskEventKind
+import dev.goffy.os.agent.TaskPhase
+import dev.goffy.os.agent.TaskTimelineEntry
+import dev.goffy.os.protocol.ExecutionTarget
 
 private val Void = Color(0xFF05090C)
 private val Panel = Color(0xFF0B1318)
@@ -73,21 +83,41 @@ private val GoffyColors = darkColorScheme(
 )
 
 @Composable
-fun GoffyApp() {
+fun GoffyApp(viewModel: GoffyViewModel = viewModel()) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var command by remember { mutableStateOf("") }
+    var endpoint by rememberSaveable(state.hubEndpoint) { mutableStateOf(state.hubEndpoint) }
+    var bearerToken by remember { mutableStateOf("") }
+    var showLinkSetup by rememberSaveable { mutableStateOf(!state.hubConfigured) }
+
     MaterialTheme(colorScheme = GoffyColors) {
         Surface(modifier = Modifier.fillMaxSize(), color = Void) {
-            var state by remember { mutableStateOf(GoffyUiState()) }
-            var command by rememberSaveable { mutableStateOf("") }
-            val waitingStatus = stringResource(R.string.waiting_for_hub)
-
             GoffyHomeScreen(
                 state = state,
                 command = command,
+                endpoint = endpoint,
+                bearerToken = bearerToken,
+                showLinkSetup = showLinkSetup,
                 onCommandChange = { command = it.take(MAX_COMMAND_LENGTH) },
+                onEndpointChange = { endpoint = it.take(MAX_ENDPOINT_LENGTH) },
+                onBearerTokenChange = { bearerToken = it.take(MAX_TOKEN_LENGTH) },
+                onToggleLinkSetup = { showLinkSetup = !showLinkSetup },
+                onConfigureHub = {
+                    if (viewModel.configureHub(endpoint, bearerToken)) {
+                        bearerToken = ""
+                        showLinkSetup = false
+                    }
+                },
+                onForgetHub = {
+                    bearerToken = ""
+                    viewModel.forgetHub()
+                    showLinkSetup = true
+                },
                 onSubmit = {
-                    state = state.queueCommand(command, waitingStatus)
+                    viewModel.submitCommand(command)
                     command = ""
                 },
+                onCancel = viewModel::cancelActiveTask,
             )
         }
     }
@@ -97,8 +127,17 @@ fun GoffyApp() {
 private fun GoffyHomeScreen(
     state: GoffyUiState,
     command: String,
+    endpoint: String,
+    bearerToken: String,
+    showLinkSetup: Boolean,
     onCommandChange: (String) -> Unit,
+    onEndpointChange: (String) -> Unit,
+    onBearerTokenChange: (String) -> Unit,
+    onToggleLinkSetup: () -> Unit,
+    onConfigureHub: () -> Unit,
+    onForgetHub: () -> Unit,
     onSubmit: () -> Unit,
+    onCancel: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -113,14 +152,32 @@ private fun GoffyHomeScreen(
             .padding(horizontal = 20.dp, vertical = 18.dp),
     ) {
         Header()
-        Spacer(Modifier.height(22.dp))
-        GoffyOrb()
-        Spacer(Modifier.height(22.dp))
-        StatusRail(state)
-        Spacer(Modifier.height(18.dp))
-        CommandSurface(command, onCommandChange, onSubmit)
         Spacer(Modifier.height(20.dp))
-        Timeline(state.timeline)
+        GoffyOrb()
+        Spacer(Modifier.height(20.dp))
+        StatusRail(state)
+        Spacer(Modifier.height(12.dp))
+        HubLinkSection(
+            state = state,
+            endpoint = endpoint,
+            bearerToken = bearerToken,
+            showSetup = showLinkSetup,
+            onEndpointChange = onEndpointChange,
+            onBearerTokenChange = onBearerTokenChange,
+            onToggleSetup = onToggleLinkSetup,
+            onConfigure = onConfigureHub,
+            onForget = onForgetHub,
+        )
+        Spacer(Modifier.height(16.dp))
+        CommandSurface(
+            command = command,
+            busy = state.isBusy,
+            onCommandChange = onCommandChange,
+            onSubmit = onSubmit,
+            onCancel = onCancel,
+        )
+        Spacer(Modifier.height(18.dp))
+        Timeline(state.timeline.entries)
     }
 }
 
@@ -131,7 +188,7 @@ private fun Header() {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top,
     ) {
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = stringResource(R.string.home_kicker),
                 color = Signal,
@@ -174,7 +231,7 @@ private fun GoffyOrb() {
     ) {
         Canvas(
             modifier = Modifier
-                .size(156.dp)
+                .size(142.dp)
                 .semantics { contentDescription = description },
         ) {
             val center = Offset(size.width / 2f, size.height / 2f)
@@ -237,13 +294,7 @@ private fun StatusCard(label: String, value: String, accent: Color, modifier: Mo
             .border(1.dp, Line, RoundedCornerShape(18.dp))
             .padding(14.dp),
     ) {
-        Text(
-            text = label,
-            color = Mist,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 9.sp,
-            letterSpacing = 0.8.sp,
-        )
+        Label(label)
         Spacer(Modifier.height(7.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(7.dp).background(accent, CircleShape))
@@ -261,10 +312,108 @@ private fun StatusCard(label: String, value: String, accent: Color, modifier: Mo
 }
 
 @Composable
+private fun HubLinkSection(
+    state: GoffyUiState,
+    endpoint: String,
+    bearerToken: String,
+    showSetup: Boolean,
+    onEndpointChange: (String) -> Unit,
+    onBearerTokenChange: (String) -> Unit,
+    onToggleSetup: () -> Unit,
+    onConfigure: () -> Unit,
+    onForget: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF091217))
+            .border(1.dp, Line, RoundedCornerShape(18.dp))
+            .padding(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Label(stringResource(R.string.hub_link_title))
+                Text(
+                    text = if (state.hubConfigured) state.hubEndpoint else stringResource(R.string.hub_not_configured),
+                    color = if (state.hubConfigured) Signal else Mist,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            TextButton(onClick = onToggleSetup) {
+                Text(stringResource(if (showSetup) R.string.hide_link_setup else R.string.edit_link_setup))
+            }
+        }
+
+        if (showSetup) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = stringResource(R.string.hub_link_security_note),
+                color = Mist,
+                fontSize = 12.sp,
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = endpoint,
+                onValueChange = onEndpointChange,
+                label = { Text(stringResource(R.string.hub_endpoint_label)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                colors = goffyTextFieldColors(),
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = bearerToken,
+                onValueChange = onBearerTokenChange,
+                label = { Text(stringResource(R.string.hub_token_label)) },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth(),
+                colors = goffyTextFieldColors(),
+            )
+            state.linkError?.let { error ->
+                Spacer(Modifier.height(8.dp))
+                Text(error, color = Warning, fontSize = 12.sp)
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (state.hubConfigured) {
+                    TextButton(onClick = onForget) {
+                        Text(stringResource(R.string.forget_hub), color = Warning)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
+                Button(
+                    onClick = onConfigure,
+                    enabled = endpoint.isNotBlank() && bearerToken.isNotBlank() && !state.isBusy,
+                    colors = ButtonDefaults.buttonColors(containerColor = Signal, contentColor = Void),
+                ) {
+                    Text(stringResource(R.string.configure_hub), fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun CommandSurface(
     command: String,
+    busy: Boolean,
     onCommandChange: (String) -> Unit,
     onSubmit: () -> Unit,
+    onCancel: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -277,15 +426,12 @@ private fun CommandSurface(
         OutlinedTextField(
             value = command,
             onValueChange = onCommandChange,
+            enabled = !busy,
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text(stringResource(R.string.command_hint), color = Mist) },
             minLines = 2,
             maxLines = 4,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Signal,
-                unfocusedBorderColor = Line,
-                cursorColor = Acid,
-            ),
+            colors = goffyTextFieldColors(),
             shape = RoundedCornerShape(16.dp),
         )
         Spacer(Modifier.height(12.dp))
@@ -304,15 +450,18 @@ private fun CommandSurface(
                     description = stringResource(R.string.camera_placeholder),
                 )
             }
-            Button(
-                onClick = onSubmit,
-                enabled = command.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Acid,
-                    contentColor = Void,
-                ),
-            ) {
-                Text(stringResource(R.string.send_command), fontWeight = FontWeight.Bold)
+            if (busy) {
+                OutlinedButton(onClick = onCancel) {
+                    Text(stringResource(R.string.cancel_task), color = Warning)
+                }
+            } else {
+                Button(
+                    onClick = onSubmit,
+                    enabled = command.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Acid, contentColor = Void),
+                ) {
+                    Text(stringResource(R.string.send_command), fontWeight = FontWeight.Bold)
+                }
             }
         }
     }
@@ -331,7 +480,7 @@ private fun PlaceholderAction(shortLabel: String, description: String) {
 }
 
 @Composable
-private fun Timeline(entries: List<TimelineEntry>) {
+private fun Timeline(entries: List<TaskTimelineEntry>) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -340,29 +489,117 @@ private fun Timeline(entries: List<TimelineEntry>) {
             .border(1.dp, Line, RoundedCornerShape(22.dp))
             .padding(16.dp),
     ) {
-        Text(
-            text = stringResource(R.string.timeline_title),
-            color = Signal,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 10.sp,
-            letterSpacing = 1.sp,
-        )
+        Label(stringResource(R.string.timeline_title))
         Spacer(Modifier.height(12.dp))
         if (entries.isEmpty()) {
-            Text(
-                text = stringResource(R.string.timeline_empty),
-                color = Mist,
-                fontSize = 14.sp,
-            )
+            Text(stringResource(R.string.timeline_empty), color = Mist, fontSize = 14.sp)
         } else {
             entries.asReversed().forEach { entry ->
-                Column(Modifier.padding(vertical = 7.dp)) {
-                    Text(entry.command, color = Bone, fontWeight = FontWeight.SemiBold)
-                    Text(entry.status, color = Warning, fontSize = 12.sp)
-                }
+                TaskCard(entry)
+                Spacer(Modifier.height(10.dp))
             }
         }
     }
 }
 
+@Composable
+private fun TaskCard(entry: TaskTimelineEntry) {
+    val phaseColor = when (entry.phase) {
+        TaskPhase.VERIFIED -> Signal
+        TaskPhase.FAILED,
+        TaskPhase.CANCELLED,
+        -> Warning
+        else -> Acid
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Panel)
+            .border(1.dp, phaseColor.copy(alpha = 0.45f), RoundedCornerShape(16.dp))
+            .padding(13.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = entry.command,
+                color = Bone,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = entry.phase.name.replace('_', ' '),
+                color = phaseColor,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+            )
+        }
+        Spacer(Modifier.height(5.dp))
+        Text(entry.summary, color = Mist, fontSize = 12.sp)
+        entry.toolName?.let { tool ->
+            Spacer(Modifier.height(7.dp))
+            Text(
+                text = listOfNotNull(
+                    entry.executionTarget.name,
+                    tool,
+                    entry.permission?.name,
+                ).joinToString("  /  "),
+                color = Signal,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+            )
+        }
+        entry.result?.let { result ->
+            Spacer(Modifier.height(9.dp))
+            Text(
+                text = "${result.operatingSystem} / ${result.architecture}",
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(result.status.uppercase(), color = Signal, fontSize = 11.sp)
+        }
+        if (entry.events.isNotEmpty()) {
+            Spacer(Modifier.height(9.dp))
+            entry.events.takeLast(5).forEach { event ->
+                val eventColor = if (event.kind in setOf(TaskEventKind.ERROR)) Warning else Mist
+                Text(
+                    text = "${event.kind.name.padEnd(7)} ${event.message}",
+                    color = eventColor,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 9.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun Label(text: String) {
+    Text(
+        text = text,
+        color = Signal,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 9.sp,
+        letterSpacing = 0.9.sp,
+    )
+}
+
+@Composable
+private fun goffyTextFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor = Signal,
+    unfocusedBorderColor = Line,
+    cursorColor = Acid,
+    disabledBorderColor = Line.copy(alpha = 0.5f),
+    disabledTextColor = Mist,
+)
+
 private const val MAX_COMMAND_LENGTH = 2_000
+private const val MAX_ENDPOINT_LENGTH = 2_048
+private const val MAX_TOKEN_LENGTH = 4_096

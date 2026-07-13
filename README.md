@@ -5,17 +5,21 @@ Android phone provides the command surface and small local engine; a macOS Hub
 provides controlled access to heavier local capabilities. MCP-compatible typed
 tools are the capability boundary.
 
-> Status: Milestone 0 foundation. This repository is not yet a replacement
-> Android ROM and the Android client does not yet connect to the Hub.
+> Status: Milestone 1 Android-to-Hub slice in progress. The current repo
+> implements the software path for one SAFE Mac status action, but it is not a full
+> Milestone 1 completion, not a pairing flow, and not LAN-ready.
 
 ## Current vertical slice
 
 - Kotlin/Jetpack Compose GOFFY LITE home shell
+- Deterministic route for exact `Show/Check [me] my Mac status`
+- Invocation-scoped authenticated WebSocket to `/ws/v1`
 - FastAPI Hub bound to `127.0.0.1` by default
 - Versioned, typed phone-to-Hub protocol models
-- Authenticated WebSocket tool invocation endpoint
-- Allowlisted, read-only `mac.system_info` tool
-- Structured progress, result, error, and verification events
+- Allowlisted, read-only `SAFE mac.system_info` tool
+- Strict Kotlin codec plus typed Python protocol models
+- Separate `ToolResult` and `VerificationResult` events
+- Shared fixture `protocol/fixtures/mac-system-info-flow.jsonl`
 - Unit, integration, type, lint, and security checks
 
 The previous browser concept is preserved in [`prototype/web-shell`](prototype/web-shell).
@@ -50,7 +54,8 @@ curl http://127.0.0.1:8787/health
 ```
 
 Tool access remains disabled when `GOFFY_HUB_TOKEN` is unset. Never commit a
-real token. See [Hub setup](docs/setup/hub.md) for WebSocket usage.
+real token. Use localhost for now; LAN remains unsupported until trusted TLS
+and pairing exist. See [Hub setup](docs/setup/hub.md) for WebSocket usage.
 
 ## Android setup
 
@@ -61,8 +66,11 @@ project. The minimum SDK is 26. Command-line verification is:
 ./android/gradlew -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --no-daemon
 ```
 
-See [Android setup](docs/setup/android.md) for emulator and Moto G real-device
-steps.
+See [Android setup](docs/setup/android.md) for the USB localhost debug flow.
+Physical Moto G verification for this slice is still open.
+
+This is an Android application layer, not a flashable replacement ROM. A custom
+ROM remains a later hardware-specific project after the agent runtime is proven.
 
 ## Verify the repository
 

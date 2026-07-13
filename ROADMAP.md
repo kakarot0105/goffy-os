@@ -13,13 +13,14 @@
 - [x] Android build verified on a configured JDK 17 / SDK 36 toolchain
 - [ ] GOFFY home shell verified on the Moto G physical device
 
-## Milestone 1: First end-to-end action
+## Milestone 1: First end-to-end action - in progress
 
-- Android WebSocket client with reconnect and cancellation
-- Deterministic routing for `Show my Mac status`
-- Runtime approval and task-state reducer
-- Progress/result/verification timeline rendering
-- End-to-end failure and reconnection tests
+- [x] Android invocation client with authenticated per-invocation WebSockets
+- [x] Deterministic routing for exact `Show/Check [me] my Mac status`
+- [x] Strict Kotlin codec with separate `ToolResult` and `VerificationResult`
+- [x] Task-state reducer and progress/result/verification timeline rendering
+- [x] Shared fixture plus Android/Python failure, retry, and cancellation tests
+- [ ] Moto G physical localhost debug verification (`adb reverse` flow)
 
 ## Milestone 2: Phone engine
 
