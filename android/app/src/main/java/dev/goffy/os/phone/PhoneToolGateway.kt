@@ -9,6 +9,9 @@ import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
+import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
+import dev.goffy.os.protocol.PhoneFlashlightSetArguments
+import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneNoteCreated
@@ -42,6 +45,10 @@ fun interface DeviceInfoSource {
 
 fun interface TimerSource {
     suspend fun create(arguments: PhoneTimerCreateArguments): PhoneTimerDispatched
+}
+
+fun interface FlashlightSource {
+    suspend fun set(arguments: PhoneFlashlightSetArguments): PhoneFlashlightState
 }
 
 interface NoteStore {
@@ -90,15 +97,18 @@ class DefaultPhoneToolGateway internal constructor(
     private val deviceInfoSource: DeviceInfoSource,
     private val noteStore: NoteStore,
     private val timerSource: TimerSource,
+    private val flashlightSource: FlashlightSource,
     private val readDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val actionDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
+    private val flashlightTimeoutMillis: Long = DEFAULT_FLASHLIGHT_TIMEOUT_MILLIS,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : PhoneToolGateway {
     private val consumedConfirmTaskIds = ConcurrentHashMap.newKeySet<UUID>()
 
     init {
         require(timeoutMillis > 0) { "timeoutMillis must be positive" }
+        require(flashlightTimeoutMillis > 0) { "flashlightTimeoutMillis must be positive" }
     }
 
     override fun invoke(
@@ -133,7 +143,7 @@ class DefaultPhoneToolGateway internal constructor(
         )
 
         val content = try {
-            withTimeout(timeoutMillis) {
+            withTimeout(operation.timeoutMillis) {
                 withContext(operation.dispatcher) { operation.execute() }
             }
         } catch (_: TimeoutCancellationException) {
@@ -220,6 +230,7 @@ class DefaultPhoneToolGateway internal constructor(
                     ),
                 ),
                 dispatcher = readDispatcher,
+                timeoutMillis = timeoutMillis,
             ) else null
             PHONE_DEVICE_INFO_TOOL -> if (
                 permission == PermissionLevel.SAFE &&
@@ -242,7 +253,40 @@ class DefaultPhoneToolGateway internal constructor(
                     ),
                 ),
                 dispatcher = readDispatcher,
+                timeoutMillis = timeoutMillis,
             ) else null
+            PHONE_FLASHLIGHT_SET_TOOL -> {
+                val flashlightArguments = arguments as? PhoneFlashlightSetArguments ?: return null
+                if (permission != PermissionLevel.CONFIRM ||
+                    !consumeApproval(taskId, authorization)
+                ) {
+                    return null
+                }
+                val requestedState = if (flashlightArguments.enabled) "on" else "off"
+                PhoneToolOperation(
+                    toolName = PHONE_FLASHLIGHT_SET_TOOL,
+                    acceptedMessage = "Approved flashlight $requestedState request accepted on this phone.",
+                    completedMessage = "CameraManager reported the flashlight $requestedState.",
+                    failureMessage = "The back-camera flashlight could not be set and verified",
+                    execute = { flashlightSource.set(flashlightArguments) },
+                    validate = { content ->
+                        content is PhoneFlashlightState &&
+                            content.enabled == flashlightArguments.enabled
+                    },
+                    verification = PhoneToolVerification.Verified(
+                        summary = "TorchCallback confirmed the approved flashlight state.",
+                        checks = listOf(
+                            "single-use approval",
+                            "back-facing flash selection",
+                            "exact enabled-state match",
+                            "CameraManager callback",
+                            "callback cleanup",
+                        ),
+                    ),
+                    dispatcher = actionDispatcher,
+                    timeoutMillis = flashlightTimeoutMillis,
+                )
+            }
             PHONE_NOTE_CREATE_TOOL -> {
                 val noteArguments = arguments as? PhoneNoteCreateArguments ?: return null
                 if (permission != PermissionLevel.CONFIRM ||
@@ -272,6 +316,7 @@ class DefaultPhoneToolGateway internal constructor(
                         ),
                     ),
                     dispatcher = readDispatcher,
+                    timeoutMillis = timeoutMillis,
                 )
             }
             PHONE_TIMER_CREATE_TOOL -> {
@@ -305,6 +350,7 @@ class DefaultPhoneToolGateway internal constructor(
                         ),
                     ),
                     dispatcher = actionDispatcher,
+                    timeoutMillis = timeoutMillis,
                 )
             }
             else -> null
@@ -329,6 +375,7 @@ class DefaultPhoneToolGateway internal constructor(
         val validate: (ToolResultContent) -> Boolean,
         val verification: PhoneToolVerification,
         val dispatcher: CoroutineDispatcher,
+        val timeoutMillis: Long,
     )
 
     private sealed interface PhoneToolVerification {
@@ -353,5 +400,6 @@ class DefaultPhoneToolGateway internal constructor(
 
     private companion object {
         const val DEFAULT_TIMEOUT_MILLIS = 2_000L
+        const val DEFAULT_FLASHLIGHT_TIMEOUT_MILLIS = 3_000L
     }
 }

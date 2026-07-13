@@ -33,6 +33,10 @@
     <string name="battery_charging">CHARGING</string>
     <string name="battery_on_battery">ON BATTERY</string>
     <string name="device_info_details">%1$s / Android %2$s / API %3$d</string>
+    <string name="flashlight_on">FLASHLIGHT / ON</string>
+    <string name="flashlight_off">FLASHLIGHT / OFF</string>
+    <string name="flashlight_changed_observed">BACK CAMERA / STATE CHANGED</string>
+    <string name="flashlight_already_observed">ALREADY SET / STATE OBSERVED</string>
     <string name="note_created">PRIVATE NOTE #%1$d</string>
     <string name="timer_dispatched">TIMER REQUEST / %1$d SECONDS</string>
     <string name="timer_clock_package">CLOCK / %1$s</string>

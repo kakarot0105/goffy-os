@@ -66,6 +66,10 @@ data class PhoneTimerCreateArguments(
     val skipClockUi: Boolean,
 ) : ToolArguments
 
+data class PhoneFlashlightSetArguments(
+    val enabled: Boolean,
+) : ToolArguments
+
 data class MacSystemInfo(
     val status: String,
     val operatingSystem: String,
@@ -97,6 +101,11 @@ data class PhoneTimerDispatched(
     val systemApplication: Boolean,
     val skipClockUiRequested: Boolean,
     val systemAction: String,
+) : ToolResultContent
+
+data class PhoneFlashlightState(
+    val enabled: Boolean,
+    val stateChanged: Boolean,
 ) : ToolResultContent
 
 sealed interface ExecutionEvent {

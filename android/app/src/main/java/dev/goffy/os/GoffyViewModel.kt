@@ -14,6 +14,7 @@ import dev.goffy.os.hub.HubGateway
 import dev.goffy.os.hub.OkHttpHubGateway
 import dev.goffy.os.phone.AndroidBatteryStatusSource
 import dev.goffy.os.phone.AndroidDeviceInfoSource
+import dev.goffy.os.phone.AndroidFlashlightSource
 import dev.goffy.os.phone.AndroidSqliteNoteStore
 import dev.goffy.os.phone.AndroidSystemTimerSource
 import dev.goffy.os.phone.DefaultPhoneToolGateway
@@ -23,6 +24,7 @@ import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
+import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
@@ -53,6 +55,7 @@ class GoffyViewModel internal constructor(
             deviceInfoSource = AndroidDeviceInfoSource(),
             noteStore = AndroidSqliteNoteStore(context),
             timerSource = AndroidSystemTimerSource(context),
+            flashlightSource = AndroidFlashlightSource(context),
         ),
         codec = GoffyProtocolCodec(),
         allowInsecureLoopback = BuildConfig.DEBUG,
@@ -182,6 +185,9 @@ class GoffyViewModel internal constructor(
         is PhoneTimerCreateArguments ->
             "Approve requesting a ${value.durationSeconds.displayDuration()} system Clock timer. " +
                 "GOFFY will request no second Clock confirmation screen."
+        is PhoneFlashlightSetArguments ->
+            "Approve turning ${if (value.enabled) "on" else "off"} the back-camera flashlight. " +
+                "GOFFY will not open the camera or capture images."
         else -> null
     }
 

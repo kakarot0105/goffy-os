@@ -42,6 +42,11 @@ review both published checksums during any wrapper upgrade.
   app's timer state is not readable.
 - Timer creation adds only Android's normal `SET_ALARM` permission. GOFFY runs no
   countdown service, notification loop, exact alarm, or background receiver.
+- `Turn on the flashlight` and `Turn off the torch` require visible one-time
+  approval. GOFFY uses `CameraManager.setTorchMode` without opening the camera and
+  reaches `VERIFIED` only after a matching callback.
+- The flashlight declares flash hardware optional and requests no `CAMERA`
+  permission. Its callback is removed on every success, failure, timeout, or cancel.
 - Any extra instruction, unrelated command, or appended authority is rejected on
   the phone before a Hub connection opens.
 - Android treats `ToolResult` as data only. The task becomes successful only
@@ -124,3 +129,11 @@ GOFFY should request no intermediate Clock confirmation screen and name the Cloc
 package in its dispatch receipt. The task must end `UNVERIFIED`, not claim that the
 timer exists. Record whether the OEM Clock showed UI and whether the timer rang,
 then dismiss it in the Clock app. This behavior is not yet verified on the Moto G.
+
+Then submit `Turn on the flashlight`. Confirm `PHONE / phone.flashlight.set /
+CONFIRM`, deny once and verify the light stays unchanged, then approve a new
+request. The task should reach `VERIFIED` only after the rear torch turns on.
+Submit `Turn off the torch`, approve it, and confirm a second `VERIFIED` result.
+No camera permission dialog, camera privacy indicator, or image preview should
+appear. Record failures when another camera app is active. Physical Moto G
+verification remains open.

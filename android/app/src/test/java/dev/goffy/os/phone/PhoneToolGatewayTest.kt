@@ -8,6 +8,9 @@ import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
+import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
+import dev.goffy.os.protocol.PhoneFlashlightSetArguments
+import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneNoteCreated
@@ -24,6 +27,7 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.StandardTestDispatcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -180,6 +184,7 @@ class PhoneToolGatewayTest {
             deviceInfoSource = { validDeviceInfo() },
             noteStore = fakeNoteStore(),
             timerSource = fakeTimerSource(),
+            flashlightSource = fakeFlashlightSource(),
             readDispatcher = Dispatchers.Unconfined,
             actionDispatcher = Dispatchers.Unconfined,
             timeoutMillis = 100,
@@ -392,6 +397,99 @@ class PhoneToolGatewayTest {
         }
     }
 
+    @Test
+    fun flashlightRequiresExactSingleUseApprovalAndCallbackVerifiedState() = runTest {
+        var calls = 0
+        var requestedEnabled: Boolean? = null
+        val source = FlashlightSource { arguments ->
+            calls += 1
+            requestedEnabled = arguments.enabled
+            validFlashlightResult(arguments.enabled)
+        }
+        val gateway = testGateway(flashlightSource = source)
+        val plan = flashlightPlan(true)
+
+        val safeEvents = gateway.invoke(taskId, plan, PhoneToolAuthorization.Safe).toList()
+        val approvedEvents = gateway.invoke(taskId, plan, approval(plan)).toList()
+        val replayEvents = gateway.invoke(taskId, plan, approval(plan)).toList()
+
+        assertEquals("phone_tool_unauthorized", (safeEvents.single() as ExecutionEvent.Error).code)
+        assertEquals(1, calls)
+        assertEquals(true, requestedEnabled)
+        assertEquals(validFlashlightResult(true), (approvedEvents[4] as ExecutionEvent.Result).content)
+        val verification = approvedEvents.last() as ExecutionEvent.Verification
+        assertTrue(verification.succeeded)
+        assertTrue(verification.checks.contains("CameraManager callback"))
+        assertEquals("phone_tool_unauthorized", (replayEvents.single() as ExecutionEvent.Error).code)
+    }
+
+    @Test
+    fun flashlightRejectsChangedArgumentsUnavailableAndUnverifiedOutput() = runTest {
+        var calls = 0
+        val recordingSource = FlashlightSource { arguments ->
+            calls += 1
+            validFlashlightResult(arguments.enabled)
+        }
+        val argumentGateway = testGateway(flashlightSource = recordingSource)
+        val onPlan = flashlightPlan(true)
+        val changedArguments = argumentGateway.invoke(
+            taskId,
+            flashlightPlan(false),
+            approval(onPlan),
+        ).toList()
+
+        val unavailablePlan = flashlightPlan(true)
+        val unavailable = testGateway(flashlightSource = FlashlightSource { error("busy") }).invoke(
+            UUID.fromString("55555555-5555-4555-8555-555555555555"),
+            unavailablePlan,
+            approval(
+                unavailablePlan,
+                approvedTaskId = UUID.fromString("55555555-5555-4555-8555-555555555555"),
+            ),
+        ).toList()
+        val invalidPlan = flashlightPlan(false)
+        val invalid = testGateway(
+            flashlightSource = FlashlightSource { arguments ->
+                validFlashlightResult(!arguments.enabled)
+            },
+        ).invoke(
+            UUID.fromString("66666666-6666-4666-8666-666666666666"),
+            invalidPlan,
+            approval(
+                invalidPlan,
+                approvedTaskId = UUID.fromString("66666666-6666-4666-8666-666666666666"),
+            ),
+        ).toList()
+
+        assertEquals(0, calls)
+        assertEquals("phone_tool_unauthorized", (changedArguments.single() as ExecutionEvent.Error).code)
+        assertEquals("phone_tool_failed", (unavailable.last() as ExecutionEvent.Error).code)
+        assertEquals("invalid_tool_output", (invalid.last() as ExecutionEvent.Error).code)
+        assertTrue(unavailable.none { it is ExecutionEvent.Verification })
+        assertTrue(invalid.none { it is ExecutionEvent.Verification })
+    }
+
+    @Test
+    fun flashlightUsesItsBoundedTimeoutWithoutClaimingVerification() = runTest {
+        val gateway = DefaultPhoneToolGateway(
+            batteryStatusSource = { PhoneBatteryStatus(50, false) },
+            deviceInfoSource = { validDeviceInfo() },
+            noteStore = fakeNoteStore(),
+            timerSource = fakeTimerSource(),
+            flashlightSource = FlashlightSource { awaitCancellation() },
+            readDispatcher = Dispatchers.Unconfined,
+            actionDispatcher = StandardTestDispatcher(testScheduler),
+            flashlightTimeoutMillis = 100,
+            nowMillis = { 100L },
+        )
+        val plan = flashlightPlan(true)
+
+        val events = gateway.invoke(taskId, plan, approval(plan)).toList()
+
+        assertEquals("phone_tool_timeout", (events.last() as ExecutionEvent.Error).code)
+        assertTrue(events.none { it is ExecutionEvent.Verification })
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsNonPositiveTimeout() {
         DefaultPhoneToolGateway(
@@ -399,9 +497,23 @@ class PhoneToolGatewayTest {
             deviceInfoSource = { validDeviceInfo() },
             noteStore = fakeNoteStore(),
             timerSource = fakeTimerSource(),
+            flashlightSource = fakeFlashlightSource(),
             readDispatcher = Dispatchers.Unconfined,
             actionDispatcher = Dispatchers.Unconfined,
             timeoutMillis = 0,
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsNonPositiveFlashlightTimeout() {
+        DefaultPhoneToolGateway(
+            batteryStatusSource = { PhoneBatteryStatus(50, false) },
+            deviceInfoSource = { validDeviceInfo() },
+            noteStore = fakeNoteStore(),
+            timerSource = fakeTimerSource(),
+            flashlightSource = fakeFlashlightSource(),
+            actionDispatcher = Dispatchers.Unconfined,
+            flashlightTimeoutMillis = 0,
         )
     }
 
@@ -410,6 +522,7 @@ class PhoneToolGatewayTest {
         deviceRead: DeviceInfoSource = DeviceInfoSource { validDeviceInfo() },
         noteStore: NoteStore = fakeNoteStore(),
         timerSource: TimerSource = fakeTimerSource(),
+        flashlightSource: FlashlightSource = fakeFlashlightSource(),
         nowMillis: () -> Long = { 100L },
     ): DefaultPhoneToolGateway =
         DefaultPhoneToolGateway(
@@ -417,6 +530,7 @@ class PhoneToolGatewayTest {
             deviceInfoSource = deviceRead,
             noteStore = noteStore,
             timerSource = timerSource,
+            flashlightSource = flashlightSource,
             readDispatcher = Dispatchers.Unconfined,
             actionDispatcher = Dispatchers.Unconfined,
             nowMillis = nowMillis,
@@ -434,6 +548,10 @@ class PhoneToolGatewayTest {
 
     private fun fakeTimerSource(): TimerSource = TimerSource { arguments ->
         validTimerResult(arguments.durationSeconds)
+    }
+
+    private fun fakeFlashlightSource(): FlashlightSource = FlashlightSource { arguments ->
+        validFlashlightResult(arguments.enabled)
     }
 
     private fun batteryPlan(): GoffyExecutionPlan = GoffyExecutionPlan(
@@ -470,6 +588,15 @@ class PhoneToolGatewayTest {
         arguments = PhoneTimerCreateArguments(durationSeconds, skipClockUi = true),
     )
 
+    private fun flashlightPlan(enabled: Boolean): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = "Turn ${if (enabled) "on" else "off"} the flashlight",
+        executionTarget = ExecutionTarget.PHONE,
+        toolName = PHONE_FLASHLIGHT_SET_TOOL,
+        permission = PermissionLevel.CONFIRM,
+        successCriteria = listOf("Torch callback confirms the requested state"),
+        arguments = PhoneFlashlightSetArguments(enabled),
+    )
+
     private fun approval(
         plan: GoffyExecutionPlan,
         approvedTaskId: UUID = taskId,
@@ -496,6 +623,11 @@ class PhoneToolGatewayTest {
         true,
         true,
         ANDROID_SET_TIMER_ACTION,
+    )
+
+    private fun validFlashlightResult(enabled: Boolean): PhoneFlashlightState = PhoneFlashlightState(
+        enabled = enabled,
+        stateChanged = true,
     )
 
     private class RecordingNoteStore(

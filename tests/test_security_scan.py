@@ -6,6 +6,7 @@ EXPECTED_MANIFEST = """\
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
     <queries>
         <intent>
             <action android:name="android.intent.action.SET_TIMER" />
@@ -59,3 +60,22 @@ def test_manifest_allowlist_rejects_extra_query_shape(tmp_path: Path) -> None:
     findings = validate_manifest(manifest, ALLOWED_ANDROID_PERMISSIONS)
 
     assert any("exactly one action" in finding for finding in findings)
+
+
+def test_manifest_allowlist_rejects_required_or_extra_hardware_features(tmp_path: Path) -> None:
+    manifest = write_manifest(
+        tmp_path,
+        EXPECTED_MANIFEST.replace(
+            'android:name="android.hardware.camera.flash" android:required="false"',
+            'android:name="android.hardware.camera.flash" android:required="true"',
+        ).replace(
+            "    <queries>",
+            '    <uses-feature android:name="android.hardware.camera.any" '
+            'android:required="false" />\n'
+            "    <queries>",
+        ),
+    )
+
+    findings = validate_manifest(manifest, ALLOWED_ANDROID_PERMISSIONS)
+
+    assert any("hardware feature allowlist mismatch" in finding for finding in findings)

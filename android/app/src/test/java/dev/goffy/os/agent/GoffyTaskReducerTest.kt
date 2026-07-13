@@ -8,11 +8,13 @@ import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
+import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PhoneTimerDispatched
 import dev.goffy.os.protocol.ToolProgress
 import java.util.UUID
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -465,6 +467,49 @@ class GoffyTaskReducerTest {
             ),
         )
         assertEquals(TaskPhase.UNVERIFIED, state.entries.single().phase)
+        assertNull(state.activeTaskId)
+    }
+
+    @Test
+    fun flashlightResultRequiresApprovalAndCallbackVerification() {
+        val flashlightPlan =
+            (GoffyIntentRouter.route("Turn on the flashlight") as RoutingDecision.Routed).plan
+        var state = TaskTimelineState()
+            .start(phoneTaskId, flashlightPlan)
+            .awaitApproval(phoneTaskId, "Approve flashlight")
+            .grantApproval(phoneTaskId)
+        state = state.apply(phoneTaskId, ExecutionEvent.Starting(1))
+        state = state.apply(phoneTaskId, ExecutionEvent.Ready)
+        state = state.apply(
+            phoneTaskId,
+            progress(flashlightPlan.toolName, ExecutionTarget.PHONE, "accepted", 0),
+        )
+        state = state.apply(
+            phoneTaskId,
+            progress(flashlightPlan.toolName, ExecutionTarget.PHONE, "completed", 1),
+        )
+        state = state.apply(
+            phoneTaskId,
+            ExecutionEvent.Result(
+                flashlightPlan.toolName,
+                ExecutionTarget.PHONE,
+                PhoneFlashlightState(true, true),
+            ),
+        )
+
+        assertEquals(TaskPhase.COMPLETED_UNVERIFIED, state.entries.single().phase)
+        assertTrue(state.entries.single().summary.contains("state observed"))
+        assertFalse(state.entries.single().summary.contains("verified"))
+
+        state = state.apply(
+            phoneTaskId,
+            ExecutionEvent.Verification(
+                true,
+                "Torch callback confirmed on",
+                listOf("CameraManager callback"),
+            ),
+        )
+        assertEquals(TaskPhase.VERIFIED, state.entries.single().phase)
         assertNull(state.activeTaskId)
     }
 

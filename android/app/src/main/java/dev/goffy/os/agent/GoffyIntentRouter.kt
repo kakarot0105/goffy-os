@@ -6,9 +6,11 @@ import dev.goffy.os.protocol.MAX_TIMER_SECONDS
 import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
+import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
+import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import dev.goffy.os.protocol.ToolArguments
 import dev.goffy.os.protocol.matchesNoteTextContract
@@ -62,6 +64,11 @@ object GoffyIntentRouter {
             "(second|seconds|minute|minutes|hour|hours)[.!?]?$",
         option = RegexOption.IGNORE_CASE,
     )
+    private val flashlightSetCommand = Regex(
+        pattern = "^(?:turn|switch) (?:(?:the )?(?:flashlight|torch) (on|off)|" +
+            "(on|off) (?:the )?(?:flashlight|torch))[.!?]?$",
+        option = RegexOption.IGNORE_CASE,
+    )
 
     fun route(command: String): RoutingDecision {
         noteCreatePlan(command)?.let { return RoutingDecision.Routed(it) }
@@ -70,6 +77,7 @@ object GoffyIntentRouter {
             macStatusCommand.matches(normalized) -> macStatusPlan(normalized)
             batteryStatusCommand.matches(normalized) -> batteryStatusPlan(normalized)
             deviceInfoCommand.matches(normalized) -> deviceInfoPlan(normalized)
+            flashlightSetCommand.matches(normalized) -> flashlightSetPlan(normalized)
             timerCreateCommand.matches(normalized) -> timerCreatePlan(normalized)
                 ?: return RoutingDecision.Unsupported(normalized)
             else -> return RoutingDecision.Unsupported(normalized)
@@ -120,6 +128,24 @@ object GoffyIntentRouter {
                 durationSeconds = durationSeconds.toInt(),
                 skipClockUi = true,
             ),
+        )
+    }
+
+    private fun flashlightSetPlan(command: String): GoffyExecutionPlan {
+        val match = requireNotNull(flashlightSetCommand.matchEntire(command))
+        val requestedState = match.groupValues.drop(1).first(String::isNotEmpty)
+        val enabled = requestedState.equals("on", ignoreCase = true)
+        return GoffyExecutionPlan(
+            command = command,
+            executionTarget = ExecutionTarget.PHONE,
+            toolName = PHONE_FLASHLIGHT_SET_TOOL,
+            permission = PermissionLevel.CONFIRM,
+            successCriteria = listOf(
+                "The back-camera torch reaches the exact approved state",
+                "CameraManager confirms the state through TorchCallback",
+                "The callback is unregistered after the bounded operation",
+            ),
+            arguments = PhoneFlashlightSetArguments(enabled),
         )
     }
 

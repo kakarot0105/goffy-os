@@ -34,7 +34,7 @@
 - [x] Approval-gated app-private `phone.note.create` with post-write verification
 - [x] Approval-gated allowlisted-system `phone.timer.create` dispatch with explicit `UNVERIFIED` state
 - [x] API 26 and API 33+ system Clock intent tests
-- [ ] Approval-gated flashlight tool
+- [x] Approval-gated, callback-verified `phone.flashlight.set`
 - [ ] Physical Moto G battery-status verification
 
 ## Milestones 3-8

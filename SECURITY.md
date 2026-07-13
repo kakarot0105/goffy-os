@@ -49,8 +49,17 @@ include real credentials or unrelated personal data.
 - A timer result is a dispatch receipt for the exact approved duration and explicit
   Clock component. The task ends `UNVERIFIED`; GOFFY does not claim that the Clock
   honored the request or expose private Clock state it cannot read.
+- `phone.flashlight.set` requires exact-task, exact-state, expiring, single-use
+  approval. It selects a deterministic back-facing flash candidate and never opens
+  a camera stream or captures an image.
+- Flashlight execution requests no `CAMERA` permission, service, receiver, or
+  background worker. Its short-lived `TorchCallback` is unregistered after success,
+  failure, timeout, or cancellation.
+- Flashlight verification is point-in-time: a matching callback proves the approved
+  state at completion, not exclusive ownership or future persistence.
 - CI validates both the strict source manifest and freshly merged debug and release
-  manifests, rejecting permission variants and non-intent package queries.
+  manifests, rejecting permission variants, undeclared hardware features, and
+  non-intent package queries.
 - `mac.system_info` uses Python standard-library APIs and never invokes a shell.
 - Protocol inputs reject unknown fields and unsupported versions.
 - Errors returned to clients are stable codes without stack traces or secrets.
@@ -66,5 +75,6 @@ include real credentials or unrelated personal data.
 - Silent LAN or public-network exposure
 - Treating note text as SQL, a command, or additional authority
 - Implicit timer intents or non-allowlisted Clock-handler dispatch
+- Camera opening or image capture as part of the flashlight tool
 
 See [the initial threat model](docs/security/threat-model.md) for remaining risks.

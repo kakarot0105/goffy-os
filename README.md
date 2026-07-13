@@ -5,7 +5,7 @@ Android phone provides the command surface and small local engine; a macOS Hub
 provides controlled access to heavier local capabilities. MCP-compatible typed
 tools are the capability boundary.
 
-> Status: Milestone 2 phone engine in progress. The current repo implements four
+> Status: Milestone 2 phone engine in progress. The current repo implements five
 > offline PHONE actions and the software path for one SAFE Mac action, but physical
 > Moto G verification, pairing, and trusted LAN transport remain open.
 
@@ -18,6 +18,7 @@ tools are the capability boundary.
 - Privacy-minimized, offline `SAFE phone.device.info` execution
 - Approval-gated `CONFIRM phone.note.create` with app-private SQLite persistence
 - Approval-gated `CONFIRM phone.timer.create` through an allowlisted system Clock
+- Approval-gated `CONFIRM phone.flashlight.set` with CameraManager callback verification
 - Exact-task, exact-arguments, expiring, single-use phone approval grants
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
 - FastAPI Hub bound to `127.0.0.1` by default
@@ -87,6 +88,12 @@ Clock component. GOFFY runs no countdown service or polling loop. Verification
 checks the exact requested duration and documented-contract dispatch receipt, but
 the task ends `UNVERIFIED` because Android does not expose the Clock app's private
 timer state. The Clock app owns the timer after dispatch.
+
+`Turn on the flashlight` and `Turn off the torch` use the same exact one-time
+approval boundary. GOFFY selects a back-facing flash, changes it without opening
+the camera, and reports `VERIFIED` only after `TorchCallback` observes the approved
+state. This verification is point-in-time; Android permits other apps or camera
+resource pressure to change the torch later.
 
 This is an Android application layer, not a flashable replacement ROM. A custom
 ROM remains a later hardware-specific project after the agent runtime is proven.

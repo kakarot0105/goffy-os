@@ -4,6 +4,7 @@ import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.hub.HubConfig
 import dev.goffy.os.hub.HubGateway
 import dev.goffy.os.phone.DefaultPhoneToolGateway
+import dev.goffy.os.phone.FlashlightSource
 import dev.goffy.os.phone.PhoneToolGateway
 import dev.goffy.os.phone.NoteStore
 import dev.goffy.os.phone.TimerSource
@@ -13,6 +14,8 @@ import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
+import dev.goffy.os.protocol.PhoneFlashlightSetArguments
+import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.ANDROID_SET_TIMER_ACTION
 import dev.goffy.os.protocol.PhoneTimerDispatched
@@ -99,6 +102,7 @@ class GoffyViewModelTest {
             deviceInfoSource = { validDeviceInfo() },
             noteStore = fakeNoteStore(),
             timerSource = fakeTimerSource(),
+            flashlightSource = fakeFlashlightSource(),
             readDispatcher = dispatcher,
         )
         val viewModel = createViewModel(hubGateway, phoneGateway)
@@ -122,6 +126,7 @@ class GoffyViewModelTest {
             deviceInfoSource = { validDeviceInfo() },
             noteStore = fakeNoteStore(),
             timerSource = fakeTimerSource(),
+            flashlightSource = fakeFlashlightSource(),
             readDispatcher = dispatcher,
         )
         val viewModel = createViewModel(hubGateway, phoneGateway)
@@ -323,6 +328,36 @@ class GoffyViewModelTest {
         assertEquals(1, timerSource.dispatches)
     }
 
+    @Test
+    fun flashlightChangesOnlyAfterVisibleOneTimeApprovalAndEndsVerified() = runTest(dispatcher) {
+        val flashlightSource = RecordingFlashlightSource()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            phoneGateway = phoneGateway(flashlightSource = flashlightSource),
+        )
+
+        viewModel.submitCommand("Turn on the flashlight")
+        runCurrent()
+
+        val pending = viewModel.uiState.value.pendingApproval
+        assertTrue(pending != null)
+        assertTrue(pending!!.description.contains("turning on"))
+        assertTrue(pending.description.contains("will not open the camera"))
+        assertEquals(TaskPhase.AWAITING_APPROVAL, viewModel.uiState.value.timeline.entries.single().phase)
+        assertEquals(0, flashlightSource.calls)
+
+        assertTrue(viewModel.approvePendingTask(pending.taskId))
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(1, flashlightSource.calls)
+        assertEquals(true, flashlightSource.lastEnabled)
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals(validFlashlightResult(true), entry.result)
+        assertFalse(viewModel.approvePendingTask(pending.taskId))
+        assertEquals(1, flashlightSource.calls)
+    }
+
     private fun createViewModel(
         gateway: HubGateway,
         phoneGateway: PhoneToolGateway = DefaultPhoneToolGateway(
@@ -332,6 +367,7 @@ class GoffyViewModelTest {
             deviceInfoSource = { validDeviceInfo() },
             noteStore = fakeNoteStore(),
             timerSource = fakeTimerSource(),
+            flashlightSource = fakeFlashlightSource(),
             readDispatcher = dispatcher,
         ),
         approvalTtlMillis: Long = 60_000,
@@ -354,11 +390,13 @@ class GoffyViewModelTest {
     private fun phoneGateway(
         noteStore: NoteStore = fakeNoteStore(),
         timerSource: TimerSource = fakeTimerSource(),
+        flashlightSource: FlashlightSource = fakeFlashlightSource(),
     ): PhoneToolGateway = DefaultPhoneToolGateway(
         batteryStatusSource = { PhoneBatteryStatus(50, false) },
         deviceInfoSource = { validDeviceInfo() },
         noteStore = noteStore,
         timerSource = timerSource,
+        flashlightSource = flashlightSource,
         readDispatcher = dispatcher,
     )
 
@@ -401,6 +439,10 @@ class GoffyViewModelTest {
         validTimerResult(arguments.durationSeconds)
     }
 
+    private fun fakeFlashlightSource(): FlashlightSource = FlashlightSource { arguments ->
+        validFlashlightResult(arguments.enabled)
+    }
+
     private fun validTimerResult(durationSeconds: Int): PhoneTimerDispatched = PhoneTimerDispatched(
         durationSeconds,
         "com.google.android.deskclock",
@@ -408,6 +450,11 @@ class GoffyViewModelTest {
         true,
         true,
         ANDROID_SET_TIMER_ACTION,
+    )
+
+    private fun validFlashlightResult(enabled: Boolean): PhoneFlashlightState = PhoneFlashlightState(
+        enabled = enabled,
+        stateChanged = true,
     )
 
     private class RecordingNoteStore : NoteStore {
@@ -437,6 +484,20 @@ class GoffyViewModelTest {
                 true,
                 arguments.skipClockUi,
                 ANDROID_SET_TIMER_ACTION,
+            )
+        }
+    }
+
+    private class RecordingFlashlightSource : FlashlightSource {
+        var calls = 0
+        var lastEnabled: Boolean? = null
+
+        override suspend fun set(arguments: PhoneFlashlightSetArguments): PhoneFlashlightState {
+            calls += 1
+            lastEnabled = arguments.enabled
+            return PhoneFlashlightState(
+                enabled = arguments.enabled,
+                stateChanged = true,
             )
         }
     }

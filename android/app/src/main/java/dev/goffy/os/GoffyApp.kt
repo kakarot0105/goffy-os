@@ -64,6 +64,7 @@ import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
+import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PhoneTimerDispatched
 import dev.goffy.os.protocol.ToolResultContent
@@ -696,6 +697,28 @@ private fun TaskResult(result: ToolResultContent) {
                     result.manufacturer,
                     result.androidRelease,
                     result.sdkInt,
+                ),
+                color = Signal,
+                fontSize = 11.sp,
+            )
+        }
+        is PhoneFlashlightState -> {
+            Text(
+                text = stringResource(
+                    if (result.enabled) R.string.flashlight_on else R.string.flashlight_off,
+                ),
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(
+                    if (result.stateChanged) {
+                        R.string.flashlight_changed_observed
+                    } else {
+                        R.string.flashlight_already_observed
+                    },
                 ),
                 color = Signal,
                 fontSize = 11.sp,

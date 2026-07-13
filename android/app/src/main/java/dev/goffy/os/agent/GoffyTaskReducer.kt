@@ -8,6 +8,8 @@ import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
+import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
+import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneTimerDispatched
@@ -353,6 +355,10 @@ data class TaskTimelineState(
         PHONE_DEVICE_INFO_TOOL -> executionTarget == ExecutionTarget.PHONE &&
             content is PhoneDeviceInfo &&
             content.matchesToolContract()
+        PHONE_FLASHLIGHT_SET_TOOL -> executionTarget == ExecutionTarget.PHONE &&
+            permission == PermissionLevel.CONFIRM &&
+            approvalGranted &&
+            content is PhoneFlashlightState
         PHONE_NOTE_CREATE_TOOL -> executionTarget == ExecutionTarget.PHONE &&
             permission == PermissionLevel.CONFIRM &&
             approvalGranted &&
@@ -440,6 +446,9 @@ private fun ToolResultContent.summaryText(): String = when (this) {
     is MacSystemInfo -> "$operatingSystem $architecture: $status"
     is PhoneBatteryStatus -> "Battery $levelPercent%: ${if (charging) "charging" else "not charging"}"
     is PhoneDeviceInfo -> "$manufacturer $model / Android $androidRelease (API $sdkInt)"
+    is PhoneFlashlightState ->
+        "Flashlight ${if (enabled) "on" else "off"}; state observed" +
+            if (stateChanged) " after state change" else " (already requested state)"
     is PhoneNoteCreated -> "Note #$noteId stored: $text"
     is PhoneTimerDispatched -> "Timer intent for $durationSeconds seconds dispatched to $clockPackage"
 }

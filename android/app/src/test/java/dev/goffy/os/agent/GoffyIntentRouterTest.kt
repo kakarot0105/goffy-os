@@ -3,6 +3,8 @@ package dev.goffy.os.agent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
+import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
+import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
@@ -131,6 +133,40 @@ class GoffyIntentRouterTest {
             "Set a timer for 5 minutes and turn on the camera",
             "Set a timer for 1 hour 30 minutes",
             "Set a timer for 999999999999999999999999 minutes",
+        )
+
+        rejected.forEach { command ->
+            assertTrue(GoffyIntentRouter.route(command) is RoutingDecision.Unsupported)
+        }
+    }
+
+    @Test
+    fun routesExactFlashlightStateToOneConfirmPhoneTool() {
+        val cases = mapOf(
+            "Turn on the flashlight" to true,
+            "turn the torch off." to false,
+            "Switch flashlight on!" to true,
+            "switch off the torch?" to false,
+        )
+
+        cases.forEach { (command, enabled) ->
+            val decision = GoffyIntentRouter.route(command)
+            assertTrue(decision is RoutingDecision.Routed)
+            val plan = (decision as RoutingDecision.Routed).plan
+            assertEquals(ExecutionTarget.PHONE, plan.executionTarget)
+            assertEquals(PermissionLevel.CONFIRM, plan.permission)
+            assertEquals(PHONE_FLASHLIGHT_SET_TOOL, plan.toolName)
+            assertEquals(PhoneFlashlightSetArguments(enabled), plan.arguments)
+        }
+    }
+
+    @Test
+    fun rejectsAmbiguousOrExpandedFlashlightAuthority() {
+        val rejected = listOf(
+            "Turn on the flashlight and take a picture",
+            "Toggle the flashlight",
+            "Turn the flashlight maybe on",
+            "Turn on every camera light",
         )
 
         rejected.forEach { command ->

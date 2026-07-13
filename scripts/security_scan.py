@@ -48,6 +48,7 @@ ALLOWED_MERGED_ANDROID_PERMISSIONS = ALLOWED_ANDROID_PERMISSIONS | {
     "dev.goffy.os.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
 }
 ALLOWED_PACKAGE_QUERY_ACTIONS = {"android.intent.action.SET_TIMER"}
+ALLOWED_ANDROID_FEATURES = {"android.hardware.camera.flash": "false"}
 
 
 def candidate_files() -> list[Path]:
@@ -81,6 +82,20 @@ def validate_manifest(path: Path, allowed_permissions: set[str]) -> list[str]:
         findings.append(f"{location}: unexpected permission tags {unexpected_permission_tags}")
     if set(permissions) != allowed_permissions or len(permissions) != len(allowed_permissions):
         findings.append(f"{location}: permission allowlist mismatch (found {sorted(permissions)})")
+
+    required_attribute = f"{{{ANDROID_NAMESPACE}}}required"
+    feature_elements = manifest.findall("uses-feature")
+    features: dict[str, str] = {}
+    for feature in feature_elements:
+        if set(feature.attrib) != {name_attribute, required_attribute} or list(feature):
+            findings.append(f"{location}: hardware feature has unexpected structure")
+            continue
+        feature_name = feature.attrib[name_attribute]
+        if feature_name in features:
+            findings.append(f"{location}: duplicate hardware feature {feature_name}")
+        features[feature_name] = feature.attrib[required_attribute]
+    if features != ALLOWED_ANDROID_FEATURES:
+        findings.append(f"{location}: hardware feature allowlist mismatch (found {features})")
 
     queries_elements = manifest.findall("queries")
     query_actions: list[str] = []
