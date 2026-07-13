@@ -26,11 +26,12 @@ class GoffyProtocolFixtureTest {
         val events = lines.drop(1).map { raw ->
             codec.decodeEvent(raw, invocationId, "mac.system_info")
         }
-        assertTrue(events[0] is HubStreamEvent.Progress)
-        assertTrue(events[1] is HubStreamEvent.Progress)
-        assertTrue(events[2] is HubStreamEvent.Result)
-        assertTrue(events[3] is HubStreamEvent.Verification)
-        assertEquals("Darwin", (events[2] as HubStreamEvent.Result).content.operatingSystem)
-        assertTrue((events[3] as HubStreamEvent.Verification).succeeded)
+        assertTrue(events[0] is ExecutionEvent.Progress)
+        assertTrue(events[1] is ExecutionEvent.Progress)
+        assertTrue(events[2] is ExecutionEvent.Result)
+        assertTrue(events[3] is ExecutionEvent.Verification)
+        val result = (events[2] as ExecutionEvent.Result).content as MacSystemInfo
+        assertEquals("Darwin", result.operatingSystem)
+        assertTrue((events[3] as ExecutionEvent.Verification).succeeded)
     }
 }

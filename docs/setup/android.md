@@ -24,10 +24,14 @@ review both published checksums during any wrapper upgrade.
 
 - Supported commands are the exact `Show/Check [me] my Mac status` family with
   normalized whitespace and optional trailing `.`, `!`, or `?`.
+- Battery commands such as `Show my battery status` and `What's my phone battery
+  level?` run entirely on PHONE without a Hub link.
 - Any extra instruction, unrelated command, or appended authority is rejected on
   the phone before a Hub connection opens.
 - Android treats `ToolResult` as data only. The task becomes successful only
   after a matching `VerificationResult`.
+- Battery status reads `BatteryManager` once per command, validates `0..100`,
+  requests no permission, and performs no polling or background work.
 - Automatic reconnect is bounded to connection failures before the invocation is
   sent: at most 2 retries and 3 total attempts. After send, the client does not
   replay the request.
@@ -70,3 +74,8 @@ LAN use is still unsupported until trusted TLS and pairing exist.
 The USB localhost flow is implemented in software, but the full physical Moto G
 verification pass is still incomplete. Do not treat Milestone 1 as hardware
 verified yet.
+
+The battery slice is also software-verified only. On a device, run the app
+without configuring a Hub, submit `Show my battery status`, and confirm the
+timeline shows `PHONE / phone.battery.status / SAFE`, the percentage and charging
+state, and a final `VERIFIED` phase without any permission prompt.

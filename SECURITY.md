@@ -30,6 +30,8 @@ include real credentials or unrelated personal data.
 - Automatic reconnect occurs only before an invocation is sent. Sent requests
   are not replayed, and local cancellation does not claim Hub-side termination.
 - Tool names are resolved only from an in-process allowlist.
+- `phone.battery.status` performs one foreground-requested BatteryManager read,
+  validates its typed output, and requires no Android permission or background receiver.
 - `mac.system_info` uses Python standard-library APIs and never invokes a shell.
 - Protocol inputs reject unknown fields and unsupported versions.
 - Errors returned to clients are stable codes without stack traces or secrets.

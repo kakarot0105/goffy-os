@@ -51,36 +51,44 @@ data class ToolProgress(
     val message: String,
 )
 
+sealed interface ToolResultContent
+
 data class MacSystemInfo(
     val status: String,
     val operatingSystem: String,
     val architecture: String,
-)
+) : ToolResultContent
 
-sealed interface HubStreamEvent {
-    data class Connecting(val attempt: Int) : HubStreamEvent
+data class PhoneBatteryStatus(
+    val levelPercent: Int,
+    val charging: Boolean,
+) : ToolResultContent
 
-    data object Connected : HubStreamEvent
+sealed interface ExecutionEvent {
+    data class Starting(val attempt: Int) : ExecutionEvent
 
-    data class Progress(val payload: ToolProgress) : HubStreamEvent
+    data object Ready : ExecutionEvent
+
+    data class Progress(val payload: ToolProgress) : ExecutionEvent
 
     data class Result(
         val toolName: String,
         val executionTarget: ExecutionTarget,
-        val content: MacSystemInfo,
-    ) : HubStreamEvent
+        val content: ToolResultContent,
+    ) : ExecutionEvent
 
     data class Verification(
         val succeeded: Boolean,
         val summary: String,
         val checks: List<String>,
-    ) : HubStreamEvent
+    ) : ExecutionEvent
 
     data class Error(
         val code: String,
         val message: String,
         val retryable: Boolean,
-    ) : HubStreamEvent
+    ) : ExecutionEvent
+
 }
 
 class ProtocolException(message: String) : IllegalArgumentException(message)
@@ -125,7 +133,7 @@ class GoffyProtocolCodec(
         rawMessage: String,
         expectedCorrelationId: UUID,
         expectedToolName: String,
-    ): HubStreamEvent {
+    ): ExecutionEvent {
         if (rawMessage.encodeToByteArray().size > MAX_PROTOCOL_MESSAGE_BYTES) {
             throw ProtocolException("inbound message exceeds the protocol size limit")
         }
@@ -157,7 +165,7 @@ class GoffyProtocolCodec(
         }
     }
 
-    private fun decodeProgress(payload: JsonObject, expectedToolName: String): HubStreamEvent {
+    private fun decodeProgress(payload: JsonObject, expectedToolName: String): ExecutionEvent {
         payload.requireKeys(PROGRESS_KEYS)
         val toolName = payload.requireString("toolName")
         requireExpectedTool(toolName, expectedToolName)
@@ -167,7 +175,7 @@ class GoffyProtocolCodec(
         requireBounded("message", message, 1, 256)
         val sequence = payload.requireInt("sequence")
         if (sequence < 0) throw ProtocolException("progress sequence cannot be negative")
-        return HubStreamEvent.Progress(
+        return ExecutionEvent.Progress(
             ToolProgress(
                 toolName = toolName,
                 executionTarget = payload.requireExecutionTarget(),
@@ -178,41 +186,47 @@ class GoffyProtocolCodec(
         )
     }
 
-    private fun decodeResult(payload: JsonObject, expectedToolName: String): HubStreamEvent {
+    private fun decodeResult(payload: JsonObject, expectedToolName: String): ExecutionEvent {
         payload.requireKeys(RESULT_KEYS)
         val toolName = payload.requireString("toolName")
         requireExpectedTool(toolName, expectedToolName)
         val target = payload.requireExecutionTarget()
-        if (target != ExecutionTarget.MAC) {
-            throw ProtocolException("mac.system_info returned an unexpected execution target")
-        }
         val content = payload.requireObject("structuredContent")
-        content.requireKeys(SYSTEM_INFO_KEYS)
-        return HubStreamEvent.Result(
+        val decodedContent = when (toolName) {
+            MAC_SYSTEM_INFO_TOOL -> {
+                if (target != ExecutionTarget.MAC) {
+                    throw ProtocolException("mac.system_info returned an unexpected execution target")
+                }
+                content.requireKeys(SYSTEM_INFO_KEYS)
+                MacSystemInfo(
+                    status = content.requireBoundedString("status", 1, 64),
+                    operatingSystem = content.requireBoundedString("operatingSystem", 1, 128),
+                    architecture = content.requireBoundedString("architecture", 1, 128),
+                )
+            }
+            else -> throw ProtocolException("unsupported structured tool result")
+        }
+        return ExecutionEvent.Result(
             toolName = toolName,
             executionTarget = target,
-            content = MacSystemInfo(
-                status = content.requireBoundedString("status", 1, 64),
-                operatingSystem = content.requireBoundedString("operatingSystem", 1, 128),
-                architecture = content.requireBoundedString("architecture", 1, 128),
-            ),
+            content = decodedContent,
         )
     }
 
-    private fun decodeError(payload: JsonObject): HubStreamEvent {
+    private fun decodeError(payload: JsonObject): ExecutionEvent {
         payload.requireKeys(ERROR_KEYS)
-        return HubStreamEvent.Error(
+        return ExecutionEvent.Error(
             code = payload.requireBoundedString("code", 1, 64),
             message = payload.requireBoundedString("message", 1, 256),
             retryable = payload.requireBoolean("retryable"),
         )
     }
 
-    private fun decodeVerification(payload: JsonObject): HubStreamEvent {
+    private fun decodeVerification(payload: JsonObject): ExecutionEvent {
         payload.requireKeys(VERIFICATION_KEYS)
         val checks = payload.requireArray("checks")
         if (checks.size > 16) throw ProtocolException("verification has too many checks")
-        return HubStreamEvent.Verification(
+        return ExecutionEvent.Verification(
             succeeded = payload.requireBoolean("succeeded"),
             summary = payload.requireBoundedString("summary", 1, 256),
             checks = checks.map { element ->

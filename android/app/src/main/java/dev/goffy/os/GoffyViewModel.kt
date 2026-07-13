@@ -1,19 +1,27 @@
 package dev.goffy.os
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import dev.goffy.os.agent.GoffyExecutionPlan
 import dev.goffy.os.agent.GoffyIntentRouter
 import dev.goffy.os.agent.RoutingDecision
 import dev.goffy.os.hub.HubConfig
 import dev.goffy.os.hub.HubConfigurationException
 import dev.goffy.os.hub.HubGateway
 import dev.goffy.os.hub.OkHttpHubGateway
+import dev.goffy.os.phone.AndroidBatteryStatusSource
+import dev.goffy.os.phone.DefaultPhoneToolGateway
+import dev.goffy.os.phone.PhoneToolGateway
+import dev.goffy.os.protocol.ExecutionEvent
+import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GoffyProtocolCodec
-import dev.goffy.os.protocol.HubStreamEvent
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,17 +29,23 @@ import kotlinx.coroutines.launch
 
 class GoffyViewModel internal constructor(
     private val gateway: HubGateway,
+    private val phoneGateway: PhoneToolGateway,
     private val codec: GoffyProtocolCodec,
     private val allowInsecureLoopback: Boolean,
     private val defaultEndpoint: String,
     private val deviceId: String,
+    private val nextTaskId: () -> UUID,
 ) : ViewModel() {
-    constructor() : this(
+    constructor(context: Context) : this(
         gateway = OkHttpHubGateway(),
+        phoneGateway = DefaultPhoneToolGateway(
+            batteryStatusSource = AndroidBatteryStatusSource(context),
+        ),
         codec = GoffyProtocolCodec(),
         allowInsecureLoopback = BuildConfig.DEBUG,
         defaultEndpoint = if (BuildConfig.DEBUG) DEBUG_HUB_ENDPOINT else RELEASE_HUB_ENDPOINT_HINT,
         deviceId = "goffy-android-${UUID.randomUUID()}",
+        nextTaskId = UUID::randomUUID,
     )
 
     private val mutableUiState = MutableStateFlow(GoffyUiState(hubEndpoint = defaultEndpoint))
@@ -78,29 +92,48 @@ class GoffyViewModel internal constructor(
             return
         }
 
-        val config = hubConfig
-        if (config == null) {
-            mutableUiState.value = mutableUiState.value.rejectCommand(
-                command,
-                "Configure a secure GOFFY Hub link before running a Mac task",
-            )
-            return
-        }
-
         val plan = (decision as RoutingDecision.Routed).plan
-        val request = codec.createToolInvocation(deviceId, plan.toolName)
-        mutableUiState.value = mutableUiState.value.startTask(request.messageId, plan)
+        when (plan.executionTarget) {
+            ExecutionTarget.PHONE -> {
+                val taskId = nextTaskId()
+                executeTask(taskId, plan, phoneGateway.invoke(plan))
+            }
+            ExecutionTarget.MAC -> {
+                val config = hubConfig
+                if (config == null) {
+                    mutableUiState.value = mutableUiState.value.rejectCommand(
+                        command,
+                        "Configure a secure GOFFY Hub link before running a Mac task",
+                    )
+                    return
+                }
+                val request = codec.createToolInvocation(deviceId, plan.toolName)
+                executeTask(request.messageId, plan, gateway.invoke(config, request))
+            }
+            ExecutionTarget.CLOUD -> mutableUiState.value = mutableUiState.value.rejectCommand(
+                command,
+                "Cloud execution is not available in this build",
+            )
+        }
+    }
+
+    private fun executeTask(
+        taskId: UUID,
+        plan: GoffyExecutionPlan,
+        events: Flow<ExecutionEvent>,
+    ) {
+        mutableUiState.value = mutableUiState.value.startTask(taskId, plan)
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             try {
-                gateway.invoke(config, request).collect { event ->
-                    mutableUiState.value = mutableUiState.value.applyTaskEvent(request.messageId, event)
+                events.collect { event ->
+                    mutableUiState.value = mutableUiState.value.applyTaskEvent(taskId, event)
                 }
-                if (mutableUiState.value.timeline.activeTaskId == request.messageId) {
+                if (mutableUiState.value.timeline.activeTaskId == taskId) {
                     mutableUiState.value = mutableUiState.value.applyTaskEvent(
-                        request.messageId,
-                        HubStreamEvent.Error(
-                            code = "connection_closed",
-                            message = "Hub connection closed before verification",
+                        taskId,
+                        ExecutionEvent.Error(
+                            code = "execution_stopped",
+                            message = "Execution stopped before verification",
                             retryable = false,
                         ),
                     )
@@ -109,10 +142,10 @@ class GoffyViewModel internal constructor(
                 throw error
             } catch (_: Exception) {
                 mutableUiState.value = mutableUiState.value.applyTaskEvent(
-                    request.messageId,
-                    HubStreamEvent.Error(
+                    taskId,
+                    ExecutionEvent.Error(
                         code = "client_failure",
-                        message = "The Android client stopped before verification",
+                        message = "The Android execution client stopped before verification",
                         retryable = false,
                     ),
                 )
@@ -133,8 +166,21 @@ class GoffyViewModel internal constructor(
     }
 
     override fun onCleared() {
+        phoneGateway.close()
         gateway.close()
         super.onCleared()
+    }
+
+    class Factory(context: Context) : ViewModelProvider.Factory {
+        private val applicationContext = context.applicationContext
+
+        override fun <T : ViewModel> create(modelClass: Class<T>): T {
+            require(modelClass.isAssignableFrom(GoffyViewModel::class.java)) {
+                "Unsupported ViewModel class"
+            }
+            @Suppress("UNCHECKED_CAST")
+            return GoffyViewModel(applicationContext) as T
+        }
     }
 
     private companion object {

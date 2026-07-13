@@ -5,20 +5,22 @@ Android phone provides the command surface and small local engine; a macOS Hub
 provides controlled access to heavier local capabilities. MCP-compatible typed
 tools are the capability boundary.
 
-> Status: Milestone 1 Android-to-Hub slice in progress. The current repo
-> implements the software path for one SAFE Mac status action, but it is not a full
-> Milestone 1 completion, not a pairing flow, and not LAN-ready.
+> Status: Milestone 2 phone engine in progress. The current repo implements one
+> offline PHONE action and the software path for one SAFE Mac action, but physical
+> Moto G verification, pairing, and trusted LAN transport remain open.
 
 ## Current vertical slice
 
 - Kotlin/Jetpack Compose GOFFY LITE home shell
 - Deterministic route for exact `Show/Check [me] my Mac status`
+- Offline deterministic route for battery status commands
+- Permission-free, allowlisted `SAFE phone.battery.status` execution
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
 - FastAPI Hub bound to `127.0.0.1` by default
 - Versioned, typed phone-to-Hub protocol models
 - Allowlisted, read-only `SAFE mac.system_info` tool
 - Strict Kotlin codec plus typed Python protocol models
-- Separate `ToolResult` and `VerificationResult` events
+- Shared typed execution events with separate result and verification states
 - Shared fixture `protocol/fixtures/mac-system-info-flow.jsonl`
 - Unit, integration, type, lint, and security checks
 

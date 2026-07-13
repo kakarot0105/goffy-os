@@ -3,6 +3,7 @@ package dev.goffy.os.protocol
 import java.time.Instant
 import java.util.UUID
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -37,11 +38,23 @@ class GoffyProtocolCodecTest {
             expectedToolName = "mac.system_info",
         )
 
-        assertTrue(event is HubStreamEvent.Result)
-        val result = event as HubStreamEvent.Result
+        assertTrue(event is ExecutionEvent.Result)
+        val result = event as ExecutionEvent.Result
+        val content = result.content as MacSystemInfo
         assertEquals(ExecutionTarget.MAC, result.executionTarget)
-        assertEquals("Darwin", result.content.operatingSystem)
-        assertEquals("arm64", result.content.architecture)
+        assertEquals("Darwin", content.operatingSystem)
+        assertEquals("arm64", content.architecture)
+    }
+
+    @Test
+    fun rejectsUnsupportedStructuredResultToolEvenWithGenericResultContent() {
+        val raw = resultEnvelope()
+            .replace("\"mac.system_info\"", "\"phone.battery.status\"")
+            .replace("\"MAC\"", "\"PHONE\"")
+
+        assertThrows(ProtocolException::class.java) {
+            codec.decodeEvent(raw, messageId, "phone.battery.status")
+        }
     }
 
     @Test
@@ -80,6 +93,14 @@ class GoffyProtocolCodecTest {
         assertThrows(ProtocolException::class.java) {
             codec.decodeEvent(raw, messageId, "mac.system_info")
         }
+    }
+
+    @Test
+    fun phoneBatteryStatusRemainsRangeNeutralAtTheDomainBoundary() {
+        val status = PhoneBatteryStatus(levelPercent = 135, charging = false)
+
+        assertEquals(135, status.levelPercent)
+        assertFalse(status.charging)
     }
 
     private fun resultEnvelope(): String =

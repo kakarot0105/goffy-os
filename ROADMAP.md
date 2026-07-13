@@ -22,12 +22,15 @@
 - [x] Shared fixture plus Android/Python failure, retry, and cancellation tests
 - [ ] Moto G physical localhost debug verification (`adb reverse` flow)
 
-## Milestone 2: Phone engine
+## Milestone 2: Phone engine - in progress
 
-- Battery and device status
-- Approval-gated flashlight, note, and timer tools
-- Offline deterministic router
-- PHONE, MAC, and CLOUD routing state
+- [x] Permission-free `phone.battery.status` local tool
+- [x] Offline deterministic battery-status routing
+- [x] Typed PHONE and MAC execution result boundary
+- [x] PHONE, MAC, and CLOUD target state
+- [ ] `phone.device.info`
+- [ ] Approval-gated flashlight, note, and timer tools
+- [ ] Physical Moto G battery-status verification
 
 ## Milestones 3-8
 

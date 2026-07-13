@@ -3,10 +3,13 @@ package dev.goffy.os
 import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.hub.HubConfig
 import dev.goffy.os.hub.HubGateway
+import dev.goffy.os.phone.DefaultPhoneToolGateway
+import dev.goffy.os.phone.PhoneToolGateway
+import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GoffyProtocolCodec
-import dev.goffy.os.protocol.HubStreamEvent
 import dev.goffy.os.protocol.MacSystemInfo
+import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.ToolInvocationRequest
 import dev.goffy.os.protocol.ToolProgress
 import java.time.Instant
@@ -58,7 +61,7 @@ class GoffyViewModelTest {
 
         val entry = viewModel.uiState.value.timeline.entries.single()
         assertEquals(TaskPhase.VERIFIED, entry.phase)
-        assertEquals("Darwin", entry.result?.operatingSystem)
+        assertEquals("Darwin", (entry.result as MacSystemInfo).operatingSystem)
         assertEquals(listOf("output schema"), entry.verificationChecks)
         assertNull(viewModel.uiState.value.timeline.activeTaskId)
         assertEquals(1, gateway.requests.size)
@@ -76,6 +79,28 @@ class GoffyViewModelTest {
 
         assertTrue(gateway.requests.isEmpty())
         assertEquals(TaskPhase.FAILED, viewModel.uiState.value.timeline.entries.single().phase)
+    }
+
+    @Test
+    fun batteryStatusRunsAndVerifiesLocallyWithoutHubConfiguration() = runTest(dispatcher) {
+        val hubGateway = FakeHubGateway { flowOf() }
+        val phoneGateway = DefaultPhoneToolGateway(
+            batteryStatusSource = {
+                PhoneBatteryStatus(levelPercent = 64, charging = false)
+            },
+            readDispatcher = dispatcher,
+        )
+        val viewModel = createViewModel(hubGateway, phoneGateway)
+
+        viewModel.submitCommand("Show my battery status")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertTrue(hubGateway.requests.isEmpty())
+        assertEquals(ExecutionTarget.PHONE, entry.executionTarget)
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals(PhoneBatteryStatus(64, false), entry.result)
+        assertFalse(viewModel.uiState.value.hubConfigured)
     }
 
     @Test
@@ -102,7 +127,7 @@ class GoffyViewModelTest {
         val gateway = FakeHubGateway {
             flow {
                 try {
-                    emit(HubStreamEvent.Connecting(1))
+                    emit(ExecutionEvent.Starting(1))
                     awaitCancellation()
                 } finally {
                     collectionCancelled = true
@@ -127,7 +152,7 @@ class GoffyViewModelTest {
     fun commandSubmittedWhileBusyGetsAVisibleRejection() = runTest(dispatcher) {
         val gateway = FakeHubGateway {
             flow {
-                emit(HubStreamEvent.Connecting(1))
+                emit(ExecutionEvent.Starting(1))
                 awaitCancellation()
             }
         }
@@ -149,8 +174,17 @@ class GoffyViewModelTest {
         runCurrent()
     }
 
-    private fun createViewModel(gateway: HubGateway): GoffyViewModel = GoffyViewModel(
+    private fun createViewModel(
+        gateway: HubGateway,
+        phoneGateway: PhoneToolGateway = DefaultPhoneToolGateway(
+            batteryStatusSource = {
+                PhoneBatteryStatus(levelPercent = 50, charging = false)
+            },
+            readDispatcher = dispatcher,
+        ),
+    ): GoffyViewModel = GoffyViewModel(
         gateway = gateway,
+        phoneGateway = phoneGateway,
         codec = GoffyProtocolCodec(
             now = { Instant.parse("2026-07-13T16:00:00Z") },
             nextMessageId = { UUID.fromString("11111111-1111-4111-8111-111111111111") },
@@ -158,23 +192,24 @@ class GoffyViewModelTest {
         allowInsecureLoopback = true,
         defaultEndpoint = endpoint,
         deviceId = "goffy-android-test",
+        nextTaskId = { UUID.fromString("22222222-2222-4222-8222-222222222222") },
     )
 
-    private fun successfulEvents(): List<HubStreamEvent> = listOf(
-        HubStreamEvent.Connecting(1),
-        HubStreamEvent.Connected,
-        HubStreamEvent.Progress(
+    private fun successfulEvents(): List<ExecutionEvent> = listOf(
+        ExecutionEvent.Starting(1),
+        ExecutionEvent.Ready,
+        ExecutionEvent.Progress(
             ToolProgress("mac.system_info", ExecutionTarget.MAC, "accepted", 0, "Accepted"),
         ),
-        HubStreamEvent.Progress(
+        ExecutionEvent.Progress(
             ToolProgress("mac.system_info", ExecutionTarget.MAC, "completed", 1, "Completed"),
         ),
-        HubStreamEvent.Result(
+        ExecutionEvent.Result(
             toolName = "mac.system_info",
             executionTarget = ExecutionTarget.MAC,
             content = MacSystemInfo("available", "Darwin", "arm64"),
         ),
-        HubStreamEvent.Verification(
+        ExecutionEvent.Verification(
             succeeded = true,
             summary = "Verified",
             checks = listOf("output schema"),
@@ -182,11 +217,11 @@ class GoffyViewModelTest {
     )
 
     private class FakeHubGateway(
-        private val events: (ToolInvocationRequest) -> Flow<HubStreamEvent>,
+        private val events: (ToolInvocationRequest) -> Flow<ExecutionEvent>,
     ) : HubGateway {
         val requests = mutableListOf<ToolInvocationRequest>()
 
-        override fun invoke(config: HubConfig, request: ToolInvocationRequest): Flow<HubStreamEvent> {
+        override fun invoke(config: HubConfig, request: ToolInvocationRequest): Flow<ExecutionEvent> {
             requests += request
             return events(request)
         }

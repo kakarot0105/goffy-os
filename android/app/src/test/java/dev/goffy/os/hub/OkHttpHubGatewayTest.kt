@@ -1,7 +1,7 @@
 package dev.goffy.os.hub
 
 import dev.goffy.os.protocol.ExecutionTarget
-import dev.goffy.os.protocol.HubStreamEvent
+import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.ToolInvocationRequest
 import java.util.UUID
@@ -46,7 +46,7 @@ class OkHttpHubGatewayTest {
 
             assertEquals("Bearer $token", request.headers["Authorization"])
             assertNull(request.headers["Proxy-Authorization"])
-            assertEquals("tool_not_found", (events.last() as HubStreamEvent.Error).code)
+            assertEquals("tool_not_found", (events.last() as ExecutionEvent.Error).code)
         }
     }
 
@@ -73,15 +73,15 @@ class OkHttpHubGatewayTest {
 
             assertEquals(
                 listOf(
-                    HubStreamEvent.Connecting(1),
-                    HubStreamEvent.Connected,
+                    ExecutionEvent.Starting(1),
+                    ExecutionEvent.Ready,
                 ),
                 events.take(2),
             )
-            assertTrue(events[2] is HubStreamEvent.Progress)
-            assertTrue(events[3] is HubStreamEvent.Progress)
+            assertTrue(events[2] is ExecutionEvent.Progress)
+            assertTrue(events[3] is ExecutionEvent.Progress)
             assertEquals(
-                HubStreamEvent.Result(
+                ExecutionEvent.Result(
                     toolName = "mac.system_info",
                     executionTarget = ExecutionTarget.MAC,
                     content = MacSystemInfo(
@@ -93,7 +93,7 @@ class OkHttpHubGatewayTest {
                 events[4],
             )
             assertEquals(
-                HubStreamEvent.Verification(
+                ExecutionEvent.Verification(
                     succeeded = true,
                     summary = "System information output matched the registered schema.",
                     checks = listOf("tool allowlist", "input schema", "output schema"),
@@ -117,9 +117,9 @@ class OkHttpHubGatewayTest {
 
             val events = collectEvents(server)
 
-            assertEquals(listOf(HubStreamEvent.Connecting(1)), events.take(1))
+            assertEquals(listOf(ExecutionEvent.Starting(1)), events.take(1))
             assertEquals(
-                HubStreamEvent.Error(
+                ExecutionEvent.Error(
                     code = "authentication_failed",
                     message = "Hub authentication failed.",
                     retryable = false,
@@ -148,10 +148,10 @@ class OkHttpHubGatewayTest {
 
             val events = collectEvents(server)
 
-            assertEquals(HubStreamEvent.Connecting(1), events[0])
-            assertEquals(HubStreamEvent.Connected, events[1])
+            assertEquals(ExecutionEvent.Starting(1), events[0])
+            assertEquals(ExecutionEvent.Ready, events[1])
             assertEquals(
-                HubStreamEvent.Error(
+                ExecutionEvent.Error(
                     code = "protocol_error",
                     message = "Hub response did not match the supported protocol.",
                     retryable = false,
@@ -178,14 +178,14 @@ class OkHttpHubGatewayTest {
 
             assertEquals(
                 listOf(
-                    HubStreamEvent.Connecting(1),
-                    HubStreamEvent.Connecting(2),
-                    HubStreamEvent.Connecting(3),
+                    ExecutionEvent.Starting(1),
+                    ExecutionEvent.Starting(2),
+                    ExecutionEvent.Starting(3),
                 ),
                 events.take(3),
             )
             assertEquals(
-                HubStreamEvent.Error(
+                ExecutionEvent.Error(
                     code = "transport_connect_failed",
                     message = "Hub connection failed before the request was sent.",
                     retryable = true,
@@ -223,7 +223,7 @@ class OkHttpHubGatewayTest {
                 val events = gateway.invoke(loopbackConfig(server), TEST_REQUEST).take(2).toList()
 
                 assertEquals(
-                    listOf(HubStreamEvent.Connecting(1), HubStreamEvent.Connected),
+                    listOf(ExecutionEvent.Starting(1), ExecutionEvent.Ready),
                     events,
                 )
                 assertTrue(disconnectLatch.await(5, TimeUnit.SECONDS))
@@ -245,7 +245,7 @@ class OkHttpHubGatewayTest {
         client.connectionPool.evictAll()
     }
 
-    private suspend fun collectEvents(server: MockWebServer): List<HubStreamEvent> {
+    private suspend fun collectEvents(server: MockWebServer): List<ExecutionEvent> {
         val gateway = OkHttpHubGateway()
         return try {
             gateway.invoke(loopbackConfig(server), TEST_REQUEST).toList()

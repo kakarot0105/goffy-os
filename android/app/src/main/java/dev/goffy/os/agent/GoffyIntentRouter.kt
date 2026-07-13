@@ -1,6 +1,8 @@
 package dev.goffy.os.agent
 
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
+import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 
 enum class PermissionLevel {
     SAFE,
@@ -29,26 +31,43 @@ object GoffyIntentRouter {
         pattern = "^(?:show|check)(?: me)? my mac status[.!?]?$",
         option = RegexOption.IGNORE_CASE,
     )
+    private val batteryStatusCommand = Regex(
+        pattern =
+            "^(?:(?:show|check)(?: me)? my (?:phone )?battery (?:status|level)|" +
+                "what(?:'s| is) my (?:phone )?battery (?:status|level))[.!?]?$",
+        option = RegexOption.IGNORE_CASE,
+    )
 
     fun route(command: String): RoutingDecision {
         val normalized = command.trim().replace(whitespace, " ")
-        if (!macStatusCommand.matches(normalized)) {
-            return RoutingDecision.Unsupported(normalized)
+        val plan = when {
+            macStatusCommand.matches(normalized) -> macStatusPlan(normalized)
+            batteryStatusCommand.matches(normalized) -> batteryStatusPlan(normalized)
+            else -> return RoutingDecision.Unsupported(normalized)
         }
 
-        return RoutingDecision.Routed(
-            GoffyExecutionPlan(
-                command = normalized,
-                executionTarget = ExecutionTarget.MAC,
-                toolName = MAC_SYSTEM_INFO_TOOL,
-                permission = PermissionLevel.SAFE,
-                successCriteria = listOf(
-                    "Hub returns schema-valid structured system information",
-                    "Hub emits a successful verification result",
-                ),
-            ),
-        )
+        return RoutingDecision.Routed(plan)
     }
 
-    const val MAC_SYSTEM_INFO_TOOL = "mac.system_info"
+    private fun macStatusPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = command,
+        executionTarget = ExecutionTarget.MAC,
+        toolName = MAC_SYSTEM_INFO_TOOL,
+        permission = PermissionLevel.SAFE,
+        successCriteria = listOf(
+            "Hub returns schema-valid structured system information",
+            "Hub emits a successful verification result",
+        ),
+    )
+
+    private fun batteryStatusPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = command,
+        executionTarget = ExecutionTarget.PHONE,
+        toolName = PHONE_BATTERY_STATUS_TOOL,
+        permission = PermissionLevel.SAFE,
+        successCriteria = listOf(
+            "Phone returns a battery percentage from 0 through 100",
+            "Phone emits a successful local verification result",
+        ),
+    )
 }

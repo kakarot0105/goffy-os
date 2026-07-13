@@ -57,11 +57,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.goffy.os.agent.TaskEventKind
 import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.MacSystemInfo
+import dev.goffy.os.protocol.PhoneBatteryStatus
+import dev.goffy.os.protocol.ToolResultContent
 
 private val Void = Color(0xFF05090C)
 private val Panel = Color(0xFF0B1318)
@@ -83,7 +85,7 @@ private val GoffyColors = darkColorScheme(
 )
 
 @Composable
-fun GoffyApp(viewModel: GoffyViewModel = viewModel()) {
+fun GoffyApp(viewModel: GoffyViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var command by remember { mutableStateOf("") }
     var endpoint by rememberSaveable(state.hubEndpoint) { mutableStateOf(state.hubEndpoint) }
@@ -554,14 +556,7 @@ private fun TaskCard(entry: TaskTimelineEntry) {
             )
         }
         entry.result?.let { result ->
-            Spacer(Modifier.height(9.dp))
-            Text(
-                text = "${result.operatingSystem} / ${result.architecture}",
-                color = Bone,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
-            )
-            Text(result.status.uppercase(), color = Signal, fontSize = 11.sp)
+            TaskResult(result)
         }
         if (entry.events.isNotEmpty()) {
             Spacer(Modifier.height(9.dp))
@@ -576,6 +571,38 @@ private fun TaskCard(entry: TaskTimelineEntry) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun TaskResult(result: ToolResultContent) {
+    Spacer(Modifier.height(9.dp))
+    when (result) {
+        is MacSystemInfo -> {
+            Text(
+                text = "${result.operatingSystem} / ${result.architecture}",
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(result.status.uppercase(), color = Signal, fontSize = 11.sp)
+        }
+        is PhoneBatteryStatus -> {
+            Text(
+                text = "${result.levelPercent}%",
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(
+                    if (result.charging) R.string.battery_charging else R.string.battery_on_battery,
+                ),
+                color = Signal,
+                fontSize = 11.sp,
+            )
         }
     }
 }

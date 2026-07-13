@@ -1,7 +1,7 @@
 package dev.goffy.os.hub
 
 import dev.goffy.os.protocol.GoffyProtocolCodec
-import dev.goffy.os.protocol.HubStreamEvent
+import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ProtocolException
 import dev.goffy.os.protocol.ToolInvocationRequest
 import java.util.concurrent.ConcurrentHashMap
@@ -37,10 +37,10 @@ class OkHttpHubGateway private constructor(
     private val closed = AtomicBoolean(false)
     private val activeSockets = ConcurrentHashMap.newKeySet<WebSocket>()
 
-    override fun invoke(config: HubConfig, request: ToolInvocationRequest): Flow<HubStreamEvent> {
+    override fun invoke(config: HubConfig, request: ToolInvocationRequest): Flow<ExecutionEvent> {
         if (closed.get()) {
             return flowOf(
-                HubStreamEvent.Error(
+                ExecutionEvent.Error(
                     code = "gateway_closed",
                     message = "Hub transport is closed.",
                     retryable = true,
@@ -85,12 +85,12 @@ class OkHttpHubGateway private constructor(
         config: HubConfig,
         request: ToolInvocationRequest,
         invocationSocket: AtomicReference<WebSocket?>,
-        emit: (HubStreamEvent) -> Unit,
+        emit: (ExecutionEvent) -> Unit,
     ) {
         var attempt = 1
 
         while (attempt <= MAX_ATTEMPTS && !closed.get()) {
-            emit(HubStreamEvent.Connecting(attempt))
+            emit(ExecutionEvent.Starting(attempt))
 
             when (
                 val outcome = performAttempt(
@@ -125,7 +125,7 @@ class OkHttpHubGateway private constructor(
         config: HubConfig,
         request: ToolInvocationRequest,
         invocationSocket: AtomicReference<WebSocket?>,
-        emit: (HubStreamEvent) -> Unit,
+        emit: (ExecutionEvent) -> Unit,
     ): AttemptOutcome = suspendCancellableCoroutine { continuation ->
         val messageSent = AtomicBoolean(false)
         val terminalEventReceived = AtomicBoolean(false)
@@ -158,7 +158,7 @@ class OkHttpHubGateway private constructor(
 
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                emit(HubStreamEvent.Connected)
+                emit(ExecutionEvent.Ready)
 
                 if (webSocket.send(request.encodedMessage)) {
                     messageSent.set(true)
@@ -195,7 +195,7 @@ class OkHttpHubGateway private constructor(
                 }
 
                 emit(event)
-                if (event is HubStreamEvent.Verification || event is HubStreamEvent.Error) {
+                if (event is ExecutionEvent.Verification || event is ExecutionEvent.Error) {
                     terminalEventReceived.set(true)
                     if (!webSocket.close(NORMAL_CLOSURE_STATUS, null)) {
                         finish(AttemptOutcome.Completed)
@@ -322,9 +322,9 @@ class OkHttpHubGateway private constructor(
     private sealed interface AttemptOutcome {
         data object Completed : AttemptOutcome
 
-        data class RetryableFailure(val event: HubStreamEvent.Error) : AttemptOutcome
+        data class RetryableFailure(val event: ExecutionEvent.Error) : AttemptOutcome
 
-        data class FinalFailure(val event: HubStreamEvent.Error) : AttemptOutcome
+        data class FinalFailure(val event: ExecutionEvent.Error) : AttemptOutcome
     }
 
     private companion object {
@@ -343,11 +343,11 @@ class OkHttpHubGateway private constructor(
                 .webSocketCloseTimeout(2, TimeUnit.SECONDS)
                 .build()
 
-        private fun retryableError(code: String, message: String): HubStreamEvent.Error =
-            HubStreamEvent.Error(code = code, message = message, retryable = true)
+        private fun retryableError(code: String, message: String): ExecutionEvent.Error =
+            ExecutionEvent.Error(code = code, message = message, retryable = true)
 
-        private fun terminalError(code: String, message: String): HubStreamEvent.Error =
-            HubStreamEvent.Error(code = code, message = message, retryable = false)
+        private fun terminalError(code: String, message: String): ExecutionEvent.Error =
+            ExecutionEvent.Error(code = code, message = message, retryable = false)
 
         private fun closeWithProtocolFailure(
             webSocket: WebSocket,
