@@ -1,5 +1,6 @@
 package dev.goffy.os.agent
 
+import dev.goffy.os.capability.PhoneCapabilityRegistry
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.MAX_TIMER_SECONDS
@@ -12,15 +13,9 @@ import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PhoneTimerCreateArguments
+import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.ToolArguments
 import dev.goffy.os.protocol.matchesNoteTextContract
-
-enum class PermissionLevel {
-    SAFE,
-    CONFIRM,
-    SENSITIVE,
-    BLOCKED,
-}
 
 data class GoffyExecutionPlan(
     val command: String,
@@ -38,6 +33,7 @@ sealed interface RoutingDecision {
 }
 
 object GoffyIntentRouter {
+    private val phoneCapabilities = PhoneCapabilityRegistry.default
     private val whitespace = Regex("\\s+")
     private val macStatusCommand = Regex(
         pattern = "^(?:show|check)(?: me)? my mac status[.!?]?$",
@@ -95,7 +91,7 @@ object GoffyIntentRouter {
             command = trimmed,
             executionTarget = ExecutionTarget.PHONE,
             toolName = PHONE_NOTE_CREATE_TOOL,
-            permission = PermissionLevel.CONFIRM,
+            permission = phonePermission(PHONE_NOTE_CREATE_TOOL),
             successCriteria = listOf(
                 "The exact approved note text is stored in app-private storage",
                 "The stored row is re-read and matches the typed note contract",
@@ -119,7 +115,7 @@ object GoffyIntentRouter {
             command = command,
             executionTarget = ExecutionTarget.PHONE,
             toolName = PHONE_TIMER_CREATE_TOOL,
-            permission = PermissionLevel.CONFIRM,
+            permission = phonePermission(PHONE_TIMER_CREATE_TOOL),
             successCriteria = listOf(
                 "GOFFY sends the exact approved duration to an explicit allowlisted system Clock",
                 "GOFFY reports the unreadable Clock postcondition as unverified",
@@ -139,7 +135,7 @@ object GoffyIntentRouter {
             command = command,
             executionTarget = ExecutionTarget.PHONE,
             toolName = PHONE_FLASHLIGHT_SET_TOOL,
-            permission = PermissionLevel.CONFIRM,
+            permission = phonePermission(PHONE_FLASHLIGHT_SET_TOOL),
             successCriteria = listOf(
                 "The back-camera torch reaches the exact approved state",
                 "CameraManager confirms the state through TorchCallback",
@@ -164,7 +160,7 @@ object GoffyIntentRouter {
         command = command,
         executionTarget = ExecutionTarget.PHONE,
         toolName = PHONE_BATTERY_STATUS_TOOL,
-        permission = PermissionLevel.SAFE,
+        permission = phonePermission(PHONE_BATTERY_STATUS_TOOL),
         successCriteria = listOf(
             "Phone returns a battery percentage from 0 through 100",
             "Phone emits a successful local verification result",
@@ -175,10 +171,15 @@ object GoffyIntentRouter {
         command = command,
         executionTarget = ExecutionTarget.PHONE,
         toolName = PHONE_DEVICE_INFO_TOOL,
-        permission = PermissionLevel.SAFE,
+        permission = phonePermission(PHONE_DEVICE_INFO_TOOL),
         successCriteria = listOf(
             "Phone returns privacy-minimized device and Android version information",
             "Phone emits a successful local verification result",
         ),
     )
+
+    private fun phonePermission(toolName: String): PermissionLevel =
+        checkNotNull(phoneCapabilities.find(toolName)) {
+            "Missing compiled PHONE capability: $toolName"
+        }.metadata.permission
 }

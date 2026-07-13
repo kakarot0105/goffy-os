@@ -14,6 +14,7 @@ import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneTimerDispatched
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
+import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.ToolResultContent
 import dev.goffy.os.protocol.matchesToolContract
 import java.util.UUID

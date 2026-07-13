@@ -20,6 +20,7 @@ tools are the capability boundary.
 - Approval-gated `CONFIRM phone.note.create` with app-private SQLite persistence
 - Approval-gated `CONFIRM phone.timer.create` through an allowlisted system Clock
 - Approval-gated `CONFIRM phone.flashlight.set` with CameraManager callback verification
+- Immutable, bounded PHONE capability registry with MCP-shaped closed schemas
 - Exact-task, exact-arguments, expiring, single-use phone approval grants
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
 - Per-invocation discovery of the locally allowlisted Mac tool before execution
@@ -31,6 +32,7 @@ tools are the capability boundary.
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
 - Shared fixture `protocol/fixtures/mac-system-info-flow.jsonl`
+- Shared PHONE capability snapshot `shared/fixtures/phone-tool-capabilities.json`
 - Unit, integration, type, lint, and security checks
 
 The previous browser concept is preserved in [`prototype/web-shell`](prototype/web-shell).
@@ -108,6 +110,13 @@ approval boundary. GOFFY selects a back-facing flash, changes it without opening
 the camera, and reports `VERIFIED` only after `TorchCallback` observes the approved
 state. This verification is point-in-time; Android permits other apps or camera
 resource pressure to change the torch later.
+
+All five PHONE tools are declared in one sorted, immutable local registry. The
+deterministic router reads each PHONE permission from that registry, and the
+gateway independently rechecks tool name, target, permission, typed arguments,
+and the compiled timeout before touching an Android source. Registry metadata is
+descriptive, not authorization: CONFIRM tools still require an exact, expiring,
+single-use approval and are not exported through the Hub MCP endpoint.
 
 This is an Android application layer, not a flashable replacement ROM. A custom
 ROM remains a later hardware-specific project after the agent runtime is proven.

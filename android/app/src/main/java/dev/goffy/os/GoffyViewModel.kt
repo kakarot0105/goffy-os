@@ -6,7 +6,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.goffy.os.agent.GoffyExecutionPlan
 import dev.goffy.os.agent.GoffyIntentRouter
-import dev.goffy.os.agent.PermissionLevel
 import dev.goffy.os.agent.RoutingDecision
 import dev.goffy.os.hub.HubConfig
 import dev.goffy.os.hub.HubConfigurationException
@@ -26,6 +25,7 @@ import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PhoneTimerCreateArguments
+import dev.goffy.os.protocol.PermissionLevel
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart

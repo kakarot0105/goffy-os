@@ -1,5 +1,6 @@
 package dev.goffy.os.agent
 
+import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ANDROID_SET_TIMER_ACTION

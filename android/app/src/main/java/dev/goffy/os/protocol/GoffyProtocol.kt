@@ -41,6 +41,13 @@ enum class ExecutionTarget {
     CLOUD,
 }
 
+enum class PermissionLevel {
+    SAFE,
+    CONFIRM,
+    SENSITIVE,
+    BLOCKED,
+}
+
 data class ToolInvocationRequest(
     val messageId: UUID,
     val toolName: String,

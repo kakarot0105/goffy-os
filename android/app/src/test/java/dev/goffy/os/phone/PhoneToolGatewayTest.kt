@@ -1,7 +1,7 @@
 package dev.goffy.os.phone
 
 import dev.goffy.os.agent.GoffyExecutionPlan
-import dev.goffy.os.agent.PermissionLevel
+import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.PhoneBatteryStatus
@@ -137,6 +137,36 @@ class PhoneToolGatewayTest {
         assertEquals(0, reads)
         assertEquals("phone_tool_unauthorized", (unknownEvents.single() as ExecutionEvent.Error).code)
         assertEquals("phone_tool_unauthorized", (wrongTargetEvents.single() as ExecutionEvent.Error).code)
+    }
+
+    @Test
+    fun registryRejectsMalformedConfirmedArgumentsBeforeAnySideEffect() = runTest {
+        val noteStore = RecordingNoteStore()
+        var timerDispatches = 0
+        val gateway = testGateway(
+            noteStore = noteStore,
+            timerSource = TimerSource { arguments ->
+                timerDispatches += 1
+                validTimerResult(arguments.durationSeconds)
+            },
+        )
+        val invalidNote = notePlan("\u0000")
+        val invalidTimer = timerPlan(30).copy(
+            arguments = PhoneTimerCreateArguments(durationSeconds = 30, skipClockUi = false),
+        )
+
+        val noteEvents = gateway.invoke(taskId, invalidNote, approval(invalidNote)).toList()
+        val timerTaskId = UUID.fromString("22222222-2222-4222-8222-222222222222")
+        val timerEvents = gateway.invoke(
+            timerTaskId,
+            invalidTimer,
+            approval(invalidTimer, approvedTaskId = timerTaskId),
+        ).toList()
+
+        assertEquals(0, noteStore.creates)
+        assertEquals(0, timerDispatches)
+        assertEquals("phone_tool_unauthorized", (noteEvents.single() as ExecutionEvent.Error).code)
+        assertEquals("phone_tool_unauthorized", (timerEvents.single() as ExecutionEvent.Error).code)
     }
 
     @Test

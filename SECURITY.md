@@ -60,6 +60,15 @@ include real credentials or unrelated personal data.
   64 unique messages, and applies the configured byte limit to inbound and outbound
   envelopes. Cross-connection replay protection remains a pairing milestone.
 - Tool names are resolved only from an in-process allowlist.
+- Android's immutable PHONE registry is bounded to 16 entries and 32 KiB. Every
+  descriptor targets PHONE, uses a closed object schema, has a 30-second maximum
+  timeout, and is limited to SAFE or CONFIRM permission.
+- The PHONE registry and its shared fixture are descriptive compatibility data,
+  not executable authority. The gateway rechecks compiled name, target, permission,
+  typed arguments, timeout, and approval before any Android source is accessed.
+- PHONE CONFIRM descriptors are not exported through MCP. Remote discovery,
+  fixtures, and annotations cannot add a route, downgrade a permission, change an
+  Android manifest grant, or mint an approval.
 - `phone.battery.status` performs one foreground-requested BatteryManager read,
   validates its typed output, and requires no Android permission or background receiver.
 - `phone.device.info` returns only manufacturer, user-visible model, Android release,
@@ -106,6 +115,7 @@ include real credentials or unrelated personal data.
 - Disabling host security controls
 - Silent LAN or public-network exposure
 - Treating note text as SQL, a command, or additional authority
+- Treating PHONE capability metadata or fixtures as authorization
 - Implicit timer intents or non-allowlisted Clock-handler dispatch
 - Camera opening or image capture as part of the flashlight tool
 

@@ -1,10 +1,9 @@
 package dev.goffy.os.phone
 
 import dev.goffy.os.agent.GoffyExecutionPlan
-import dev.goffy.os.agent.PermissionLevel
+import dev.goffy.os.capability.PhoneCapabilityRegistry
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
-import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PhoneDeviceInfo
@@ -18,10 +17,10 @@ import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import dev.goffy.os.protocol.PhoneTimerDispatched
+import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.ToolProgress
 import dev.goffy.os.protocol.ToolArguments
 import dev.goffy.os.protocol.ToolResultContent
-import dev.goffy.os.protocol.matchesNoteTextContract
 import dev.goffy.os.protocol.matchesToolContract
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -105,6 +104,10 @@ class DefaultPhoneToolGateway internal constructor(
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : PhoneToolGateway {
     private val consumedConfirmTaskIds = ConcurrentHashMap.newKeySet<UUID>()
+    private val capabilityRegistry = PhoneCapabilityRegistry.create(
+        defaultTimeoutMillis = timeoutMillis,
+        flashlightTimeoutMillis = flashlightTimeoutMillis,
+    )
 
     init {
         require(timeoutMillis > 0) { "timeoutMillis must be positive" }
@@ -208,13 +211,26 @@ class DefaultPhoneToolGateway internal constructor(
         taskId: UUID,
         authorization: PhoneToolAuthorization,
     ): PhoneToolOperation? {
-        if (executionTarget != ExecutionTarget.PHONE) return null
+        val capability = capabilityRegistry.match(
+            toolName = toolName,
+            executionTarget = executionTarget,
+            permission = permission,
+            arguments = arguments,
+        ) ?: return null
+        when (capability.metadata.permission) {
+            PermissionLevel.SAFE -> {
+                if (authorization != PhoneToolAuthorization.Safe) return null
+            }
+            PermissionLevel.CONFIRM -> {
+                if (!consumeApproval(taskId, authorization)) return null
+            }
+            PermissionLevel.SENSITIVE,
+            PermissionLevel.BLOCKED,
+            -> return null
+        }
+
         return when (toolName) {
-            PHONE_BATTERY_STATUS_TOOL -> if (
-                permission == PermissionLevel.SAFE &&
-                arguments == NoToolArguments &&
-                authorization == PhoneToolAuthorization.Safe
-            ) PhoneToolOperation(
+            PHONE_BATTERY_STATUS_TOOL -> PhoneToolOperation(
                 toolName = PHONE_BATTERY_STATUS_TOOL,
                 acceptedMessage = "Battery status read accepted on this phone.",
                 completedMessage = "BatteryManager returned validated local status.",
@@ -230,13 +246,9 @@ class DefaultPhoneToolGateway internal constructor(
                     ),
                 ),
                 dispatcher = readDispatcher,
-                timeoutMillis = timeoutMillis,
-            ) else null
-            PHONE_DEVICE_INFO_TOOL -> if (
-                permission == PermissionLevel.SAFE &&
-                arguments == NoToolArguments &&
-                authorization == PhoneToolAuthorization.Safe
-            ) PhoneToolOperation(
+                timeoutMillis = capability.metadata.timeoutMillis,
+            )
+            PHONE_DEVICE_INFO_TOOL -> PhoneToolOperation(
                 toolName = PHONE_DEVICE_INFO_TOOL,
                 acceptedMessage = "Privacy-minimized device info read accepted on this phone.",
                 completedMessage = "Android Build returned validated display information.",
@@ -253,15 +265,10 @@ class DefaultPhoneToolGateway internal constructor(
                     ),
                 ),
                 dispatcher = readDispatcher,
-                timeoutMillis = timeoutMillis,
-            ) else null
+                timeoutMillis = capability.metadata.timeoutMillis,
+            )
             PHONE_FLASHLIGHT_SET_TOOL -> {
                 val flashlightArguments = arguments as? PhoneFlashlightSetArguments ?: return null
-                if (permission != PermissionLevel.CONFIRM ||
-                    !consumeApproval(taskId, authorization)
-                ) {
-                    return null
-                }
                 val requestedState = if (flashlightArguments.enabled) "on" else "off"
                 PhoneToolOperation(
                     toolName = PHONE_FLASHLIGHT_SET_TOOL,
@@ -284,17 +291,11 @@ class DefaultPhoneToolGateway internal constructor(
                         ),
                     ),
                     dispatcher = actionDispatcher,
-                    timeoutMillis = flashlightTimeoutMillis,
+                    timeoutMillis = capability.metadata.timeoutMillis,
                 )
             }
             PHONE_NOTE_CREATE_TOOL -> {
                 val noteArguments = arguments as? PhoneNoteCreateArguments ?: return null
-                if (permission != PermissionLevel.CONFIRM ||
-                    !noteArguments.text.matchesNoteTextContract() ||
-                    !consumeApproval(taskId, authorization)
-                ) {
-                    return null
-                }
                 PhoneToolOperation(
                     toolName = PHONE_NOTE_CREATE_TOOL,
                     acceptedMessage = "Approved note creation accepted on this phone.",
@@ -316,17 +317,11 @@ class DefaultPhoneToolGateway internal constructor(
                         ),
                     ),
                     dispatcher = readDispatcher,
-                    timeoutMillis = timeoutMillis,
+                    timeoutMillis = capability.metadata.timeoutMillis,
                 )
             }
             PHONE_TIMER_CREATE_TOOL -> {
                 val timerArguments = arguments as? PhoneTimerCreateArguments ?: return null
-                if (permission != PermissionLevel.CONFIRM ||
-                    !timerArguments.matchesToolContract() ||
-                    !consumeApproval(taskId, authorization)
-                ) {
-                    return null
-                }
                 PhoneToolOperation(
                     toolName = PHONE_TIMER_CREATE_TOOL,
                     acceptedMessage = "Approved timer creation accepted on this phone.",
@@ -350,7 +345,7 @@ class DefaultPhoneToolGateway internal constructor(
                         ),
                     ),
                     dispatcher = actionDispatcher,
-                    timeoutMillis = timeoutMillis,
+                    timeoutMillis = capability.metadata.timeoutMillis,
                 )
             }
             else -> null

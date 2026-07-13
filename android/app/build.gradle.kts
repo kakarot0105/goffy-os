@@ -46,6 +46,9 @@ android {
     sourceSets.getByName("test").resources.directories.add(
         "../../protocol/fixtures",
     )
+    sourceSets.getByName("test").resources.directories.add(
+        "../../shared/fixtures",
+    )
 }
 
 dependencies {

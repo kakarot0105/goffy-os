@@ -1,5 +1,6 @@
 package dev.goffy.os.agent
 
+import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL

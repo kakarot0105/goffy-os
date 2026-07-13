@@ -44,7 +44,7 @@
 - [x] MCP `2025-11-25`-aligned tool schemas, annotations, and namespaced metadata
 - [x] Android discovery gate before `mac.system_info` invocation
 - [x] Per-invocation discovery consumption, bounded timeout, and no post-send replay
-- [ ] Unified PHONE capability registry
+- [x] Unified, bounded PHONE capability registry with shared schema fixture
 - [x] Official MCP Streamable HTTP initialization, `tools/list`, and registry-backed `tools/call`
 - [ ] Tool-health checks and list-change notifications
 - [ ] Persistent, user-visible capability audit trail

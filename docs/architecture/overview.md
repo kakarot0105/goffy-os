@@ -10,7 +10,8 @@ Android command surface
         | anchored deterministic route
         v
 deterministic router
-        +--> PHONE -> fixed local gateway -> Android typed capabilities
+        +--> PHONE -> immutable capability registry -> fixed local gateway
+        |                                          -> Android typed capabilities
         |                              |-> SAFE battery / device info
         |                              |-> CONFIRM private note / system timer
         |                              `-> CONFIRM callback-verified flashlight
@@ -45,17 +46,21 @@ not replayed. A whole attempt is bounded to 35 seconds.
    only SAFE read-only, non-destructive, idempotent, closed-world Mac tools with
    closed object schemas.
 8. Fixed gateways allow only the documented typed tool names; no command-string capability exists.
-9. The battery source is read once, requires no permission, and must return a percentage from 0 through 100.
-10. Device info contains four display fields and excludes stable device, network, account, and build identifiers.
-11. Mutating PHONE tools require an exact-task, exact-tool, exact-arguments,
+9. The PHONE registry is sorted, immutable, size-bounded, and uses closed MCP-shaped
+   schemas. It cannot execute tools or grant approval.
+10. The router sources PHONE permission from the registry, and the gateway rechecks
+    compiled name, target, permission, typed arguments, and timeout before source access.
+11. The battery source is read once, requires no permission, and must return a percentage from 0 through 100.
+12. Device info contains four display fields and excludes stable device, network, account, and build identifiers.
+13. Mutating PHONE tools require an exact-task, exact-tool, exact-arguments,
    expiring, single-use approval.
-12. Flashlight success requires a matching CameraManager callback and releases the
+14. Flashlight success requires a matching CameraManager callback and releases the
    callback immediately; it never opens an image stream.
-13. A typed result carries data; a separate verification event is the success boundary.
-14. Local cancel stops the active coroutine; MAC cancellation does not guarantee Hub-side termination.
-15. The Hub rejects duplicate message IDs within a connection and applies the
+15. A typed result carries data; a separate verification event is the success boundary.
+16. Local cancel stops the active coroutine; MAC cancellation does not guarantee Hub-side termination.
+17. The Hub rejects duplicate message IDs within a connection and applies the
     configured message-size limit in both transport directions.
-16. `/mcp` validates exact Host and Origin allowlists, bearer authentication,
+18. `/mcp` validates exact Host and Origin allowlists, bearer authentication,
     message bounds, and concurrency before registry execution.
 
 ## Performance posture
@@ -69,6 +74,11 @@ bounded when persistence is introduced.
 The seven-envelope discovery-first MAC fixture lives at
 `protocol/fixtures/mac-system-info-flow.jsonl` and is validated by both Android
 and Python tests.
+
+The canonical sorted PHONE capability snapshot lives at
+`shared/fixtures/phone-tool-capabilities.json`. Kotlin compares the compiled
+registry to it, and Python independently validates its MCP-shaped metadata and
+JSON Schemas. It is a compatibility artifact, not an execution allowlist.
 
 `/ws/v1` remains GOFFY's Android application protocol. Exact `/mcp` is a separate,
 session-aware MCP `2025-11-25` Streamable HTTP endpoint implemented by the official
