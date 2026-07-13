@@ -24,6 +24,19 @@ class GoffyToolContractsTest {
         assertFalse(validDeviceInfo().copy(sdkInt = Int.MAX_VALUE).matchesToolContract())
     }
 
+    @Test
+    fun noteContractRequiresBoundedDisplaySafeTextAndPositiveMetadata() {
+        val valid = PhoneNoteCreated(1, "Buy milk", 1_720_000_000_000)
+
+        assertTrue(valid.matchesToolContract())
+        assertFalse(valid.copy(noteId = 0).matchesToolContract())
+        assertFalse(valid.copy(text = " ").matchesToolContract())
+        assertFalse(valid.copy(text = "x".repeat(MAX_NOTE_TEXT_LENGTH + 1)).matchesToolContract())
+        assertFalse(valid.copy(text = "safe\u202Eevil").matchesToolContract())
+        assertFalse(valid.copy(text = "first\nsecond").matchesToolContract())
+        assertFalse(valid.copy(createdAtEpochMillis = 0).matchesToolContract())
+    }
+
     private fun validDeviceInfo(): PhoneDeviceInfo = PhoneDeviceInfo(
         manufacturer = "motorola",
         model = "moto g",

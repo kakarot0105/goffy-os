@@ -64,7 +64,9 @@ import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
+import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.ToolResultContent
+import java.util.UUID
 
 private val Void = Color(0xFF05090C)
 private val Panel = Color(0xFF0B1318)
@@ -121,6 +123,8 @@ fun GoffyApp(viewModel: GoffyViewModel) {
                     command = ""
                 },
                 onCancel = viewModel::cancelActiveTask,
+                onApprove = { taskId -> viewModel.approvePendingTask(taskId) },
+                onDeny = { taskId -> viewModel.denyPendingTask(taskId) },
             )
         }
     }
@@ -141,6 +145,8 @@ private fun GoffyHomeScreen(
     onForgetHub: () -> Unit,
     onSubmit: () -> Unit,
     onCancel: () -> Unit,
+    onApprove: (UUID) -> Unit,
+    onDeny: (UUID) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -180,7 +186,12 @@ private fun GoffyHomeScreen(
             onCancel = onCancel,
         )
         Spacer(Modifier.height(18.dp))
-        Timeline(state.timeline.entries)
+        Timeline(
+            entries = state.timeline.entries,
+            pendingApproval = state.pendingApproval,
+            onApprove = onApprove,
+            onDeny = onDeny,
+        )
     }
 }
 
@@ -483,7 +494,12 @@ private fun PlaceholderAction(shortLabel: String, description: String) {
 }
 
 @Composable
-private fun Timeline(entries: List<TaskTimelineEntry>) {
+private fun Timeline(
+    entries: List<TaskTimelineEntry>,
+    pendingApproval: PendingApproval?,
+    onApprove: (UUID) -> Unit,
+    onDeny: (UUID) -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -498,7 +514,12 @@ private fun Timeline(entries: List<TaskTimelineEntry>) {
             Text(stringResource(R.string.timeline_empty), color = Mist, fontSize = 14.sp)
         } else {
             entries.asReversed().forEach { entry ->
-                TaskCard(entry)
+                TaskCard(
+                    entry = entry,
+                    approval = pendingApproval?.takeIf { it.taskId == entry.id },
+                    onApprove = onApprove,
+                    onDeny = onDeny,
+                )
                 Spacer(Modifier.height(10.dp))
             }
         }
@@ -506,9 +527,15 @@ private fun Timeline(entries: List<TaskTimelineEntry>) {
 }
 
 @Composable
-private fun TaskCard(entry: TaskTimelineEntry) {
+private fun TaskCard(
+    entry: TaskTimelineEntry,
+    approval: PendingApproval?,
+    onApprove: (UUID) -> Unit,
+    onDeny: (UUID) -> Unit,
+) {
     val phaseColor = when (entry.phase) {
         TaskPhase.VERIFIED -> Signal
+        TaskPhase.AWAITING_APPROVAL,
         TaskPhase.FAILED,
         TaskPhase.CANCELLED,
         -> Warning
@@ -532,6 +559,8 @@ private fun TaskCard(entry: TaskTimelineEntry) {
                 color = Bone,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.weight(1f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(Modifier.width(8.dp))
             Text(
@@ -559,6 +588,9 @@ private fun TaskCard(entry: TaskTimelineEntry) {
         entry.result?.let { result ->
             TaskResult(result)
         }
+        approval?.let {
+            ApprovalActions(it, onApprove, onDeny)
+        }
         if (entry.events.isNotEmpty()) {
             Spacer(Modifier.height(9.dp))
             entry.events.takeLast(5).forEach { event ->
@@ -571,6 +603,49 @@ private fun TaskCard(entry: TaskTimelineEntry) {
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ApprovalActions(
+    approval: PendingApproval,
+    onApprove: (UUID) -> Unit,
+    onDeny: (UUID) -> Unit,
+) {
+    Spacer(Modifier.height(12.dp))
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Warning.copy(alpha = 0.08f))
+            .border(1.dp, Warning.copy(alpha = 0.45f), RoundedCornerShape(12.dp))
+            .padding(12.dp),
+    ) {
+        Label(stringResource(R.string.approval_required))
+        Spacer(Modifier.height(5.dp))
+        Text(approval.description, color = Bone, fontSize = 12.sp)
+        Text(
+            stringResource(R.string.approval_expiry, approval.durationSeconds),
+            color = Warning,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+        )
+        Spacer(Modifier.height(10.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+        ) {
+            TextButton(onClick = { onDeny(approval.taskId) }) {
+                Text(stringResource(R.string.deny_action), color = Warning)
+            }
+            Spacer(Modifier.width(8.dp))
+            Button(
+                onClick = { onApprove(approval.taskId) },
+                colors = ButtonDefaults.buttonColors(containerColor = Acid, contentColor = Void),
+            ) {
+                Text(stringResource(R.string.approve_once), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -624,6 +699,21 @@ private fun TaskResult(result: ToolResultContent) {
                 fontSize = 11.sp,
             )
         }
+        is PhoneNoteCreated -> {
+            Text(
+                text = stringResource(R.string.note_created, result.noteId),
+                color = Signal,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+            )
+            Text(
+                text = result.text.take(MAX_NOTE_PREVIEW_LENGTH),
+                color = Bone,
+                fontSize = 14.sp,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -650,3 +740,4 @@ private fun goffyTextFieldColors() = OutlinedTextFieldDefaults.colors(
 private const val MAX_COMMAND_LENGTH = 2_000
 private const val MAX_ENDPOINT_LENGTH = 2_048
 private const val MAX_TOKEN_LENGTH = 4_096
+private const val MAX_NOTE_PREVIEW_LENGTH = 256

@@ -7,6 +7,7 @@ import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
+import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.ToolProgress
 import java.util.UUID
 import org.junit.Assert.assertEquals
@@ -331,6 +332,91 @@ class GoffyTaskReducerTest {
         assertThrows(IllegalArgumentException::class.java) {
             state.start(UUID.randomUUID(), plan)
         }
+    }
+
+    @Test
+    fun confirmToolCannotStartUntilExactApprovalIsGranted() {
+        val notePlan = (GoffyIntentRouter.route("Create a note saying Buy milk") as RoutingDecision.Routed).plan
+        val unapproved = TaskTimelineState()
+            .start(phoneTaskId, notePlan)
+            .apply(phoneTaskId, ExecutionEvent.Starting(1))
+
+        assertEquals(TaskPhase.FAILED, unapproved.entries.single().phase)
+
+        var approved = TaskTimelineState().start(phoneTaskId, notePlan)
+        approved = approved.awaitApproval(phoneTaskId, "Approve creating Buy milk")
+        assertEquals(TaskPhase.AWAITING_APPROVAL, approved.entries.single().phase)
+        approved = approved.grantApproval(phoneTaskId)
+        assertTrue(approved.entries.single().approvalGranted)
+        approved = approved.apply(phoneTaskId, ExecutionEvent.Starting(1))
+        approved = approved.apply(phoneTaskId, ExecutionEvent.Ready)
+        approved = approved.apply(
+            phoneTaskId,
+            progress(notePlan.toolName, ExecutionTarget.PHONE, "accepted", 0),
+        )
+        approved = approved.apply(
+            phoneTaskId,
+            progress(notePlan.toolName, ExecutionTarget.PHONE, "completed", 1),
+        )
+        approved = approved.apply(
+            phoneTaskId,
+            ExecutionEvent.Result(
+                notePlan.toolName,
+                ExecutionTarget.PHONE,
+                PhoneNoteCreated(7, "Buy milk", 1_720_000_000_000),
+            ),
+        )
+        approved = approved.apply(
+            phoneTaskId,
+            ExecutionEvent.Verification(true, "Note verified", listOf("post-write row read")),
+        )
+
+        assertEquals(TaskPhase.VERIFIED, approved.entries.single().phase)
+        assertNull(approved.activeTaskId)
+    }
+
+    @Test
+    fun deniedAndExpiredApprovalsAreTerminalWithoutExecution() {
+        val notePlan = (GoffyIntentRouter.route("Create a note saying Buy milk") as RoutingDecision.Routed).plan
+        val denied = TaskTimelineState()
+            .start(phoneTaskId, notePlan)
+            .awaitApproval(phoneTaskId, "Approve creating Buy milk")
+            .denyApproval(phoneTaskId, "Approval denied; no phone tool was invoked")
+        val expired = TaskTimelineState()
+            .start(phoneTaskId, notePlan)
+            .awaitApproval(phoneTaskId, "Approve creating Buy milk")
+            .expireApproval(phoneTaskId)
+        val cancelled = TaskTimelineState()
+            .start(phoneTaskId, notePlan)
+            .awaitApproval(phoneTaskId, "Approve creating Buy milk")
+            .cancelActive()
+
+        assertEquals(TaskPhase.CANCELLED, denied.entries.single().phase)
+        assertEquals(TaskPhase.FAILED, expired.entries.single().phase)
+        assertEquals(TaskPhase.CANCELLED, cancelled.entries.single().phase)
+        assertEquals("Approval cancelled; no phone tool was invoked", cancelled.entries.single().summary)
+        assertNull(denied.activeTaskId)
+        assertNull(expired.activeTaskId)
+        assertNull(denied.entries.single().lastStartAttempt)
+        assertNull(expired.entries.single().lastStartAttempt)
+        assertNull(cancelled.entries.single().lastStartAttempt)
+    }
+
+    @Test
+    fun cancellationAfterApprovedMutationStartsDoesNotClaimRollback() {
+        val notePlan = (GoffyIntentRouter.route("Create a note saying Buy milk") as RoutingDecision.Routed).plan
+        var state = TaskTimelineState()
+            .start(phoneTaskId, notePlan)
+            .awaitApproval(phoneTaskId, "Approve creating Buy milk")
+            .grantApproval(phoneTaskId)
+        state = state.apply(phoneTaskId, ExecutionEvent.Starting(1))
+        state = state.cancelActive()
+
+        assertEquals(TaskPhase.CANCELLED, state.entries.single().phase)
+        assertEquals(
+            "Cancellation requested; note completion is not guaranteed",
+            state.entries.single().summary,
+        )
     }
 
     private fun progress(

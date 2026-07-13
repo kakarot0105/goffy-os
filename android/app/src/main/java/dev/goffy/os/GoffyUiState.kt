@@ -19,6 +19,7 @@ data class GoffyUiState(
     val hubConfigured: Boolean = false,
     val hubEndpoint: String,
     val linkError: String? = null,
+    val pendingApproval: PendingApproval? = null,
 ) {
     val isBusy: Boolean
         get() = timeline.activeTaskId != null
@@ -40,12 +41,45 @@ data class GoffyUiState(
         hubEndpoint = defaultEndpoint,
         linkError = null,
         timeline = timeline.cancelActive(),
+        pendingApproval = null,
     )
 
     fun startTask(taskId: UUID, plan: GoffyExecutionPlan): GoffyUiState = copy(
         executionTarget = plan.executionTarget,
         timeline = timeline.start(taskId, plan),
     )
+
+    fun awaitApproval(approval: PendingApproval): GoffyUiState {
+        if (approval.taskId != timeline.activeTaskId || pendingApproval != null) return this
+        return copy(
+            timeline = timeline.awaitApproval(approval.taskId, approval.description),
+            pendingApproval = approval,
+        )
+    }
+
+    fun grantApproval(taskId: UUID): GoffyUiState {
+        if (pendingApproval?.taskId != taskId) return this
+        return copy(
+            timeline = timeline.grantApproval(taskId),
+            pendingApproval = null,
+        )
+    }
+
+    fun denyApproval(taskId: UUID, summary: String): GoffyUiState {
+        if (pendingApproval?.taskId != taskId) return this
+        return copy(
+            timeline = timeline.denyApproval(taskId, summary),
+            pendingApproval = null,
+        )
+    }
+
+    fun expireApproval(taskId: UUID): GoffyUiState {
+        if (pendingApproval?.taskId != taskId) return this
+        return copy(
+            timeline = timeline.expireApproval(taskId),
+            pendingApproval = null,
+        )
+    }
 
     fun applyTaskEvent(taskId: UUID, event: ExecutionEvent): GoffyUiState {
         if (taskId != timeline.activeTaskId) return this
@@ -69,6 +103,7 @@ data class GoffyUiState(
         return copy(
             macConnection = connection,
             timeline = nextTimeline,
+            pendingApproval = if (nextTimeline.activeTaskId == taskId) pendingApproval else null,
         )
     }
 
@@ -82,6 +117,7 @@ data class GoffyUiState(
         return copy(
             macConnection = if (cancellingMacTask) MacConnectionState.DISCONNECTED else macConnection,
             timeline = timeline.cancelActive(),
+            pendingApproval = null,
         )
     }
 
@@ -89,3 +125,11 @@ data class GoffyUiState(
         const val MAX_ERROR_LENGTH = 256
     }
 }
+
+data class PendingApproval(
+    val taskId: UUID,
+    val toolName: String,
+    val description: String,
+    val expiresAtEpochMillis: Long,
+    val durationSeconds: Long,
+)

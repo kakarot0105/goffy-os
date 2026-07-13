@@ -8,12 +8,15 @@ import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
+import dev.goffy.os.protocol.PhoneNoteCreated
+import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.ToolResultContent
 import dev.goffy.os.protocol.matchesToolContract
 import java.util.UUID
 
 enum class TaskPhase {
     ROUTING,
+    AWAITING_APPROVAL,
     PREPARING,
     ACCEPTED,
     COMPLETED_UNVERIFIED,
@@ -25,6 +28,7 @@ enum class TaskPhase {
 enum class TaskEventKind {
     OBSERVE,
     PLAN,
+    AUTHORIZE,
     PREPARE,
     TOOL,
     RESULT,
@@ -52,6 +56,7 @@ data class TaskTimelineEntry(
     val lastStartAttempt: Int? = null,
     val executionReady: Boolean = false,
     val permission: PermissionLevel? = null,
+    val approvalGranted: Boolean = false,
 )
 
 data class TaskTimelineState(
@@ -66,7 +71,7 @@ data class TaskTimelineState(
             executionTarget = plan.executionTarget,
             toolName = plan.toolName,
             phase = TaskPhase.ROUTING,
-            summary = "Safe deterministic route selected",
+            summary = "Deterministic route selected",
             events = listOf(
                 TaskTimelineEvent(TaskEventKind.OBSERVE, "Received typed command input"),
                 TaskTimelineEvent(
@@ -121,6 +126,74 @@ data class TaskTimelineState(
             activeTaskId = if (terminal) null else activeTaskId,
             entries = entries.toMutableList().also { it[index] = updated },
         )
+    }
+
+    fun awaitApproval(taskId: UUID, summary: String): TaskTimelineState {
+        if (taskId != activeTaskId) return this
+        val index = entries.indexOfLast { it.id == taskId }
+        if (index < 0) return copy(activeTaskId = null)
+        val current = entries[index]
+        val updated = if (
+            current.phase == TaskPhase.ROUTING &&
+            current.permission == PermissionLevel.CONFIRM &&
+            !current.approvalGranted
+        ) {
+            current.copy(
+                phase = TaskPhase.AWAITING_APPROVAL,
+                summary = summary.safeText(),
+            ).withEvent(TaskEventKind.AUTHORIZE, "Waiting for explicit one-time approval")
+        } else {
+            current.failSequence("Approval request failed task ordering checks")
+        }
+        return replaceEntry(index, updated)
+    }
+
+    fun grantApproval(taskId: UUID): TaskTimelineState {
+        if (taskId != activeTaskId) return this
+        val index = entries.indexOfLast { it.id == taskId }
+        if (index < 0) return copy(activeTaskId = null)
+        val current = entries[index]
+        val updated = if (
+            current.phase == TaskPhase.AWAITING_APPROVAL &&
+            current.permission == PermissionLevel.CONFIRM &&
+            !current.approvalGranted
+        ) {
+            current.copy(
+                phase = TaskPhase.ROUTING,
+                summary = "Approved once; preparing local execution",
+                approvalGranted = true,
+            ).withEvent(TaskEventKind.AUTHORIZE, "User approved one execution")
+        } else {
+            current.failSequence("Approval grant failed task ordering checks")
+        }
+        return replaceEntry(index, updated)
+    }
+
+    fun denyApproval(taskId: UUID, summary: String): TaskTimelineState {
+        if (taskId != activeTaskId) return this
+        val index = entries.indexOfLast { it.id == taskId }
+        if (index < 0) return copy(activeTaskId = null)
+        val current = entries[index]
+        if (current.phase != TaskPhase.AWAITING_APPROVAL) return this
+        val updated = current.copy(
+            phase = TaskPhase.CANCELLED,
+            summary = summary.safeText(),
+        ).withEvent(TaskEventKind.AUTHORIZE, summary)
+        return replaceEntry(index, updated)
+    }
+
+    fun expireApproval(taskId: UUID): TaskTimelineState {
+        if (taskId != activeTaskId) return this
+        val index = entries.indexOfLast { it.id == taskId }
+        if (index < 0) return copy(activeTaskId = null)
+        val current = entries[index]
+        if (current.phase != TaskPhase.AWAITING_APPROVAL) return this
+        val summary = "Approval expired; no phone tool was invoked"
+        val updated = current.copy(
+            phase = TaskPhase.FAILED,
+            summary = summary,
+        ).withEvent(TaskEventKind.ERROR, summary)
+        return replaceEntry(index, updated)
     }
 
     fun cancelActive(): TaskTimelineState {
@@ -182,7 +255,7 @@ data class TaskTimelineState(
         }
         return current.copy(
             phase = TaskPhase.COMPLETED_UNVERIFIED,
-            summary = event.content.summaryText(),
+            summary = event.content.summaryText().safeText(),
             result = event.content,
         ).withEvent(
             TaskEventKind.RESULT,
@@ -227,7 +300,8 @@ data class TaskTimelineState(
         val expectedAttempt = (current.lastStartAttempt ?: 0) + 1
         if (event.attempt != expectedAttempt ||
             current.phase !in setOf(TaskPhase.ROUTING, TaskPhase.PREPARING) ||
-            current.lastProgressSequence != null
+            current.lastProgressSequence != null ||
+            (current.permission == PermissionLevel.CONFIRM && !current.approvalGranted)
         ) {
             return current.failSequence("Execution start event failed ordering checks")
         }
@@ -260,8 +334,18 @@ data class TaskTimelineState(
         PHONE_DEVICE_INFO_TOOL -> executionTarget == ExecutionTarget.PHONE &&
             content is PhoneDeviceInfo &&
             content.matchesToolContract()
+        PHONE_NOTE_CREATE_TOOL -> executionTarget == ExecutionTarget.PHONE &&
+            permission == PermissionLevel.CONFIRM &&
+            approvalGranted &&
+            content is PhoneNoteCreated &&
+            content.matchesToolContract()
         else -> false
     }
+
+    private fun replaceEntry(index: Int, updated: TaskTimelineEntry): TaskTimelineState = copy(
+        activeTaskId = if (updated.phase in TERMINAL_PHASES) null else activeTaskId,
+        entries = entries.toMutableList().also { it[index] = updated },
+    )
 
     private fun TaskTimelineEntry.startingSummary(attempt: Int): String = when (executionTarget) {
         ExecutionTarget.MAC ->
@@ -290,17 +374,27 @@ data class TaskTimelineState(
         ExecutionTarget.CLOUD -> "CLOUD execution ready"
     }
 
-    private fun TaskTimelineEntry.cancellationSummary(): String = when (executionTarget) {
-        ExecutionTarget.MAC -> "Cancelled locally; Hub completion is not guaranteed"
-        ExecutionTarget.PHONE -> "Local PHONE execution cancelled"
-        ExecutionTarget.CLOUD -> "Cancelled locally; remote completion is not guaranteed"
-    }
+    private fun TaskTimelineEntry.cancellationSummary(): String =
+        if (phase == TaskPhase.AWAITING_APPROVAL) {
+            "Approval cancelled; no phone tool was invoked"
+        } else if (permission == PermissionLevel.CONFIRM && lastStartAttempt != null) {
+            "Cancellation requested; note completion is not guaranteed"
+        } else when (executionTarget) {
+            ExecutionTarget.MAC -> "Cancelled locally; Hub completion is not guaranteed"
+            ExecutionTarget.PHONE -> "Local PHONE execution cancelled"
+            ExecutionTarget.CLOUD -> "Cancelled locally; remote completion is not guaranteed"
+        }
 
-    private fun TaskTimelineEntry.cancellationEventMessage(): String = when (executionTarget) {
-        ExecutionTarget.MAC -> "User cancelled the local Hub connection"
-        ExecutionTarget.PHONE -> "User cancelled local PHONE execution"
-        ExecutionTarget.CLOUD -> "User cancelled the local request"
-    }
+    private fun TaskTimelineEntry.cancellationEventMessage(): String =
+        if (phase == TaskPhase.AWAITING_APPROVAL) {
+            "User cancelled before approval; no phone tool was invoked"
+        } else if (permission == PermissionLevel.CONFIRM && lastStartAttempt != null) {
+            "User requested cancellation after confirmed execution started"
+        } else when (executionTarget) {
+            ExecutionTarget.MAC -> "User cancelled the local Hub connection"
+            ExecutionTarget.PHONE -> "User cancelled local PHONE execution"
+            ExecutionTarget.CLOUD -> "User cancelled the local request"
+        }
 
     private companion object {
         const val MAX_TIMELINE_ITEMS = 50
@@ -317,4 +411,5 @@ private fun ToolResultContent.summaryText(): String = when (this) {
     is MacSystemInfo -> "$operatingSystem $architecture: $status"
     is PhoneBatteryStatus -> "Battery $levelPercent%: ${if (charging) "charging" else "not charging"}"
     is PhoneDeviceInfo -> "$manufacturer $model / Android $androidRelease (API $sdkInt)"
+    is PhoneNoteCreated -> "Note #$noteId stored: $text"
 }

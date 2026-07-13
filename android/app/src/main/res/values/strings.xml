@@ -26,9 +26,14 @@
     <string name="command_hint">Ask GOFFY to do something</string>
     <string name="send_command">Send</string>
     <string name="cancel_task">Cancel</string>
+    <string name="approval_required">APPROVAL REQUIRED</string>
+    <string name="approval_expiry">Expires after %1$d seconds</string>
+    <string name="approve_once">Approve once</string>
+    <string name="deny_action">Deny</string>
     <string name="battery_charging">CHARGING</string>
     <string name="battery_on_battery">ON BATTERY</string>
     <string name="device_info_details">%1$s / Android %2$s / API %3$d</string>
+    <string name="note_created">PRIVATE NOTE #%1$d</string>
     <string name="microphone_placeholder">Voice input is coming in Milestone 4</string>
     <string name="camera_placeholder">Camera input is coming in Milestone 4</string>
     <string name="microphone_short">MIC</string>

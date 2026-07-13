@@ -4,13 +4,22 @@ import dev.goffy.os.agent.GoffyExecutionPlan
 import dev.goffy.os.agent.PermissionLevel
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
+import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
+import dev.goffy.os.protocol.PhoneNoteCreateArguments
+import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.ToolProgress
+import dev.goffy.os.protocol.ToolArguments
 import dev.goffy.os.protocol.ToolResultContent
+import dev.goffy.os.protocol.matchesNoteTextContract
 import dev.goffy.os.protocol.matchesToolContract
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -28,8 +37,43 @@ fun interface DeviceInfoSource {
     suspend fun read(): PhoneDeviceInfo
 }
 
+interface NoteStore {
+    suspend fun create(text: String): PhoneNoteCreated
+
+    fun close()
+}
+
+sealed interface PhoneToolAuthorization {
+    data object Safe : PhoneToolAuthorization
+
+    class Approved internal constructor(
+        private val taskId: UUID,
+        private val toolName: String,
+        private val arguments: ToolArguments,
+        private val expiresAtEpochMillis: Long,
+    ) : PhoneToolAuthorization {
+        private val consumed = AtomicBoolean(false)
+
+        internal fun consumeFor(
+            taskId: UUID,
+            toolName: String,
+            arguments: ToolArguments,
+            nowEpochMillis: Long,
+        ): Boolean =
+            this.taskId == taskId &&
+                this.toolName == toolName &&
+                this.arguments == arguments &&
+                nowEpochMillis < expiresAtEpochMillis &&
+                consumed.compareAndSet(false, true)
+    }
+}
+
 interface PhoneToolGateway {
-    fun invoke(plan: GoffyExecutionPlan): Flow<ExecutionEvent>
+    fun invoke(
+        taskId: UUID,
+        plan: GoffyExecutionPlan,
+        authorization: PhoneToolAuthorization,
+    ): Flow<ExecutionEvent>
 
     fun close()
 }
@@ -37,15 +81,23 @@ interface PhoneToolGateway {
 class DefaultPhoneToolGateway internal constructor(
     private val batteryStatusSource: BatteryStatusSource,
     private val deviceInfoSource: DeviceInfoSource,
+    private val noteStore: NoteStore,
     private val readDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
+    private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : PhoneToolGateway {
+    private val consumedConfirmTaskIds = ConcurrentHashMap.newKeySet<UUID>()
+
     init {
         require(timeoutMillis > 0) { "timeoutMillis must be positive" }
     }
 
-    override fun invoke(plan: GoffyExecutionPlan): Flow<ExecutionEvent> = flow {
-        val operation = plan.toAllowedOperation()
+    override fun invoke(
+        taskId: UUID,
+        plan: GoffyExecutionPlan,
+        authorization: PhoneToolAuthorization,
+    ): Flow<ExecutionEvent> = flow {
+        val operation = plan.toAllowedOperation(taskId, authorization)
         if (operation == null) {
             emit(
                 ExecutionEvent.Error(
@@ -134,12 +186,22 @@ class DefaultPhoneToolGateway internal constructor(
         )
     }
 
-    override fun close() = Unit
+    override fun close() {
+        consumedConfirmTaskIds.clear()
+        noteStore.close()
+    }
 
-    private fun GoffyExecutionPlan.toAllowedOperation(): PhoneToolOperation? {
-        if (executionTarget != ExecutionTarget.PHONE || permission != PermissionLevel.SAFE) return null
+    private fun GoffyExecutionPlan.toAllowedOperation(
+        taskId: UUID,
+        authorization: PhoneToolAuthorization,
+    ): PhoneToolOperation? {
+        if (executionTarget != ExecutionTarget.PHONE) return null
         return when (toolName) {
-            PHONE_BATTERY_STATUS_TOOL -> PhoneToolOperation(
+            PHONE_BATTERY_STATUS_TOOL -> if (
+                permission == PermissionLevel.SAFE &&
+                arguments == NoToolArguments &&
+                authorization == PhoneToolAuthorization.Safe
+            ) PhoneToolOperation(
                 toolName = PHONE_BATTERY_STATUS_TOOL,
                 acceptedMessage = "Battery status read accepted on this phone.",
                 completedMessage = "BatteryManager returned validated local status.",
@@ -152,8 +214,12 @@ class DefaultPhoneToolGateway internal constructor(
                     "battery percentage range",
                     "typed output",
                 ),
-            )
-            PHONE_DEVICE_INFO_TOOL -> PhoneToolOperation(
+            ) else null
+            PHONE_DEVICE_INFO_TOOL -> if (
+                permission == PermissionLevel.SAFE &&
+                arguments == NoToolArguments &&
+                authorization == PhoneToolAuthorization.Safe
+            ) PhoneToolOperation(
                 toolName = PHONE_DEVICE_INFO_TOOL,
                 acceptedMessage = "Privacy-minimized device info read accepted on this phone.",
                 completedMessage = "Android Build returned validated display information.",
@@ -167,7 +233,37 @@ class DefaultPhoneToolGateway internal constructor(
                     "field bounds and control characters",
                     "minimum SDK contract",
                 ),
-            )
+            ) else null
+            PHONE_NOTE_CREATE_TOOL -> {
+                val noteArguments = arguments as? PhoneNoteCreateArguments ?: return null
+                val approved = authorization as? PhoneToolAuthorization.Approved ?: return null
+                if (permission != PermissionLevel.CONFIRM ||
+                    !noteArguments.text.matchesNoteTextContract() ||
+                    !approved.consumeFor(taskId, PHONE_NOTE_CREATE_TOOL, arguments, nowMillis()) ||
+                    !consumedConfirmTaskIds.add(taskId)
+                ) {
+                    return null
+                }
+                PhoneToolOperation(
+                    toolName = PHONE_NOTE_CREATE_TOOL,
+                    acceptedMessage = "Approved note creation accepted on this phone.",
+                    completedMessage = "The app-private note row was written and re-read.",
+                    failureMessage = "The note could not be stored and verified",
+                    read = { noteStore.create(noteArguments.text) },
+                    validate = { content ->
+                        content is PhoneNoteCreated &&
+                            content.text == noteArguments.text &&
+                            content.matchesToolContract()
+                    },
+                    verificationSummary = "The approved note was stored and re-read successfully.",
+                    verificationChecks = listOf(
+                        "single-use approval",
+                        "app-private database",
+                        "exact text match",
+                        "post-write row read",
+                    ),
+                )
+            }
             else -> null
         }
     }

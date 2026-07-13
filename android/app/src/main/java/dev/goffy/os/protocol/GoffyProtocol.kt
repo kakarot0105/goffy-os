@@ -53,6 +53,14 @@ data class ToolProgress(
 
 sealed interface ToolResultContent
 
+sealed interface ToolArguments
+
+data object NoToolArguments : ToolArguments
+
+data class PhoneNoteCreateArguments(
+    val text: String,
+) : ToolArguments
+
 data class MacSystemInfo(
     val status: String,
     val operatingSystem: String,
@@ -69,6 +77,12 @@ data class PhoneDeviceInfo(
     val model: String,
     val androidRelease: String,
     val sdkInt: Int,
+) : ToolResultContent
+
+data class PhoneNoteCreated(
+    val noteId: Long,
+    val text: String,
+    val createdAtEpochMillis: Long,
 ) : ToolResultContent
 
 sealed interface ExecutionEvent {

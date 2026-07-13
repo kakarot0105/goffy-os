@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import dev.goffy.os.agent.GoffyExecutionPlan
 import dev.goffy.os.agent.GoffyIntentRouter
+import dev.goffy.os.agent.PermissionLevel
 import dev.goffy.os.agent.RoutingDecision
 import dev.goffy.os.hub.HubConfig
 import dev.goffy.os.hub.HubConfigurationException
@@ -13,15 +14,19 @@ import dev.goffy.os.hub.HubGateway
 import dev.goffy.os.hub.OkHttpHubGateway
 import dev.goffy.os.phone.AndroidBatteryStatusSource
 import dev.goffy.os.phone.AndroidDeviceInfoSource
+import dev.goffy.os.phone.AndroidSqliteNoteStore
 import dev.goffy.os.phone.DefaultPhoneToolGateway
 import dev.goffy.os.phone.PhoneToolGateway
+import dev.goffy.os.phone.PhoneToolAuthorization
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GoffyProtocolCodec
+import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,12 +41,15 @@ class GoffyViewModel internal constructor(
     private val defaultEndpoint: String,
     private val deviceId: String,
     private val nextTaskId: () -> UUID,
+    private val approvalTtlMillis: Long = DEFAULT_APPROVAL_TTL_MILLIS,
+    private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
     constructor(context: Context) : this(
         gateway = OkHttpHubGateway(),
         phoneGateway = DefaultPhoneToolGateway(
             batteryStatusSource = AndroidBatteryStatusSource(context),
             deviceInfoSource = AndroidDeviceInfoSource(),
+            noteStore = AndroidSqliteNoteStore(context),
         ),
         codec = GoffyProtocolCodec(),
         allowInsecureLoopback = BuildConfig.DEBUG,
@@ -50,11 +58,17 @@ class GoffyViewModel internal constructor(
         nextTaskId = UUID::randomUUID,
     )
 
+    init {
+        require(approvalTtlMillis > 0) { "approvalTtlMillis must be positive" }
+    }
+
     private val mutableUiState = MutableStateFlow(GoffyUiState(hubEndpoint = defaultEndpoint))
     val uiState: StateFlow<GoffyUiState> = mutableUiState.asStateFlow()
 
     private var hubConfig: HubConfig? = null
     private var activeJob: Job? = null
+    private var pendingExecution: PendingPhoneExecution? = null
+    private var approvalExpiryJob: Job? = null
 
     fun configureHub(endpoint: String, bearerToken: String): Boolean {
         val config = try {
@@ -96,10 +110,7 @@ class GoffyViewModel internal constructor(
 
         val plan = (decision as RoutingDecision.Routed).plan
         when (plan.executionTarget) {
-            ExecutionTarget.PHONE -> {
-                val taskId = nextTaskId()
-                executeTask(taskId, plan, phoneGateway.invoke(plan))
-            }
+            ExecutionTarget.PHONE -> submitPhonePlan(plan)
             ExecutionTarget.MAC -> {
                 val config = hubConfig
                 if (config == null) {
@@ -119,12 +130,110 @@ class GoffyViewModel internal constructor(
         }
     }
 
+    private fun submitPhonePlan(plan: GoffyExecutionPlan) {
+        val taskId = nextTaskId()
+        when (plan.permission) {
+            PermissionLevel.SAFE -> executeTask(
+                taskId,
+                plan,
+                phoneGateway.invoke(taskId, plan, PhoneToolAuthorization.Safe),
+            )
+            PermissionLevel.CONFIRM -> requestPhoneApproval(taskId, plan)
+            PermissionLevel.SENSITIVE,
+            PermissionLevel.BLOCKED,
+            -> mutableUiState.value = mutableUiState.value.rejectCommand(
+                plan.command,
+                "This phone action is blocked in the current security policy",
+            )
+        }
+    }
+
+    private fun requestPhoneApproval(taskId: UUID, plan: GoffyExecutionPlan) {
+        val note = plan.arguments as? PhoneNoteCreateArguments
+        if (note == null) {
+            mutableUiState.value = mutableUiState.value.rejectCommand(
+                plan.command,
+                "The confirmation request did not match a typed phone tool",
+            )
+            return
+        }
+        val expiresAt = nowMillis() + approvalTtlMillis
+        val approval = PendingApproval(
+            taskId = taskId,
+            toolName = plan.toolName,
+            description = "Approve creating this private note: ${note.text.take(APPROVAL_PREVIEW_LENGTH)}",
+            expiresAtEpochMillis = expiresAt,
+            durationSeconds = (approvalTtlMillis + 999L) / 1_000L,
+        )
+        mutableUiState.value = mutableUiState.value.startTask(taskId, plan).awaitApproval(approval)
+        pendingExecution = PendingPhoneExecution(taskId, plan, expiresAt)
+        approvalExpiryJob = viewModelScope.launch {
+            delay(approvalTtlMillis)
+            expirePendingApproval(taskId)
+        }
+    }
+
+    fun approvePendingTask(taskId: UUID): Boolean {
+        val pending = pendingExecution ?: return false
+        if (pending.taskId != taskId) return false
+        if (nowMillis() >= pending.expiresAtEpochMillis) {
+            expirePendingApproval(taskId)
+            return false
+        }
+        pendingExecution = null
+        approvalExpiryJob?.cancel()
+        approvalExpiryJob = null
+        mutableUiState.value = mutableUiState.value.grantApproval(taskId)
+        collectTask(
+            taskId,
+            phoneGateway.invoke(
+                taskId,
+                pending.plan,
+                PhoneToolAuthorization.Approved(
+                    taskId,
+                    pending.plan.toolName,
+                    pending.plan.arguments,
+                    pending.expiresAtEpochMillis,
+                ),
+            ),
+        )
+        return true
+    }
+
+    fun denyPendingTask(taskId: UUID): Boolean {
+        val pending = pendingExecution ?: return false
+        if (pending.taskId != taskId) return false
+        pendingExecution = null
+        approvalExpiryJob?.cancel()
+        approvalExpiryJob = null
+        mutableUiState.value = mutableUiState.value.denyApproval(
+            taskId,
+            "Approval denied; no phone tool was invoked",
+        )
+        return true
+    }
+
+    private fun expirePendingApproval(taskId: UUID) {
+        val pending = pendingExecution ?: return
+        if (pending.taskId != taskId) return
+        pendingExecution = null
+        approvalExpiryJob = null
+        mutableUiState.value = mutableUiState.value.expireApproval(taskId)
+    }
+
     private fun executeTask(
         taskId: UUID,
         plan: GoffyExecutionPlan,
         events: Flow<ExecutionEvent>,
     ) {
         mutableUiState.value = mutableUiState.value.startTask(taskId, plan)
+        collectTask(taskId, events)
+    }
+
+    private fun collectTask(
+        taskId: UUID,
+        events: Flow<ExecutionEvent>,
+    ) {
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             try {
                 events.collect { event ->
@@ -162,12 +271,24 @@ class GoffyViewModel internal constructor(
     }
 
     fun cancelActiveTask() {
+        val pending = pendingExecution
+        if (pending != null) {
+            pendingExecution = null
+            approvalExpiryJob?.cancel()
+            approvalExpiryJob = null
+            mutableUiState.value = mutableUiState.value.denyApproval(
+                pending.taskId,
+                "Approval cancelled; no phone tool was invoked",
+            )
+            return
+        }
         activeJob?.cancel()
         activeJob = null
         mutableUiState.value = mutableUiState.value.cancelActiveTask()
     }
 
     override fun onCleared() {
+        approvalExpiryJob?.cancel()
         phoneGateway.close()
         gateway.close()
         super.onCleared()
@@ -188,5 +309,13 @@ class GoffyViewModel internal constructor(
     private companion object {
         const val DEBUG_HUB_ENDPOINT = "ws://127.0.0.1:8787/ws/v1"
         const val RELEASE_HUB_ENDPOINT_HINT = "wss://your-mac.example:8787/ws/v1"
+        const val DEFAULT_APPROVAL_TTL_MILLIS = 60_000L
+        const val APPROVAL_PREVIEW_LENGTH = 160
     }
+
+    private data class PendingPhoneExecution(
+        val taskId: UUID,
+        val plan: GoffyExecutionPlan,
+        val expiresAtEpochMillis: Long,
+    )
 }

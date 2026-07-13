@@ -29,7 +29,9 @@
 - [x] Typed PHONE and MAC execution result boundary
 - [x] PHONE, MAC, and CLOUD target state
 - [x] Privacy-minimized `phone.device.info`
-- [ ] Approval-gated flashlight, note, and timer tools
+- [x] Visible, expiring, exact-task approval lifecycle
+- [x] Approval-gated app-private `phone.note.create` with post-write verification
+- [ ] Approval-gated flashlight and timer tools
 - [ ] Physical Moto G battery-status verification
 
 ## Milestones 3-8

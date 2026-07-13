@@ -8,6 +8,10 @@ import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
+import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
+import dev.goffy.os.protocol.PhoneNoteCreateArguments
+import dev.goffy.os.protocol.PhoneNoteCreated
+import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
@@ -23,6 +27,8 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PhoneToolGatewayTest {
+    private val taskId = UUID.fromString("11111111-1111-4111-8111-111111111111")
+
     @Test
     fun emitsTypedVerifiedBatteryStatusWithoutNetwork() = runTest {
         var reads = 0
@@ -38,7 +44,7 @@ class PhoneToolGatewayTest {
             },
         )
 
-        val events = gateway.invoke(batteryPlan()).toList()
+        val events = gateway.invokeSafe(batteryPlan()).toList()
 
         assertEquals(1, reads)
         assertEquals(0, deviceReads)
@@ -69,7 +75,7 @@ class PhoneToolGatewayTest {
             },
         )
 
-        val events = gateway.invoke(deviceInfoPlan()).toList()
+        val events = gateway.invokeSafe(deviceInfoPlan()).toList()
 
         assertEquals(0, batteryReads)
         assertEquals(1, deviceReads)
@@ -95,7 +101,7 @@ class PhoneToolGatewayTest {
         )
         val plan = batteryPlan().copy(permission = PermissionLevel.CONFIRM)
 
-        val events = gateway.invoke(plan).toList()
+        val events = gateway.invokeSafe(plan).toList()
 
         assertFalse(read)
         assertEquals("phone_tool_unauthorized", (events.single() as ExecutionEvent.Error).code)
@@ -117,8 +123,8 @@ class PhoneToolGatewayTest {
         val unknown = deviceInfoPlan().copy(toolName = "phone.device.serial")
         val wrongTarget = deviceInfoPlan().copy(executionTarget = ExecutionTarget.MAC)
 
-        val unknownEvents = gateway.invoke(unknown).toList()
-        val wrongTargetEvents = gateway.invoke(wrongTarget).toList()
+        val unknownEvents = gateway.invokeSafe(unknown).toList()
+        val wrongTargetEvents = gateway.invokeSafe(wrongTarget).toList()
 
         assertEquals(0, reads)
         assertEquals("phone_tool_unauthorized", (unknownEvents.single() as ExecutionEvent.Error).code)
@@ -130,8 +136,8 @@ class PhoneToolGatewayTest {
         val invalid = testGateway(batteryRead = { PhoneBatteryStatus(-1, false) })
         val unavailable = testGateway(batteryRead = { error("not supported") })
 
-        val invalidEvents = invalid.invoke(batteryPlan()).toList()
-        val unavailableEvents = unavailable.invoke(batteryPlan()).toList()
+        val invalidEvents = invalid.invokeSafe(batteryPlan()).toList()
+        val unavailableEvents = unavailable.invokeSafe(batteryPlan()).toList()
 
         assertEquals("invalid_tool_output", (invalidEvents.last() as ExecutionEvent.Error).code)
         assertEquals("phone_tool_failed", (unavailableEvents.last() as ExecutionEvent.Error).code)
@@ -151,13 +157,13 @@ class PhoneToolGatewayTest {
         )
 
         invalidValues.forEach { invalid ->
-            val events = testGateway(deviceRead = { invalid }).invoke(deviceInfoPlan()).toList()
+            val events = testGateway(deviceRead = { invalid }).invokeSafe(deviceInfoPlan()).toList()
             assertEquals("invalid_tool_output", (events.last() as ExecutionEvent.Error).code)
             assertTrue(events.none { it is ExecutionEvent.Verification })
         }
 
         val unavailable = testGateway(deviceRead = { error("not supported") })
-            .invoke(deviceInfoPlan())
+            .invokeSafe(deviceInfoPlan())
             .toList()
         assertEquals("phone_tool_failed", (unavailable.last() as ExecutionEvent.Error).code)
         assertTrue(unavailable.none { it is ExecutionEvent.Verification })
@@ -168,11 +174,12 @@ class PhoneToolGatewayTest {
         val gateway = DefaultPhoneToolGateway(
             batteryStatusSource = { awaitCancellation() },
             deviceInfoSource = { validDeviceInfo() },
+            noteStore = fakeNoteStore(),
             readDispatcher = Dispatchers.Unconfined,
             timeoutMillis = 100,
         )
 
-        val events = gateway.invoke(batteryPlan()).toList()
+        val events = gateway.invokeSafe(batteryPlan()).toList()
 
         assertEquals("phone_tool_timeout", (events.last() as ExecutionEvent.Error).code)
         assertTrue(events.none { it is ExecutionEvent.Verification })
@@ -191,11 +198,100 @@ class PhoneToolGatewayTest {
             },
         )
 
-        val collection = launch { gateway.invoke(deviceInfoPlan()).toList() }
+        val collection = launch { gateway.invokeSafe(deviceInfoPlan()).toList() }
         runCurrent()
         collection.cancelAndJoin()
 
         assertTrue(sourceCancelled)
+    }
+
+    @Test
+    fun noteCreationRequiresExactSingleUseApprovalAndVerifiesStoredText() = runTest {
+        val noteStore = RecordingNoteStore()
+        val gateway = testGateway(noteStore = noteStore)
+        val plan = notePlan("Buy milk")
+
+        val safeEvents = gateway.invoke(taskId, plan, PhoneToolAuthorization.Safe).toList()
+        assertEquals("phone_tool_unauthorized", (safeEvents.single() as ExecutionEvent.Error).code)
+        assertEquals(0, noteStore.creates)
+
+        val approval = approval(plan)
+        val independentlyMintedReplay = approval(plan)
+        val approvedEvents = gateway.invoke(taskId, plan, approval).toList()
+        val replayEvents = gateway.invoke(taskId, plan, independentlyMintedReplay).toList()
+
+        assertEquals(1, noteStore.creates)
+        assertEquals("Buy milk", noteStore.lastText)
+        assertEquals(PhoneNoteCreated(1, "Buy milk", 1_720_000_000_000), (approvedEvents[4] as ExecutionEvent.Result).content)
+        assertTrue((approvedEvents.last() as ExecutionEvent.Verification).succeeded)
+        assertEquals("phone_tool_unauthorized", (replayEvents.single() as ExecutionEvent.Error).code)
+    }
+
+    @Test
+    fun staleOrWrongToolApprovalCannotReachTheNoteStore() = runTest {
+        val noteStore = RecordingNoteStore()
+        val gateway = testGateway(noteStore = noteStore)
+        val plan = notePlan("Buy milk")
+        val otherTask = UUID.fromString("22222222-2222-4222-8222-222222222222")
+
+        val stale = gateway.invoke(
+            taskId,
+            plan,
+            approval(plan, approvedTaskId = otherTask),
+        ).toList()
+        val wrongTool = gateway.invoke(
+            taskId,
+            plan,
+            approval(plan, approvedToolName = PHONE_DEVICE_INFO_TOOL),
+        ).toList()
+
+        assertEquals(0, noteStore.creates)
+        assertEquals("phone_tool_unauthorized", (stale.single() as ExecutionEvent.Error).code)
+        assertEquals("phone_tool_unauthorized", (wrongTool.single() as ExecutionEvent.Error).code)
+    }
+
+    @Test
+    fun mismatchedPostWriteResultFailsWithoutClaimingVerification() = runTest {
+        val noteStore = RecordingNoteStore { text ->
+            PhoneNoteCreated(1, "$text changed", 1_720_000_000_000)
+        }
+        val gateway = testGateway(noteStore = noteStore)
+        val plan = notePlan("Buy milk")
+
+        val events = gateway.invoke(
+            taskId,
+            plan,
+            approval(plan),
+        ).toList()
+
+        assertEquals(1, noteStore.creates)
+        assertEquals("invalid_tool_output", (events.last() as ExecutionEvent.Error).code)
+        assertTrue(events.none { it is ExecutionEvent.Verification })
+    }
+
+    @Test
+    fun approvalBindsExactArgumentsAndExpiresAtTheGatewayBoundary() = runTest {
+        var now = 100L
+        val noteStore = RecordingNoteStore()
+        val gateway = testGateway(noteStore = noteStore, nowMillis = { now })
+        val alpha = notePlan("alpha")
+        val beta = notePlan("beta")
+
+        val changedArguments = gateway.invoke(taskId, beta, approval(alpha, expiresAt = 200)).toList()
+        now = 200L
+        val expired = gateway.invoke(
+            UUID.fromString("33333333-3333-4333-8333-333333333333"),
+            alpha,
+            approval(
+                alpha,
+                approvedTaskId = UUID.fromString("33333333-3333-4333-8333-333333333333"),
+                expiresAt = 200,
+            ),
+        ).toList()
+
+        assertEquals(0, noteStore.creates)
+        assertEquals("phone_tool_unauthorized", (changedArguments.single() as ExecutionEvent.Error).code)
+        assertEquals("phone_tool_unauthorized", (expired.single() as ExecutionEvent.Error).code)
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -203,6 +299,7 @@ class PhoneToolGatewayTest {
         DefaultPhoneToolGateway(
             batteryStatusSource = { PhoneBatteryStatus(50, false) },
             deviceInfoSource = { validDeviceInfo() },
+            noteStore = fakeNoteStore(),
             readDispatcher = Dispatchers.Unconfined,
             timeoutMillis = 0,
         )
@@ -211,12 +308,26 @@ class PhoneToolGatewayTest {
     private fun testGateway(
         batteryRead: BatteryStatusSource = BatteryStatusSource { PhoneBatteryStatus(50, false) },
         deviceRead: DeviceInfoSource = DeviceInfoSource { validDeviceInfo() },
+        noteStore: NoteStore = fakeNoteStore(),
+        nowMillis: () -> Long = { 100L },
     ): DefaultPhoneToolGateway =
         DefaultPhoneToolGateway(
             batteryStatusSource = batteryRead,
             deviceInfoSource = deviceRead,
+            noteStore = noteStore,
             readDispatcher = Dispatchers.Unconfined,
+            nowMillis = nowMillis,
         )
+
+    private fun PhoneToolGateway.invokeSafe(plan: GoffyExecutionPlan) =
+        invoke(taskId, plan, PhoneToolAuthorization.Safe)
+
+    private fun fakeNoteStore(): NoteStore = object : NoteStore {
+        override suspend fun create(text: String): PhoneNoteCreated =
+            PhoneNoteCreated(1, text, 1)
+
+        override fun close() = Unit
+    }
 
     private fun batteryPlan(): GoffyExecutionPlan = GoffyExecutionPlan(
         command = "Show my battery status",
@@ -234,10 +345,48 @@ class PhoneToolGatewayTest {
         successCriteria = listOf("Device info is validated locally"),
     )
 
+    private fun notePlan(text: String): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = "Create a note saying $text",
+        executionTarget = ExecutionTarget.PHONE,
+        toolName = PHONE_NOTE_CREATE_TOOL,
+        permission = PermissionLevel.CONFIRM,
+        successCriteria = listOf("Stored note is re-read"),
+        arguments = PhoneNoteCreateArguments(text),
+    )
+
+    private fun approval(
+        plan: GoffyExecutionPlan,
+        approvedTaskId: UUID = taskId,
+        approvedToolName: String = PHONE_NOTE_CREATE_TOOL,
+        expiresAt: Long = 200L,
+    ): PhoneToolAuthorization.Approved = PhoneToolAuthorization.Approved(
+        approvedTaskId,
+        approvedToolName,
+        plan.arguments,
+        expiresAt,
+    )
+
     private fun validDeviceInfo(): PhoneDeviceInfo = PhoneDeviceInfo(
         manufacturer = "motorola",
         model = "moto g",
         androidRelease = "15",
         sdkInt = 35,
     )
+
+    private class RecordingNoteStore(
+        private val result: (String) -> PhoneNoteCreated = { text ->
+            PhoneNoteCreated(1, text, 1_720_000_000_000)
+        },
+    ) : NoteStore {
+        var creates = 0
+        var lastText: String? = null
+
+        override suspend fun create(text: String): PhoneNoteCreated {
+            creates += 1
+            lastText = text
+            return result(text)
+        }
+
+        override fun close() = Unit
+    }
 }

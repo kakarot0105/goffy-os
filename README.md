@@ -5,7 +5,7 @@ Android phone provides the command surface and small local engine; a macOS Hub
 provides controlled access to heavier local capabilities. MCP-compatible typed
 tools are the capability boundary.
 
-> Status: Milestone 2 phone engine in progress. The current repo implements two
+> Status: Milestone 2 phone engine in progress. The current repo implements three
 > offline PHONE actions and the software path for one SAFE Mac action, but physical
 > Moto G verification, pairing, and trusted LAN transport remain open.
 
@@ -16,6 +16,8 @@ tools are the capability boundary.
 - Offline deterministic route for battery status commands
 - Permission-free, allowlisted `SAFE phone.battery.status` execution
 - Privacy-minimized, offline `SAFE phone.device.info` execution
+- Approval-gated `CONFIRM phone.note.create` with app-private SQLite persistence
+- Exact-task, exact-arguments, expiring, single-use phone approval grants
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
 - FastAPI Hub bound to `127.0.0.1` by default
 - Versioned, typed phone-to-Hub protocol models
@@ -71,6 +73,11 @@ project. The minimum SDK is 26. Command-line verification is:
 
 See [Android setup](docs/setup/android.md) for the USB localhost debug flow.
 Physical Moto G verification for this slice is still open.
+
+To exercise the local mutation path, enter `Create a note saying Buy milk`. GOFFY
+must show an approval card and perform no write until `Approve once` is tapped.
+The resulting task is successful only after the stored row is re-read and matches
+the approved text. Denial, cancellation, and the 60-second timeout invoke no tool.
 
 This is an Android application layer, not a flashable replacement ROM. A custom
 ROM remains a later hardware-specific project after the agent runtime is proven.

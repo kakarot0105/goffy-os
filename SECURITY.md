@@ -34,6 +34,11 @@ include real credentials or unrelated personal data.
   validates its typed output, and requires no Android permission or background receiver.
 - `phone.device.info` returns only manufacturer, user-visible model, Android release,
   and SDK level. It excludes hardware, advertising, account, network, and build identifiers.
+- `phone.note.create` requires a visible one-time approval bound to the task ID,
+  tool, exact typed arguments, and expiry. Replayed, changed, stale, or expired grants fail closed.
+- Notes use the app-private SQLite database, Android backup is disabled, SQL values
+  are bound through `ContentValues` and selection arguments, and every insert is
+  re-read inside the transaction before verification is reported.
 - `mac.system_info` uses Python standard-library APIs and never invokes a shell.
 - Protocol inputs reject unknown fields and unsupported versions.
 - Errors returned to clients are stable codes without stack traces or secrets.
@@ -47,5 +52,6 @@ include real credentials or unrelated personal data.
 - Background camera or microphone capture
 - Disabling host security controls
 - Silent LAN or public-network exposure
+- Treating note text as SQL, a command, or additional authority
 
 See [the initial threat model](docs/security/threat-model.md) for remaining risks.

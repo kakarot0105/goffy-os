@@ -28,6 +28,11 @@ review both published checksums during any wrapper upgrade.
   level?` run entirely on PHONE without a Hub link.
 - Device commands such as `Show my phone info` and `What phone is this?` return
   only manufacturer, model, Android release, and SDK level on PHONE.
+- `Create a note saying Buy milk` creates an app-private note only after a visible
+  `Approve once` action. The approval expires after 60 seconds and is bound to the
+  exact task, tool, note text, and deadline.
+- Denying, cancelling, or allowing approval to expire invokes no phone tool. A
+  successful note task means the inserted SQLite row was re-read and matched.
 - Any extra instruction, unrelated command, or appended authority is rejected on
   the phone before a Hub connection opens.
 - Android treats `ToolResult` as data only. The task becomes successful only
@@ -41,6 +46,9 @@ review both published checksums during any wrapper upgrade.
   replay the request.
 - Cancel only stops the local job and socket. Hub-side completion is not
   guaranteed.
+- Cancelling a pending note approval guarantees no tool invocation. Once the
+  approved SQLite transaction starts, cancellation is requested but rollback is
+  not guaranteed; the timeline states that limitation rather than claiming success.
 - The bearer token is entered at runtime, sent only in the `Authorization`
   header, and kept in memory only. It is not placed in the URL, saved state, or
   stringified config output.
@@ -87,3 +95,16 @@ state, and a final `VERIFIED` phase without any permission prompt.
 Then submit `Show my phone info` and confirm the timeline shows
 `PHONE / phone.device.info / SAFE`, only the four documented fields, and a final
 `VERIFIED` phase without a Hub connection or permission prompt.
+
+Finally, submit `Create a note saying Buy milk` and confirm the timeline shows
+`PHONE / phone.note.create / CONFIRM` and `AWAITING APPROVAL`. Verify all of these:
+
+1. Tap `Deny`; the task becomes `CANCELLED` and explicitly states no tool ran.
+2. Submit it again and wait 60 seconds; it becomes `FAILED` without a tool event.
+3. Submit it again and tap `Approve once`; progress appears, the note text is
+   displayed, and the task reaches `VERIFIED` only after the database re-read.
+4. Tap approval controls repeatedly; no second note is created for the same task.
+
+The database is internal to the app and requires no storage permission. App
+uninstall removes it. There is no note browser or delete control yet, so use only
+non-sensitive test text during pre-alpha device verification.

@@ -5,12 +5,14 @@ import dev.goffy.os.hub.HubConfig
 import dev.goffy.os.hub.HubGateway
 import dev.goffy.os.phone.DefaultPhoneToolGateway
 import dev.goffy.os.phone.PhoneToolGateway
+import dev.goffy.os.phone.NoteStore
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
+import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.ToolInvocationRequest
 import dev.goffy.os.protocol.ToolProgress
 import java.time.Instant
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -90,6 +93,7 @@ class GoffyViewModelTest {
                 PhoneBatteryStatus(levelPercent = 64, charging = false)
             },
             deviceInfoSource = { validDeviceInfo() },
+            noteStore = fakeNoteStore(),
             readDispatcher = dispatcher,
         )
         val viewModel = createViewModel(hubGateway, phoneGateway)
@@ -111,6 +115,7 @@ class GoffyViewModelTest {
         val phoneGateway = DefaultPhoneToolGateway(
             batteryStatusSource = { PhoneBatteryStatus(50, false) },
             deviceInfoSource = { validDeviceInfo() },
+            noteStore = fakeNoteStore(),
             readDispatcher = dispatcher,
         )
         val viewModel = createViewModel(hubGateway, phoneGateway)
@@ -197,6 +202,88 @@ class GoffyViewModelTest {
         runCurrent()
     }
 
+    @Test
+    fun noteStorageIsNotReachedUntilOneExactApproval() = runTest(dispatcher) {
+        val noteStore = RecordingNoteStore()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            phoneGateway = phoneGateway(noteStore),
+        )
+
+        viewModel.submitCommand("Create a note saying Buy milk")
+        runCurrent()
+
+        val pending = viewModel.uiState.value.pendingApproval
+        assertTrue(pending != null)
+        assertEquals(TaskPhase.AWAITING_APPROVAL, viewModel.uiState.value.timeline.entries.single().phase)
+        assertEquals(0, noteStore.creates)
+
+        assertTrue(viewModel.approvePendingTask(pending!!.taskId))
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(1, noteStore.creates)
+        assertEquals("Buy milk", noteStore.lastText)
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals(PhoneNoteCreated(1, "Buy milk", 1_720_000_000_000), entry.result)
+        assertFalse(viewModel.approvePendingTask(pending.taskId))
+        assertEquals(1, noteStore.creates)
+    }
+
+    @Test
+    fun deniedOrCancelledNoteApprovalNeverInvokesStorage() = runTest(dispatcher) {
+        val deniedStore = RecordingNoteStore()
+        val deniedViewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            phoneGateway = phoneGateway(deniedStore),
+        )
+        deniedViewModel.submitCommand("Create a note saying Buy milk")
+        runCurrent()
+        val deniedTask = deniedViewModel.uiState.value.pendingApproval!!.taskId
+        assertTrue(deniedViewModel.denyPendingTask(deniedTask))
+        runCurrent()
+
+        assertEquals(0, deniedStore.creates)
+        assertEquals(TaskPhase.CANCELLED, deniedViewModel.uiState.value.timeline.entries.single().phase)
+
+        val cancelledStore = RecordingNoteStore()
+        val cancelledViewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            phoneGateway = phoneGateway(cancelledStore),
+        )
+        cancelledViewModel.submitCommand("Create a note saying Call the dentist")
+        runCurrent()
+        cancelledViewModel.cancelActiveTask()
+        runCurrent()
+
+        assertEquals(0, cancelledStore.creates)
+        assertEquals(TaskPhase.CANCELLED, cancelledViewModel.uiState.value.timeline.entries.single().phase)
+        assertNull(cancelledViewModel.uiState.value.pendingApproval)
+    }
+
+    @Test
+    fun expiredOrStaleApprovalFailsClosedWithoutStorage() = runTest(dispatcher) {
+        val noteStore = RecordingNoteStore()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            phoneGateway = phoneGateway(noteStore),
+            approvalTtlMillis = 1_000,
+            nowMillis = { testScheduler.currentTime },
+        )
+        viewModel.submitCommand("Create a note saying Buy milk")
+        runCurrent()
+        val taskId = viewModel.uiState.value.pendingApproval!!.taskId
+
+        assertFalse(viewModel.approvePendingTask(UUID.randomUUID()))
+        advanceTimeBy(1_000)
+        runCurrent()
+
+        assertEquals(0, noteStore.creates)
+        assertEquals(TaskPhase.FAILED, viewModel.uiState.value.timeline.entries.single().phase)
+        assertNull(viewModel.uiState.value.pendingApproval)
+        assertFalse(viewModel.approvePendingTask(taskId))
+    }
+
     private fun createViewModel(
         gateway: HubGateway,
         phoneGateway: PhoneToolGateway = DefaultPhoneToolGateway(
@@ -204,8 +291,11 @@ class GoffyViewModelTest {
                 PhoneBatteryStatus(levelPercent = 50, charging = false)
             },
             deviceInfoSource = { validDeviceInfo() },
+            noteStore = fakeNoteStore(),
             readDispatcher = dispatcher,
         ),
+        approvalTtlMillis: Long = 60_000,
+        nowMillis: () -> Long = System::currentTimeMillis,
     ): GoffyViewModel = GoffyViewModel(
         gateway = gateway,
         phoneGateway = phoneGateway,
@@ -217,6 +307,15 @@ class GoffyViewModelTest {
         defaultEndpoint = endpoint,
         deviceId = "goffy-android-test",
         nextTaskId = { UUID.fromString("22222222-2222-4222-8222-222222222222") },
+        approvalTtlMillis = approvalTtlMillis,
+        nowMillis = nowMillis,
+    )
+
+    private fun phoneGateway(noteStore: NoteStore): PhoneToolGateway = DefaultPhoneToolGateway(
+        batteryStatusSource = { PhoneBatteryStatus(50, false) },
+        deviceInfoSource = { validDeviceInfo() },
+        noteStore = noteStore,
+        readDispatcher = dispatcher,
     )
 
     private fun successfulEvents(): List<ExecutionEvent> = listOf(
@@ -246,6 +345,26 @@ class GoffyViewModelTest {
         androidRelease = "15",
         sdkInt = 35,
     )
+
+    private fun fakeNoteStore(): NoteStore = object : NoteStore {
+        override suspend fun create(text: String): PhoneNoteCreated =
+            PhoneNoteCreated(1, text, 1)
+
+        override fun close() = Unit
+    }
+
+    private class RecordingNoteStore : NoteStore {
+        var creates = 0
+        var lastText: String? = null
+
+        override suspend fun create(text: String): PhoneNoteCreated {
+            creates += 1
+            lastText = text
+            return PhoneNoteCreated(1, text, 1_720_000_000_000)
+        }
+
+        override fun close() = Unit
+    }
 
     private class FakeHubGateway(
         private val events: (ToolInvocationRequest) -> Flow<ExecutionEvent>,

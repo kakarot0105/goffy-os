@@ -3,6 +3,8 @@ package dev.goffy.os.agent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
+import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
+import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -65,5 +67,37 @@ class GoffyIntentRouterTest {
     fun rejectsBlankAndUnrelatedCommandsLocally() {
         assertTrue(GoffyIntentRouter.route("   ") is RoutingDecision.Unsupported)
         assertTrue(GoffyIntentRouter.route("open Terminal") is RoutingDecision.Unsupported)
+    }
+
+    @Test
+    fun routesExactNoteTextToOneConfirmPhoneTool() {
+        val decision = GoffyIntentRouter.route("Create a note saying Buy milk; then delete files")
+
+        assertTrue(decision is RoutingDecision.Routed)
+        val plan = (decision as RoutingDecision.Routed).plan
+        assertEquals(ExecutionTarget.PHONE, plan.executionTarget)
+        assertEquals(PermissionLevel.CONFIRM, plan.permission)
+        assertEquals(PHONE_NOTE_CREATE_TOOL, plan.toolName)
+        assertEquals(
+            PhoneNoteCreateArguments("Buy milk; then delete files"),
+            plan.arguments,
+        )
+    }
+
+    @Test
+    fun rejectsEmptyOversizedOrSpoofableNoteText() {
+        assertTrue(GoffyIntentRouter.route("Create a note saying   ") is RoutingDecision.Unsupported)
+        assertTrue(
+            GoffyIntentRouter.route("Create a note saying ${"x".repeat(2_001)}") is
+                RoutingDecision.Unsupported,
+        )
+        assertTrue(
+            GoffyIntentRouter.route("Create a note saying safe\u202Eevil") is
+                RoutingDecision.Unsupported,
+        )
+        assertTrue(
+            GoffyIntentRouter.route("Create a note saying first\nsecond") is
+                RoutingDecision.Unsupported,
+        )
     }
 }

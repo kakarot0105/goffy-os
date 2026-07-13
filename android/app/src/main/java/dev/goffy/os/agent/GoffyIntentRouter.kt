@@ -2,8 +2,13 @@ package dev.goffy.os.agent
 
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
+import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
+import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
+import dev.goffy.os.protocol.PhoneNoteCreateArguments
+import dev.goffy.os.protocol.ToolArguments
+import dev.goffy.os.protocol.matchesNoteTextContract
 
 enum class PermissionLevel {
     SAFE,
@@ -18,6 +23,7 @@ data class GoffyExecutionPlan(
     val toolName: String,
     val permission: PermissionLevel,
     val successCriteria: List<String>,
+    val arguments: ToolArguments = NoToolArguments,
 )
 
 sealed interface RoutingDecision {
@@ -44,8 +50,13 @@ object GoffyIntentRouter {
                 "(?:info|information|details)|what phone is this)[.!?]?$",
         option = RegexOption.IGNORE_CASE,
     )
+    private val noteCreatePrefix = Regex(
+        pattern = "^(?:create|make)(?: me)? a note (?:saying|that says)\\s+",
+        option = RegexOption.IGNORE_CASE,
+    )
 
     fun route(command: String): RoutingDecision {
+        noteCreatePlan(command)?.let { return RoutingDecision.Routed(it) }
         val normalized = command.trim().replace(whitespace, " ")
         val plan = when {
             macStatusCommand.matches(normalized) -> macStatusPlan(normalized)
@@ -55,6 +66,24 @@ object GoffyIntentRouter {
         }
 
         return RoutingDecision.Routed(plan)
+    }
+
+    private fun noteCreatePlan(command: String): GoffyExecutionPlan? {
+        val trimmed = command.trim()
+        val prefix = noteCreatePrefix.find(trimmed) ?: return null
+        val text = trimmed.substring(prefix.range.last + 1).trim()
+        if (!text.matchesNoteTextContract()) return null
+        return GoffyExecutionPlan(
+            command = trimmed,
+            executionTarget = ExecutionTarget.PHONE,
+            toolName = PHONE_NOTE_CREATE_TOOL,
+            permission = PermissionLevel.CONFIRM,
+            successCriteria = listOf(
+                "The exact approved note text is stored in app-private storage",
+                "The stored row is re-read and matches the typed note contract",
+            ),
+            arguments = PhoneNoteCreateArguments(text),
+        )
     }
 
     private fun macStatusPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(
