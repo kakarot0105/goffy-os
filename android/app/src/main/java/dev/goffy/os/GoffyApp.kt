@@ -65,6 +65,7 @@ import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PhoneNoteCreated
+import dev.goffy.os.protocol.PhoneTimerDispatched
 import dev.goffy.os.protocol.ToolResultContent
 import java.util.UUID
 
@@ -535,6 +536,7 @@ private fun TaskCard(
 ) {
     val phaseColor = when (entry.phase) {
         TaskPhase.VERIFIED -> Signal
+        TaskPhase.UNVERIFIED,
         TaskPhase.AWAITING_APPROVAL,
         TaskPhase.FAILED,
         TaskPhase.CANCELLED,
@@ -712,6 +714,20 @@ private fun TaskResult(result: ToolResultContent) {
                 fontSize = 14.sp,
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        is PhoneTimerDispatched -> {
+            Text(
+                text = stringResource(R.string.timer_dispatched, result.durationSeconds),
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(R.string.timer_clock_package, result.clockPackage),
+                color = Signal,
+                fontSize = 11.sp,
             )
         }
     }

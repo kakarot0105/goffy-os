@@ -5,7 +5,7 @@ Android phone provides the command surface and small local engine; a macOS Hub
 provides controlled access to heavier local capabilities. MCP-compatible typed
 tools are the capability boundary.
 
-> Status: Milestone 2 phone engine in progress. The current repo implements three
+> Status: Milestone 2 phone engine in progress. The current repo implements four
 > offline PHONE actions and the software path for one SAFE Mac action, but physical
 > Moto G verification, pairing, and trusted LAN transport remain open.
 
@@ -17,13 +17,14 @@ tools are the capability boundary.
 - Permission-free, allowlisted `SAFE phone.battery.status` execution
 - Privacy-minimized, offline `SAFE phone.device.info` execution
 - Approval-gated `CONFIRM phone.note.create` with app-private SQLite persistence
+- Approval-gated `CONFIRM phone.timer.create` through an allowlisted system Clock
 - Exact-task, exact-arguments, expiring, single-use phone approval grants
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
 - FastAPI Hub bound to `127.0.0.1` by default
 - Versioned, typed phone-to-Hub protocol models
 - Allowlisted, read-only `SAFE mac.system_info` tool
 - Strict Kotlin codec plus typed Python protocol models
-- Shared typed execution events with separate result and verification states
+- Shared typed execution events with separate result, verified, and unverified states
 - Shared fixture `protocol/fixtures/mac-system-info-flow.jsonl`
 - Unit, integration, type, lint, and security checks
 
@@ -68,7 +69,8 @@ Install Android Studio with JDK 17 and Android SDK 36, then open `android/` as a
 project. The minimum SDK is 26. Command-line verification is:
 
 ```bash
-./android/gradlew -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --no-daemon
+./android/gradlew -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon
+python3 scripts/security_scan.py --require-merged-manifests
 ```
 
 See [Android setup](docs/setup/android.md) for the USB localhost debug flow.
@@ -78,6 +80,13 @@ To exercise the local mutation path, enter `Create a note saying Buy milk`. GOFF
 must show an approval card and perform no write until `Approve once` is tapped.
 The resulting task is successful only after the stored row is re-read and matches
 the approved text. Denial, cancellation, and the 60-second timeout invoke no tool.
+
+`Set a timer for 5 minutes` uses the same one-time approval boundary, then pins
+Android's documented timer action to an allowlisted, enabled, exported system
+Clock component. GOFFY runs no countdown service or polling loop. Verification
+checks the exact requested duration and documented-contract dispatch receipt, but
+the task ends `UNVERIFIED` because Android does not expose the Clock app's private
+timer state. The Clock app owns the timer after dispatch.
 
 This is an Android application layer, not a flashable replacement ROM. A custom
 ROM remains a later hardware-specific project after the agent runtime is proven.

@@ -54,3 +54,5 @@ jobs:
       - uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2 # v5
       - name: Lint, test, and assemble
         run: ./android/gradlew -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon
+      - name: Verify merged Android manifests
+        run: python3 scripts/security_scan.py --require-merged-manifests

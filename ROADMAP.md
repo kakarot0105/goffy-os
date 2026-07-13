@@ -10,6 +10,7 @@
 - [x] Typed `mac.system_info` registry tool
 - [x] Python unit and integration tests
 - [x] CI, lint, type, and security configuration
+- [x] Exact source and merged Android manifest capability checks
 - [x] Android build verified on a configured JDK 17 / SDK 36 toolchain
 - [ ] GOFFY home shell verified on the Moto G physical device
 
@@ -31,7 +32,9 @@
 - [x] Privacy-minimized `phone.device.info`
 - [x] Visible, expiring, exact-task approval lifecycle
 - [x] Approval-gated app-private `phone.note.create` with post-write verification
-- [ ] Approval-gated flashlight and timer tools
+- [x] Approval-gated allowlisted-system `phone.timer.create` dispatch with explicit `UNVERIFIED` state
+- [x] API 26 and API 33+ system Clock intent tests
+- [ ] Approval-gated flashlight tool
 - [ ] Physical Moto G battery-status verification
 
 ## Milestones 3-8

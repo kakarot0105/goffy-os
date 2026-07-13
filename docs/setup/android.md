@@ -12,7 +12,8 @@ The app supports API 26 and newer and starts in GOFFY LITE mode.
 From the repository root, run the pinned Gradle wrapper:
 
 ```bash
-./android/gradlew -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --no-daemon
+./android/gradlew -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon
+python3 scripts/security_scan.py --require-merged-manifests
 ```
 
 The debug APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`.
@@ -33,6 +34,14 @@ review both published checksums during any wrapper upgrade.
   exact task, tool, note text, and deadline.
 - Denying, cancelling, or allowing approval to expire invokes no phone tool. A
   successful note task means the inserted SQLite row was re-read and matched.
+- `Set a timer for 5 minutes` supports one numeric seconds, minutes, or hours
+  duration from 1 second through 24 hours. Approval dispatches the exact duration
+  to an allowlisted, enabled, exported system Clock app and displays its package.
+- The timer output records that GOFFY requested `EXTRA_SKIP_UI=true`; it does not
+  claim the Clock honored that request. The task ends `UNVERIFIED` because another
+  app's timer state is not readable.
+- Timer creation adds only Android's normal `SET_ALARM` permission. GOFFY runs no
+  countdown service, notification loop, exact alarm, or background receiver.
 - Any extra instruction, unrelated command, or appended authority is rejected on
   the phone before a Hub connection opens.
 - Android treats `ToolResult` as data only. The task becomes successful only
@@ -108,3 +117,10 @@ Finally, submit `Create a note saying Buy milk` and confirm the timeline shows
 The database is internal to the app and requires no storage permission. App
 uninstall removes it. There is no note browser or delete control yet, so use only
 non-sensitive test text during pre-alpha device verification.
+
+Then submit `Set a timer for 1 minute`. Confirm `PHONE / phone.timer.create /
+CONFIRM`, deny once and verify Clock does not open, then approve a new request.
+GOFFY should request no intermediate Clock confirmation screen and name the Clock
+package in its dispatch receipt. The task must end `UNVERIFIED`, not claim that the
+timer exists. Record whether the OEM Clock showed UI and whether the timer rang,
+then dismiss it in the Clock app. This behavior is not yet verified on the Moto G.

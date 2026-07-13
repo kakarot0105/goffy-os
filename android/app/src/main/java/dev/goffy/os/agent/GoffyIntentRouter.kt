@@ -2,11 +2,14 @@ package dev.goffy.os.agent
 
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
+import dev.goffy.os.protocol.MAX_TIMER_SECONDS
 import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
+import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
+import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import dev.goffy.os.protocol.ToolArguments
 import dev.goffy.os.protocol.matchesNoteTextContract
 
@@ -54,6 +57,11 @@ object GoffyIntentRouter {
         pattern = "^(?:create|make)(?: me)? a note (?:saying|that says)\\s+",
         option = RegexOption.IGNORE_CASE,
     )
+    private val timerCreateCommand = Regex(
+        pattern = "^(?:set|start|create)(?: me)? a timer for ([0-9]+) " +
+            "(second|seconds|minute|minutes|hour|hours)[.!?]?$",
+        option = RegexOption.IGNORE_CASE,
+    )
 
     fun route(command: String): RoutingDecision {
         noteCreatePlan(command)?.let { return RoutingDecision.Routed(it) }
@@ -62,6 +70,8 @@ object GoffyIntentRouter {
             macStatusCommand.matches(normalized) -> macStatusPlan(normalized)
             batteryStatusCommand.matches(normalized) -> batteryStatusPlan(normalized)
             deviceInfoCommand.matches(normalized) -> deviceInfoPlan(normalized)
+            timerCreateCommand.matches(normalized) -> timerCreatePlan(normalized)
+                ?: return RoutingDecision.Unsupported(normalized)
             else -> return RoutingDecision.Unsupported(normalized)
         }
 
@@ -83,6 +93,33 @@ object GoffyIntentRouter {
                 "The stored row is re-read and matches the typed note contract",
             ),
             arguments = PhoneNoteCreateArguments(text),
+        )
+    }
+
+    private fun timerCreatePlan(command: String): GoffyExecutionPlan? {
+        val match = timerCreateCommand.matchEntire(command) ?: return null
+        val amount = match.groupValues[1].toLongOrNull() ?: return null
+        val multiplier = when (match.groupValues[2].lowercase()) {
+            "second", "seconds" -> 1L
+            "minute", "minutes" -> 60L
+            "hour", "hours" -> 3_600L
+            else -> return null
+        }
+        if (amount !in 1L..(MAX_TIMER_SECONDS / multiplier)) return null
+        val durationSeconds = amount * multiplier
+        return GoffyExecutionPlan(
+            command = command,
+            executionTarget = ExecutionTarget.PHONE,
+            toolName = PHONE_TIMER_CREATE_TOOL,
+            permission = PermissionLevel.CONFIRM,
+            successCriteria = listOf(
+                "GOFFY sends the exact approved duration to an explicit allowlisted system Clock",
+                "GOFFY reports the unreadable Clock postcondition as unverified",
+            ),
+            arguments = PhoneTimerCreateArguments(
+                durationSeconds = durationSeconds.toInt(),
+                skipClockUi = true,
+            ),
         )
     }
 

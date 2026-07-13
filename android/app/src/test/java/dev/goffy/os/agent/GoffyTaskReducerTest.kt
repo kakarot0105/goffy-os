@@ -2,12 +2,14 @@ package dev.goffy.os.agent
 
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.ExecutionEvent
+import dev.goffy.os.protocol.ANDROID_SET_TIMER_ACTION
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreated
+import dev.goffy.os.protocol.PhoneTimerDispatched
 import dev.goffy.os.protocol.ToolProgress
 import java.util.UUID
 import org.junit.Assert.assertEquals
@@ -414,9 +416,56 @@ class GoffyTaskReducerTest {
 
         assertEquals(TaskPhase.CANCELLED, state.entries.single().phase)
         assertEquals(
-            "Cancellation requested; note completion is not guaranteed",
+            "Cancellation requested; confirmed action completion is not guaranteed",
             state.entries.single().summary,
         )
+    }
+
+    @Test
+    fun timerResultRequiresApprovedTypedSystemDispatchContract() {
+        val timerPlan = (GoffyIntentRouter.route("Set a timer for 5 minutes") as RoutingDecision.Routed).plan
+        var state = TaskTimelineState()
+            .start(phoneTaskId, timerPlan)
+            .awaitApproval(phoneTaskId, "Approve timer")
+            .grantApproval(phoneTaskId)
+        state = state.apply(phoneTaskId, ExecutionEvent.Starting(1))
+        state = state.apply(phoneTaskId, ExecutionEvent.Ready)
+        state = state.apply(
+            phoneTaskId,
+            progress(timerPlan.toolName, ExecutionTarget.PHONE, "accepted", 0),
+        )
+        state = state.apply(
+            phoneTaskId,
+            progress(timerPlan.toolName, ExecutionTarget.PHONE, "completed", 1),
+        )
+        state = state.apply(
+            phoneTaskId,
+            ExecutionEvent.Result(
+                timerPlan.toolName,
+                ExecutionTarget.PHONE,
+                PhoneTimerDispatched(
+                    300,
+                    "com.google.android.deskclock",
+                    "com.google.android.deskclock.TimerActivity",
+                    true,
+                    true,
+                    ANDROID_SET_TIMER_ACTION,
+                ),
+            ),
+        )
+
+        assertEquals(TaskPhase.COMPLETED_UNVERIFIED, state.entries.single().phase)
+        assertTrue(state.entries.single().summary.contains("300 seconds"))
+
+        state = state.apply(
+            phoneTaskId,
+            ExecutionEvent.Unverified(
+                "Timer state is not readable after dispatch",
+                listOf("system action", "Clock postcondition unavailable"),
+            ),
+        )
+        assertEquals(TaskPhase.UNVERIFIED, state.entries.single().phase)
+        assertNull(state.activeTaskId)
     }
 
     private fun progress(

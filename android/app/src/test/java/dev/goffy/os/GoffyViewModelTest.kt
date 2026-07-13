@@ -6,6 +6,7 @@ import dev.goffy.os.hub.HubGateway
 import dev.goffy.os.phone.DefaultPhoneToolGateway
 import dev.goffy.os.phone.PhoneToolGateway
 import dev.goffy.os.phone.NoteStore
+import dev.goffy.os.phone.TimerSource
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GoffyProtocolCodec
@@ -13,6 +14,9 @@ import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PhoneNoteCreated
+import dev.goffy.os.protocol.ANDROID_SET_TIMER_ACTION
+import dev.goffy.os.protocol.PhoneTimerDispatched
+import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import dev.goffy.os.protocol.ToolInvocationRequest
 import dev.goffy.os.protocol.ToolProgress
 import java.time.Instant
@@ -94,6 +98,7 @@ class GoffyViewModelTest {
             },
             deviceInfoSource = { validDeviceInfo() },
             noteStore = fakeNoteStore(),
+            timerSource = fakeTimerSource(),
             readDispatcher = dispatcher,
         )
         val viewModel = createViewModel(hubGateway, phoneGateway)
@@ -116,6 +121,7 @@ class GoffyViewModelTest {
             batteryStatusSource = { PhoneBatteryStatus(50, false) },
             deviceInfoSource = { validDeviceInfo() },
             noteStore = fakeNoteStore(),
+            timerSource = fakeTimerSource(),
             readDispatcher = dispatcher,
         )
         val viewModel = createViewModel(hubGateway, phoneGateway)
@@ -284,6 +290,39 @@ class GoffyViewModelTest {
         assertFalse(viewModel.approvePendingTask(taskId))
     }
 
+    @Test
+    fun systemTimerIsDispatchedOnlyAfterVisibleOneTimeApproval() = runTest(dispatcher) {
+        val timerSource = RecordingTimerSource()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            phoneGateway = phoneGateway(timerSource = timerSource),
+        )
+
+        viewModel.submitCommand("Set a timer for 5 minutes")
+        runCurrent()
+
+        val pending = viewModel.uiState.value.pendingApproval
+        assertTrue(pending != null)
+        assertTrue(pending!!.description.contains("5 minutes"))
+        assertEquals(TaskPhase.AWAITING_APPROVAL, viewModel.uiState.value.timeline.entries.single().phase)
+        assertEquals(0, timerSource.dispatches)
+
+        assertTrue(viewModel.approvePendingTask(pending.taskId))
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(1, timerSource.dispatches)
+        assertEquals(300, timerSource.lastDurationSeconds)
+        assertEquals(TaskPhase.UNVERIFIED, entry.phase)
+        assertTrue(entry.summary.contains("not readable"))
+        assertEquals(
+            validTimerResult(300),
+            entry.result,
+        )
+        assertFalse(viewModel.approvePendingTask(pending.taskId))
+        assertEquals(1, timerSource.dispatches)
+    }
+
     private fun createViewModel(
         gateway: HubGateway,
         phoneGateway: PhoneToolGateway = DefaultPhoneToolGateway(
@@ -292,6 +331,7 @@ class GoffyViewModelTest {
             },
             deviceInfoSource = { validDeviceInfo() },
             noteStore = fakeNoteStore(),
+            timerSource = fakeTimerSource(),
             readDispatcher = dispatcher,
         ),
         approvalTtlMillis: Long = 60_000,
@@ -311,10 +351,14 @@ class GoffyViewModelTest {
         nowMillis = nowMillis,
     )
 
-    private fun phoneGateway(noteStore: NoteStore): PhoneToolGateway = DefaultPhoneToolGateway(
+    private fun phoneGateway(
+        noteStore: NoteStore = fakeNoteStore(),
+        timerSource: TimerSource = fakeTimerSource(),
+    ): PhoneToolGateway = DefaultPhoneToolGateway(
         batteryStatusSource = { PhoneBatteryStatus(50, false) },
         deviceInfoSource = { validDeviceInfo() },
         noteStore = noteStore,
+        timerSource = timerSource,
         readDispatcher = dispatcher,
     )
 
@@ -353,6 +397,19 @@ class GoffyViewModelTest {
         override fun close() = Unit
     }
 
+    private fun fakeTimerSource(): TimerSource = TimerSource { arguments ->
+        validTimerResult(arguments.durationSeconds)
+    }
+
+    private fun validTimerResult(durationSeconds: Int): PhoneTimerDispatched = PhoneTimerDispatched(
+        durationSeconds,
+        "com.google.android.deskclock",
+        "com.google.android.deskclock.TimerActivity",
+        true,
+        true,
+        ANDROID_SET_TIMER_ACTION,
+    )
+
     private class RecordingNoteStore : NoteStore {
         var creates = 0
         var lastText: String? = null
@@ -364,6 +421,24 @@ class GoffyViewModelTest {
         }
 
         override fun close() = Unit
+    }
+
+    private class RecordingTimerSource : TimerSource {
+        var dispatches = 0
+        var lastDurationSeconds: Int? = null
+
+        override suspend fun create(arguments: PhoneTimerCreateArguments): PhoneTimerDispatched {
+            dispatches += 1
+            lastDurationSeconds = arguments.durationSeconds
+            return PhoneTimerDispatched(
+                arguments.durationSeconds,
+                "com.google.android.deskclock",
+                "com.google.android.deskclock.TimerActivity",
+                true,
+                arguments.skipClockUi,
+                ANDROID_SET_TIMER_ACTION,
+            )
+        }
     }
 
     private class FakeHubGateway(

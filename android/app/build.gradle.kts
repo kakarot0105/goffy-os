@@ -39,6 +39,10 @@ android {
         buildConfig = true
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
+
     sourceSets.getByName("test").resources.directories.add(
         "../../protocol/fixtures",
     )
@@ -65,4 +69,5 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("com.squareup.okhttp3:mockwebserver3:5.4.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    testImplementation("org.robolectric:robolectric:4.16")
 }

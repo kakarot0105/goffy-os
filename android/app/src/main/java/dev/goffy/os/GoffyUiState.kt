@@ -97,6 +97,7 @@ data class GoffyUiState(
             is ExecutionEvent.Result,
             -> macConnection
             is ExecutionEvent.Error,
+            is ExecutionEvent.Unverified,
             is ExecutionEvent.Verification,
             -> MacConnectionState.DISCONNECTED
         }

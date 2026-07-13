@@ -23,6 +23,9 @@
 | Note approval replay or substitution | Gateway binds a one-time grant to task, tool, exact arguments, and expiry; consumed task IDs cannot be approved twice in one process | Persisted approval audit and process-death recovery policy |
 | Note SQL injection or cross-app disclosure | `ContentValues` and selection arguments bind note data; SQLite is app-private and backup is disabled | User-facing note viewer, deletion, and retention controls |
 | False note success | Insert and exact row re-read occur in one transaction before a verification event | Physical-device failure-matrix testing |
+| Timer intent interception | Resolve only enabled exported allowlisted system handlers, reject the chooser and third-party apps, and pin an explicit component after approval | Moto Clock compatibility matrix |
+| Misleading timer verification | Report only a typed dispatch receipt and finish `UNVERIFIED`, never infer unreadable Clock-internal state or UI behavior | Future Clock/MCP integration where state APIs exist |
+| Android capability creep | Security scan rejects unexpected source-manifest structure and checks exact permissions and queries in freshly merged debug and release manifests | Review allowlist changes as security decisions |
 | Misleading success | Output validation plus separate `VerificationResult` event | Tool-specific state re-read |
 | False cancel expectations | UI states that cancel is local-only and Hub completion is not guaranteed | End-to-end cancellation protocol |
 

@@ -11,6 +11,10 @@ import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneNoteCreated
+import dev.goffy.os.protocol.ANDROID_SET_TIMER_ACTION
+import dev.goffy.os.protocol.PhoneTimerDispatched
+import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
+import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -175,7 +179,9 @@ class PhoneToolGatewayTest {
             batteryStatusSource = { awaitCancellation() },
             deviceInfoSource = { validDeviceInfo() },
             noteStore = fakeNoteStore(),
+            timerSource = fakeTimerSource(),
             readDispatcher = Dispatchers.Unconfined,
+            actionDispatcher = Dispatchers.Unconfined,
             timeoutMillis = 100,
         )
 
@@ -294,13 +300,107 @@ class PhoneToolGatewayTest {
         assertEquals("phone_tool_unauthorized", (expired.single() as ExecutionEvent.Error).code)
     }
 
+    @Test
+    fun timerDispatchRequiresApprovalAndValidatesTheExactDuration() = runTest {
+        var dispatches = 0
+        var dispatchedSeconds: Int? = null
+        val timerSource = TimerSource { arguments ->
+            dispatches += 1
+            dispatchedSeconds = arguments.durationSeconds
+            validTimerResult(arguments.durationSeconds)
+        }
+        val gateway = testGateway(timerSource = timerSource)
+        val plan = timerPlan(300)
+
+        val safeEvents = gateway.invoke(taskId, plan, PhoneToolAuthorization.Safe).toList()
+        val approvedEvents = gateway.invoke(taskId, plan, approval(plan)).toList()
+        val replayEvents = gateway.invoke(taskId, plan, approval(plan)).toList()
+
+        assertEquals("phone_tool_unauthorized", (safeEvents.single() as ExecutionEvent.Error).code)
+        assertEquals(1, dispatches)
+        assertEquals(300, dispatchedSeconds)
+        assertEquals(
+            validTimerResult(300),
+            (approvedEvents[4] as ExecutionEvent.Result).content,
+        )
+        val unverified = approvedEvents.last() as ExecutionEvent.Unverified
+        assertTrue(unverified.summary.contains("not readable"))
+        assertEquals("phone_tool_unauthorized", (replayEvents.single() as ExecutionEvent.Error).code)
+    }
+
+    @Test
+    fun unavailableOrMismatchedTimerHandlerNeverClaimsVerification() = runTest {
+        val unavailable = testGateway(
+            timerSource = TimerSource { error("no allowlisted Clock") },
+        )
+        val mismatch = testGateway(
+            timerSource = TimerSource { arguments ->
+                validTimerResult(arguments.durationSeconds + 1)
+            },
+        )
+
+        val unavailableEvents = unavailable.invoke(taskId, timerPlan(60), approval(timerPlan(60))).toList()
+        val mismatchTask = UUID.fromString("44444444-4444-4444-8444-444444444444")
+        val mismatchPlan = timerPlan(60)
+        val mismatchEvents = mismatch.invoke(
+            mismatchTask,
+            mismatchPlan,
+            approval(mismatchPlan, approvedTaskId = mismatchTask),
+        ).toList()
+
+        assertEquals("phone_tool_failed", (unavailableEvents.last() as ExecutionEvent.Error).code)
+        assertEquals("invalid_tool_output", (mismatchEvents.last() as ExecutionEvent.Error).code)
+        assertTrue(unavailableEvents.none { it is ExecutionEvent.Verification || it is ExecutionEvent.Unverified })
+        assertTrue(mismatchEvents.none { it is ExecutionEvent.Verification || it is ExecutionEvent.Unverified })
+    }
+
+    @Test
+    fun timerApprovalRejectsChangedDurationWrongTaskToolAndExpiry() = runTest {
+        var now = 100L
+        var dispatches = 0
+        val timerSource = TimerSource { arguments ->
+            dispatches += 1
+            validTimerResult(arguments.durationSeconds)
+        }
+        val gateway = testGateway(timerSource = timerSource, nowMillis = { now })
+        val approvedPlan = timerPlan(300)
+        val changedDuration = gateway.invoke(
+            taskId,
+            timerPlan(60),
+            approval(approvedPlan),
+        ).toList()
+        val wrongTask = gateway.invoke(
+            taskId,
+            approvedPlan,
+            approval(approvedPlan, approvedTaskId = UUID.randomUUID()),
+        ).toList()
+        val wrongTool = gateway.invoke(
+            taskId,
+            approvedPlan,
+            approval(approvedPlan, approvedToolName = PHONE_NOTE_CREATE_TOOL),
+        ).toList()
+        now = 200L
+        val expired = gateway.invoke(
+            taskId,
+            approvedPlan,
+            approval(approvedPlan, expiresAt = 200L),
+        ).toList()
+
+        assertEquals(0, dispatches)
+        listOf(changedDuration, wrongTask, wrongTool, expired).forEach { events ->
+            assertEquals("phone_tool_unauthorized", (events.single() as ExecutionEvent.Error).code)
+        }
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsNonPositiveTimeout() {
         DefaultPhoneToolGateway(
             batteryStatusSource = { PhoneBatteryStatus(50, false) },
             deviceInfoSource = { validDeviceInfo() },
             noteStore = fakeNoteStore(),
+            timerSource = fakeTimerSource(),
             readDispatcher = Dispatchers.Unconfined,
+            actionDispatcher = Dispatchers.Unconfined,
             timeoutMillis = 0,
         )
     }
@@ -309,13 +409,16 @@ class PhoneToolGatewayTest {
         batteryRead: BatteryStatusSource = BatteryStatusSource { PhoneBatteryStatus(50, false) },
         deviceRead: DeviceInfoSource = DeviceInfoSource { validDeviceInfo() },
         noteStore: NoteStore = fakeNoteStore(),
+        timerSource: TimerSource = fakeTimerSource(),
         nowMillis: () -> Long = { 100L },
     ): DefaultPhoneToolGateway =
         DefaultPhoneToolGateway(
             batteryStatusSource = batteryRead,
             deviceInfoSource = deviceRead,
             noteStore = noteStore,
+            timerSource = timerSource,
             readDispatcher = Dispatchers.Unconfined,
+            actionDispatcher = Dispatchers.Unconfined,
             nowMillis = nowMillis,
         )
 
@@ -327,6 +430,10 @@ class PhoneToolGatewayTest {
             PhoneNoteCreated(1, text, 1)
 
         override fun close() = Unit
+    }
+
+    private fun fakeTimerSource(): TimerSource = TimerSource { arguments ->
+        validTimerResult(arguments.durationSeconds)
     }
 
     private fun batteryPlan(): GoffyExecutionPlan = GoffyExecutionPlan(
@@ -354,10 +461,19 @@ class PhoneToolGatewayTest {
         arguments = PhoneNoteCreateArguments(text),
     )
 
+    private fun timerPlan(durationSeconds: Int): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = "Set a timer for $durationSeconds seconds",
+        executionTarget = ExecutionTarget.PHONE,
+        toolName = PHONE_TIMER_CREATE_TOOL,
+        permission = PermissionLevel.CONFIRM,
+        successCriteria = listOf("System Clock dispatch is accepted"),
+        arguments = PhoneTimerCreateArguments(durationSeconds, skipClockUi = true),
+    )
+
     private fun approval(
         plan: GoffyExecutionPlan,
         approvedTaskId: UUID = taskId,
-        approvedToolName: String = PHONE_NOTE_CREATE_TOOL,
+        approvedToolName: String = plan.toolName,
         expiresAt: Long = 200L,
     ): PhoneToolAuthorization.Approved = PhoneToolAuthorization.Approved(
         approvedTaskId,
@@ -371,6 +487,15 @@ class PhoneToolGatewayTest {
         model = "moto g",
         androidRelease = "15",
         sdkInt = 35,
+    )
+
+    private fun validTimerResult(durationSeconds: Int): PhoneTimerDispatched = PhoneTimerDispatched(
+        durationSeconds,
+        "com.google.android.deskclock",
+        "com.google.android.deskclock.TimerActivity",
+        true,
+        true,
+        ANDROID_SET_TIMER_ACTION,
     )
 
     private class RecordingNoteStore(

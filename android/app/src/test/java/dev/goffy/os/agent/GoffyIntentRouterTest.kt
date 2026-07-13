@@ -5,6 +5,8 @@ import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
+import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
+import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -99,5 +101,40 @@ class GoffyIntentRouterTest {
             GoffyIntentRouter.route("Create a note saying first\nsecond") is
                 RoutingDecision.Unsupported,
         )
+    }
+
+    @Test
+    fun routesBoundedTimerDurationsToOneConfirmPhoneTool() {
+        val cases = mapOf(
+            "Set a timer for 1 second" to 1,
+            "start me a timer for 5 minutes!" to 300,
+            "Create a timer for 24 hours" to 86_400,
+        )
+
+        cases.forEach { (command, expectedSeconds) ->
+            val decision = GoffyIntentRouter.route(command)
+            assertTrue(decision is RoutingDecision.Routed)
+            val plan = (decision as RoutingDecision.Routed).plan
+            assertEquals(ExecutionTarget.PHONE, plan.executionTarget)
+            assertEquals(PermissionLevel.CONFIRM, plan.permission)
+            assertEquals(PHONE_TIMER_CREATE_TOOL, plan.toolName)
+            assertEquals(PhoneTimerCreateArguments(expectedSeconds, skipClockUi = true), plan.arguments)
+        }
+    }
+
+    @Test
+    fun rejectsInvalidCompoundOverflowingOrExpandedTimerAuthority() {
+        val rejected = listOf(
+            "Set a timer for 0 seconds",
+            "Set a timer for 25 hours",
+            "Set a timer for 1441 minutes",
+            "Set a timer for 5 minutes and turn on the camera",
+            "Set a timer for 1 hour 30 minutes",
+            "Set a timer for 999999999999999999999999 minutes",
+        )
+
+        rejected.forEach { command ->
+            assertTrue(GoffyIntentRouter.route(command) is RoutingDecision.Unsupported)
+        }
     }
 }

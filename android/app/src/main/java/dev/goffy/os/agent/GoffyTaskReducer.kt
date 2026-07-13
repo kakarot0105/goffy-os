@@ -10,6 +10,8 @@ import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
+import dev.goffy.os.protocol.PhoneTimerDispatched
+import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
 import dev.goffy.os.protocol.ToolResultContent
 import dev.goffy.os.protocol.matchesToolContract
 import java.util.UUID
@@ -20,6 +22,7 @@ enum class TaskPhase {
     PREPARING,
     ACCEPTED,
     COMPLETED_UNVERIFIED,
+    UNVERIFIED,
     VERIFIED,
     FAILED,
     CANCELLED,
@@ -115,6 +118,7 @@ data class TaskTimelineState(
             is ExecutionEvent.Progress -> applyProgress(current, event)
             is ExecutionEvent.Result -> applyResult(current, event)
             is ExecutionEvent.Verification -> applyVerification(current, event)
+            is ExecutionEvent.Unverified -> applyUnverified(current, event)
             is ExecutionEvent.Error -> current.copy(
                 phase = TaskPhase.FAILED,
                 summary = event.message.safeText(),
@@ -281,6 +285,21 @@ data class TaskTimelineState(
         )
     }
 
+    private fun applyUnverified(
+        current: TaskTimelineEntry,
+        event: ExecutionEvent.Unverified,
+    ): TaskTimelineEntry {
+        if (current.phase != TaskPhase.COMPLETED_UNVERIFIED || current.result == null) {
+            return current.failSequence("Unverified completion arrived before a structured result")
+        }
+        return current.copy(
+            phase = TaskPhase.UNVERIFIED,
+            summary = event.summary.safeText(),
+            verificationSummary = event.summary.safeText(),
+            verificationChecks = event.checks.take(MAX_VERIFICATION_CHECKS),
+        ).withEvent(TaskEventKind.VERIFY, event.summary)
+    }
+
     private fun TaskTimelineEntry.failSequence(message: String): TaskTimelineEntry = copy(
         phase = TaskPhase.FAILED,
         summary = message,
@@ -339,6 +358,11 @@ data class TaskTimelineState(
             approvalGranted &&
             content is PhoneNoteCreated &&
             content.matchesToolContract()
+        PHONE_TIMER_CREATE_TOOL -> executionTarget == ExecutionTarget.PHONE &&
+            permission == PermissionLevel.CONFIRM &&
+            approvalGranted &&
+            content is PhoneTimerDispatched &&
+            content.matchesToolContract()
         else -> false
     }
 
@@ -378,7 +402,7 @@ data class TaskTimelineState(
         if (phase == TaskPhase.AWAITING_APPROVAL) {
             "Approval cancelled; no phone tool was invoked"
         } else if (permission == PermissionLevel.CONFIRM && lastStartAttempt != null) {
-            "Cancellation requested; note completion is not guaranteed"
+            "Cancellation requested; confirmed action completion is not guaranteed"
         } else when (executionTarget) {
             ExecutionTarget.MAC -> "Cancelled locally; Hub completion is not guaranteed"
             ExecutionTarget.PHONE -> "Local PHONE execution cancelled"
@@ -401,7 +425,12 @@ data class TaskTimelineState(
         const val MAX_TASK_EVENTS = 16
         const val MAX_VERIFICATION_CHECKS = 16
         const val MAX_COMMAND_LENGTH = 2_000
-        val TERMINAL_PHASES = setOf(TaskPhase.VERIFIED, TaskPhase.FAILED, TaskPhase.CANCELLED)
+        val TERMINAL_PHASES = setOf(
+            TaskPhase.UNVERIFIED,
+            TaskPhase.VERIFIED,
+            TaskPhase.FAILED,
+            TaskPhase.CANCELLED,
+        )
     }
 }
 
@@ -412,4 +441,5 @@ private fun ToolResultContent.summaryText(): String = when (this) {
     is PhoneBatteryStatus -> "Battery $levelPercent%: ${if (charging) "charging" else "not charging"}"
     is PhoneDeviceInfo -> "$manufacturer $model / Android $androidRelease (API $sdkInt)"
     is PhoneNoteCreated -> "Note #$noteId stored: $text"
+    is PhoneTimerDispatched -> "Timer intent for $durationSeconds seconds dispatched to $clockPackage"
 }

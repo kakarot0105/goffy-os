@@ -15,6 +15,7 @@ import dev.goffy.os.hub.OkHttpHubGateway
 import dev.goffy.os.phone.AndroidBatteryStatusSource
 import dev.goffy.os.phone.AndroidDeviceInfoSource
 import dev.goffy.os.phone.AndroidSqliteNoteStore
+import dev.goffy.os.phone.AndroidSystemTimerSource
 import dev.goffy.os.phone.DefaultPhoneToolGateway
 import dev.goffy.os.phone.PhoneToolGateway
 import dev.goffy.os.phone.PhoneToolAuthorization
@@ -22,6 +23,7 @@ import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
+import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -50,6 +52,7 @@ class GoffyViewModel internal constructor(
             batteryStatusSource = AndroidBatteryStatusSource(context),
             deviceInfoSource = AndroidDeviceInfoSource(),
             noteStore = AndroidSqliteNoteStore(context),
+            timerSource = AndroidSystemTimerSource(context),
         ),
         codec = GoffyProtocolCodec(),
         allowInsecureLoopback = BuildConfig.DEBUG,
@@ -149,8 +152,8 @@ class GoffyViewModel internal constructor(
     }
 
     private fun requestPhoneApproval(taskId: UUID, plan: GoffyExecutionPlan) {
-        val note = plan.arguments as? PhoneNoteCreateArguments
-        if (note == null) {
+        val description = plan.approvalDescription()
+        if (description == null) {
             mutableUiState.value = mutableUiState.value.rejectCommand(
                 plan.command,
                 "The confirmation request did not match a typed phone tool",
@@ -161,7 +164,7 @@ class GoffyViewModel internal constructor(
         val approval = PendingApproval(
             taskId = taskId,
             toolName = plan.toolName,
-            description = "Approve creating this private note: ${note.text.take(APPROVAL_PREVIEW_LENGTH)}",
+            description = description,
             expiresAtEpochMillis = expiresAt,
             durationSeconds = (approvalTtlMillis + 999L) / 1_000L,
         )
@@ -171,6 +174,21 @@ class GoffyViewModel internal constructor(
             delay(approvalTtlMillis)
             expirePendingApproval(taskId)
         }
+    }
+
+    private fun GoffyExecutionPlan.approvalDescription(): String? = when (val value = arguments) {
+        is PhoneNoteCreateArguments ->
+            "Approve creating this private note: ${value.text.take(APPROVAL_PREVIEW_LENGTH)}"
+        is PhoneTimerCreateArguments ->
+            "Approve requesting a ${value.durationSeconds.displayDuration()} system Clock timer. " +
+                "GOFFY will request no second Clock confirmation screen."
+        else -> null
+    }
+
+    private fun Int.displayDuration(): String = when {
+        this % 3_600 == 0 -> "${this / 3_600} ${if (this == 3_600) "hour" else "hours"}"
+        this % 60 == 0 -> "${this / 60} ${if (this == 60) "minute" else "minutes"}"
+        else -> "$this ${if (this == 1) "second" else "seconds"}"
     }
 
     fun approvePendingTask(taskId: UUID): Boolean {

@@ -61,6 +61,11 @@ data class PhoneNoteCreateArguments(
     val text: String,
 ) : ToolArguments
 
+data class PhoneTimerCreateArguments(
+    val durationSeconds: Int,
+    val skipClockUi: Boolean,
+) : ToolArguments
+
 data class MacSystemInfo(
     val status: String,
     val operatingSystem: String,
@@ -85,6 +90,15 @@ data class PhoneNoteCreated(
     val createdAtEpochMillis: Long,
 ) : ToolResultContent
 
+data class PhoneTimerDispatched(
+    val durationSeconds: Int,
+    val clockPackage: String,
+    val clockActivity: String,
+    val systemApplication: Boolean,
+    val skipClockUiRequested: Boolean,
+    val systemAction: String,
+) : ToolResultContent
+
 sealed interface ExecutionEvent {
     data class Starting(val attempt: Int) : ExecutionEvent
 
@@ -100,6 +114,11 @@ sealed interface ExecutionEvent {
 
     data class Verification(
         val succeeded: Boolean,
+        val summary: String,
+        val checks: List<String>,
+    ) : ExecutionEvent
+
+    data class Unverified(
         val summary: String,
         val checks: List<String>,
     ) : ExecutionEvent

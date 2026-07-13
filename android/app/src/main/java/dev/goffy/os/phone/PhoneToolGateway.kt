@@ -12,6 +12,9 @@ import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneNoteCreated
+import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
+import dev.goffy.os.protocol.PhoneTimerCreateArguments
+import dev.goffy.os.protocol.PhoneTimerDispatched
 import dev.goffy.os.protocol.ToolProgress
 import dev.goffy.os.protocol.ToolArguments
 import dev.goffy.os.protocol.ToolResultContent
@@ -35,6 +38,10 @@ fun interface BatteryStatusSource {
 
 fun interface DeviceInfoSource {
     suspend fun read(): PhoneDeviceInfo
+}
+
+fun interface TimerSource {
+    suspend fun create(arguments: PhoneTimerCreateArguments): PhoneTimerDispatched
 }
 
 interface NoteStore {
@@ -82,7 +89,9 @@ class DefaultPhoneToolGateway internal constructor(
     private val batteryStatusSource: BatteryStatusSource,
     private val deviceInfoSource: DeviceInfoSource,
     private val noteStore: NoteStore,
+    private val timerSource: TimerSource,
     private val readDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val actionDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
     private val nowMillis: () -> Long = System::currentTimeMillis,
 ) : PhoneToolGateway {
@@ -125,7 +134,7 @@ class DefaultPhoneToolGateway internal constructor(
 
         val content = try {
             withTimeout(timeoutMillis) {
-                withContext(readDispatcher) { operation.read() }
+                withContext(operation.dispatcher) { operation.execute() }
             }
         } catch (_: TimeoutCancellationException) {
             emit(
@@ -177,13 +186,7 @@ class DefaultPhoneToolGateway internal constructor(
                 content = content,
             ),
         )
-        emit(
-            ExecutionEvent.Verification(
-                succeeded = true,
-                summary = operation.verificationSummary,
-                checks = operation.verificationChecks,
-            ),
-        )
+        emit(operation.verification.toEvent())
     }
 
     override fun close() {
@@ -206,14 +209,17 @@ class DefaultPhoneToolGateway internal constructor(
                 acceptedMessage = "Battery status read accepted on this phone.",
                 completedMessage = "BatteryManager returned validated local status.",
                 failureMessage = "Battery status is unavailable on this phone",
-                read = batteryStatusSource::read,
+                execute = batteryStatusSource::read,
                 validate = { content -> content is PhoneBatteryStatus && content.matchesToolContract() },
-                verificationSummary = "Battery status matched the local tool contract.",
-                verificationChecks = listOf(
-                    "phone tool allowlist",
-                    "battery percentage range",
-                    "typed output",
+                verification = PhoneToolVerification.Verified(
+                    summary = "Battery status matched the local tool contract.",
+                    checks = listOf(
+                        "phone tool allowlist",
+                        "battery percentage range",
+                        "typed output",
+                    ),
                 ),
+                dispatcher = readDispatcher,
             ) else null
             PHONE_DEVICE_INFO_TOOL -> if (
                 permission == PermissionLevel.SAFE &&
@@ -224,23 +230,24 @@ class DefaultPhoneToolGateway internal constructor(
                 acceptedMessage = "Privacy-minimized device info read accepted on this phone.",
                 completedMessage = "Android Build returned validated display information.",
                 failureMessage = "Device information is unavailable on this phone",
-                read = deviceInfoSource::read,
+                execute = deviceInfoSource::read,
                 validate = { content -> content is PhoneDeviceInfo && content.matchesToolContract() },
-                verificationSummary = "Device information matched the privacy-minimized local contract.",
-                verificationChecks = listOf(
-                    "phone tool allowlist",
-                    "approved display fields only",
-                    "field bounds and control characters",
-                    "minimum SDK contract",
+                verification = PhoneToolVerification.Verified(
+                    summary = "Device information matched the privacy-minimized local contract.",
+                    checks = listOf(
+                        "phone tool allowlist",
+                        "approved display fields only",
+                        "field bounds and control characters",
+                        "minimum SDK contract",
+                    ),
                 ),
+                dispatcher = readDispatcher,
             ) else null
             PHONE_NOTE_CREATE_TOOL -> {
                 val noteArguments = arguments as? PhoneNoteCreateArguments ?: return null
-                val approved = authorization as? PhoneToolAuthorization.Approved ?: return null
                 if (permission != PermissionLevel.CONFIRM ||
                     !noteArguments.text.matchesNoteTextContract() ||
-                    !approved.consumeFor(taskId, PHONE_NOTE_CREATE_TOOL, arguments, nowMillis()) ||
-                    !consumedConfirmTaskIds.add(taskId)
+                    !consumeApproval(taskId, authorization)
                 ) {
                     return null
                 }
@@ -249,23 +256,68 @@ class DefaultPhoneToolGateway internal constructor(
                     acceptedMessage = "Approved note creation accepted on this phone.",
                     completedMessage = "The app-private note row was written and re-read.",
                     failureMessage = "The note could not be stored and verified",
-                    read = { noteStore.create(noteArguments.text) },
+                    execute = { noteStore.create(noteArguments.text) },
                     validate = { content ->
                         content is PhoneNoteCreated &&
                             content.text == noteArguments.text &&
                             content.matchesToolContract()
                     },
-                    verificationSummary = "The approved note was stored and re-read successfully.",
-                    verificationChecks = listOf(
-                        "single-use approval",
-                        "app-private database",
-                        "exact text match",
-                        "post-write row read",
+                    verification = PhoneToolVerification.Verified(
+                        summary = "The approved note was stored and re-read successfully.",
+                        checks = listOf(
+                            "single-use approval",
+                            "app-private database",
+                            "exact text match",
+                            "post-write row read",
+                        ),
                     ),
+                    dispatcher = readDispatcher,
+                )
+            }
+            PHONE_TIMER_CREATE_TOOL -> {
+                val timerArguments = arguments as? PhoneTimerCreateArguments ?: return null
+                if (permission != PermissionLevel.CONFIRM ||
+                    !timerArguments.matchesToolContract() ||
+                    !consumeApproval(taskId, authorization)
+                ) {
+                    return null
+                }
+                PhoneToolOperation(
+                    toolName = PHONE_TIMER_CREATE_TOOL,
+                    acceptedMessage = "Approved timer creation accepted on this phone.",
+                    completedMessage = "The timer intent was sent to an allowlisted system Clock.",
+                    failureMessage = "An allowlisted system Clock timer could not be started",
+                    execute = { timerSource.create(timerArguments) },
+                    validate = { content ->
+                        content is PhoneTimerDispatched &&
+                            content.durationSeconds == timerArguments.durationSeconds &&
+                            content.skipClockUiRequested == timerArguments.skipClockUi &&
+                            content.matchesToolContract()
+                    },
+                    verification = PhoneToolVerification.Unverified(
+                        summary = "Timer intent dispatched, but Clock timer state is not readable by GOFFY.",
+                        checks = listOf(
+                            "single-use approval",
+                            "exact requested duration",
+                            "explicit allowlisted Clock component",
+                            "documented system timer action",
+                            "Clock postcondition unavailable",
+                        ),
+                    ),
+                    dispatcher = actionDispatcher,
                 )
             }
             else -> null
         }
+    }
+
+    private fun GoffyExecutionPlan.consumeApproval(
+        taskId: UUID,
+        authorization: PhoneToolAuthorization,
+    ): Boolean {
+        val approved = authorization as? PhoneToolAuthorization.Approved ?: return false
+        return approved.consumeFor(taskId, toolName, arguments, nowMillis()) &&
+            consumedConfirmTaskIds.add(taskId)
     }
 
     private data class PhoneToolOperation(
@@ -273,11 +325,31 @@ class DefaultPhoneToolGateway internal constructor(
         val acceptedMessage: String,
         val completedMessage: String,
         val failureMessage: String,
-        val read: suspend () -> ToolResultContent,
+        val execute: suspend () -> ToolResultContent,
         val validate: (ToolResultContent) -> Boolean,
-        val verificationSummary: String,
-        val verificationChecks: List<String>,
+        val verification: PhoneToolVerification,
+        val dispatcher: CoroutineDispatcher,
     )
+
+    private sealed interface PhoneToolVerification {
+        val summary: String
+        val checks: List<String>
+
+        data class Verified(
+            override val summary: String,
+            override val checks: List<String>,
+        ) : PhoneToolVerification
+
+        data class Unverified(
+            override val summary: String,
+            override val checks: List<String>,
+        ) : PhoneToolVerification
+
+        fun toEvent(): ExecutionEvent = when (this) {
+            is Verified -> ExecutionEvent.Verification(true, summary, checks)
+            is Unverified -> ExecutionEvent.Unverified(summary, checks)
+        }
+    }
 
     private companion object {
         const val DEFAULT_TIMEOUT_MILLIS = 2_000L

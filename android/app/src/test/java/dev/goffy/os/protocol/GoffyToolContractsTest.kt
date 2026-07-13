@@ -37,6 +37,32 @@ class GoffyToolContractsTest {
         assertFalse(valid.copy(createdAtEpochMillis = 0).matchesToolContract())
     }
 
+    @Test
+    fun timerContractRequiresAndroidBoundsActionAndSafeClockPackage() {
+        val valid = PhoneTimerDispatched(
+            300,
+            "com.google.android.deskclock",
+            "com.google.android.deskclock.TimerActivity",
+            true,
+            true,
+            ANDROID_SET_TIMER_ACTION,
+        )
+
+        assertTrue(PhoneTimerCreateArguments(1, true).matchesToolContract())
+        assertTrue(PhoneTimerCreateArguments(MAX_TIMER_SECONDS, true).matchesToolContract())
+        assertFalse(PhoneTimerCreateArguments(0, true).matchesToolContract())
+        assertFalse(PhoneTimerCreateArguments(MAX_TIMER_SECONDS + 1, true).matchesToolContract())
+        assertFalse(PhoneTimerCreateArguments(300, false).matchesToolContract())
+        assertTrue(valid.matchesToolContract())
+        assertFalse(valid.copy(durationSeconds = 0).matchesToolContract())
+        assertFalse(valid.copy(clockPackage = "android").matchesToolContract())
+        assertFalse(valid.copy(clockPackage = "com.clock\nspoof").matchesToolContract())
+        assertFalse(valid.copy(clockActivity = "com.example.clock.TimerActivity").matchesToolContract())
+        assertFalse(valid.copy(systemApplication = false).matchesToolContract())
+        assertFalse(valid.copy(skipClockUiRequested = false).matchesToolContract())
+        assertFalse(valid.copy(systemAction = "android.intent.action.SET_ALARM").matchesToolContract())
+    }
+
     private fun validDeviceInfo(): PhoneDeviceInfo = PhoneDeviceInfo(
         manufacturer = "motorola",
         model = "moto g",

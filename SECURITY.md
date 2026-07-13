@@ -39,6 +39,18 @@ include real credentials or unrelated personal data.
 - Notes use the app-private SQLite database, Android backup is disabled, SQL values
   are bound through `ContentValues` and selection arguments, and every insert is
   re-read inside the transaction before verification is reported.
+- `phone.timer.create` requires the same exact-task, exact-argument, expiring
+  approval. It resolves only an enabled, exported, allowlisted system Clock
+  handler, rejects the Android chooser and third-party handlers, then pins an
+  explicit component.
+- Timer dispatch uses Android's normal `SET_ALARM` permission and one narrow
+  `ACTION_SET_TIMER` package query. It requests no exact-alarm, notification,
+  foreground-service, boot, or broad package-query permission.
+- A timer result is a dispatch receipt for the exact approved duration and explicit
+  Clock component. The task ends `UNVERIFIED`; GOFFY does not claim that the Clock
+  honored the request or expose private Clock state it cannot read.
+- CI validates both the strict source manifest and freshly merged debug and release
+  manifests, rejecting permission variants and non-intent package queries.
 - `mac.system_info` uses Python standard-library APIs and never invokes a shell.
 - Protocol inputs reject unknown fields and unsupported versions.
 - Errors returned to clients are stable codes without stack traces or secrets.
@@ -53,5 +65,6 @@ include real credentials or unrelated personal data.
 - Disabling host security controls
 - Silent LAN or public-network exposure
 - Treating note text as SQL, a command, or additional authority
+- Implicit timer intents or non-allowlisted Clock-handler dispatch
 
 See [the initial threat model](docs/security/threat-model.md) for remaining risks.
