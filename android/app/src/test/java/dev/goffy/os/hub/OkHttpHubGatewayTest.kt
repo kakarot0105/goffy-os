@@ -7,6 +7,7 @@ import dev.goffy.os.protocol.ToolInvocationRequest
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
@@ -32,8 +33,8 @@ class OkHttpHubGatewayTest {
             server.enqueue(
                 MockResponse.Builder()
                     .webSocketUpgrade(
-                        object : ClosingServerListener() {
-                            override fun onOpen(webSocket: WebSocket, response: Response) {
+                        object : DiscoveryServerListener() {
+                            override fun onInvocation(webSocket: WebSocket) {
                                 webSocket.send(toolErrorEnvelope(TEST_REQUEST.messageId))
                             }
                         },
@@ -57,8 +58,8 @@ class OkHttpHubGatewayTest {
             server.enqueue(
                 MockResponse.Builder()
                     .webSocketUpgrade(
-                        object : ClosingServerListener() {
-                            override fun onOpen(webSocket: WebSocket, response: Response) {
+                        object : DiscoveryServerListener() {
+                            override fun onInvocation(webSocket: WebSocket) {
                                 webSocket.send(progressEnvelope(TEST_REQUEST.messageId, 0, "accepted", "Invocation accepted by the Hub."))
                                 webSocket.send(progressEnvelope(TEST_REQUEST.messageId, 1, "completed", "Tool returned schema-valid structured output."))
                                 webSocket.send(resultEnvelope(TEST_REQUEST.messageId))
@@ -105,6 +106,111 @@ class OkHttpHubGatewayTest {
     }
 
     @Test
+    fun missingCapabilityFailsBeforeReadyOrInvocation() = runTest {
+        MockWebServer().use { server ->
+            val invocations = AtomicInteger(0)
+            server.start()
+            server.enqueue(
+                MockResponse.Builder()
+                    .webSocketUpgrade(
+                        object : ClosingServerListener() {
+                            override fun onMessage(webSocket: WebSocket, text: String) {
+                                if (text.contains("\"messageType\":\"CapabilityDiscoveryRequest\"")) {
+                                    webSocket.send(
+                                        capabilityEnvelope(TEST_REQUEST.discoveryMessageId, tools = ""),
+                                    )
+                                } else {
+                                    invocations.incrementAndGet()
+                                }
+                            }
+                        },
+                    )
+                    .build(),
+            )
+
+            val events = collectEvents(server)
+
+            assertEquals(0, invocations.get())
+            assertEquals(listOf(ExecutionEvent.Starting(1)), events.dropLast(1))
+            assertEquals("capability_unavailable", (events.last() as ExecutionEvent.Error).code)
+        }
+    }
+
+    @Test
+    fun incompatibleCapabilityFailsClosedBeforeInvocation() = runTest {
+        MockWebServer().use { server ->
+            val invocations = AtomicInteger(0)
+            server.start()
+            server.enqueue(
+                MockResponse.Builder()
+                    .webSocketUpgrade(
+                        object : ClosingServerListener() {
+                            override fun onMessage(webSocket: WebSocket, text: String) {
+                                if (text.contains("\"messageType\":\"CapabilityDiscoveryRequest\"")) {
+                                    webSocket.send(
+                                        capabilityEnvelope(
+                                            TEST_REQUEST.discoveryMessageId,
+                                            capabilityTool().replace(
+                                                "\"dev.goffy/permission\":\"SAFE\"",
+                                                "\"dev.goffy/permission\":\"SENSITIVE\"",
+                                            ),
+                                        ),
+                                    )
+                                } else {
+                                    invocations.incrementAndGet()
+                                }
+                            }
+                        },
+                    )
+                    .build(),
+            )
+
+            val events = collectEvents(server)
+
+            assertEquals(0, invocations.get())
+            assertEquals(listOf(ExecutionEvent.Starting(1)), events.dropLast(1))
+            assertEquals("protocol_error", (events.last() as ExecutionEvent.Error).code)
+        }
+    }
+
+    @Test
+    fun unansweredDiscoveryTimesOutAndCancelsWithoutInvocation() = runTest {
+        MockWebServer().use { server ->
+            val discoveryRequests = AtomicInteger(0)
+            server.start()
+            server.enqueue(
+                MockResponse.Builder()
+                    .webSocketUpgrade(
+                        object : ClosingServerListener() {
+                            override fun onMessage(webSocket: WebSocket, text: String) {
+                                if (text.contains("\"messageType\":\"CapabilityDiscoveryRequest\"")) {
+                                    discoveryRequests.incrementAndGet()
+                                }
+                            }
+                        },
+                    )
+                    .build(),
+            )
+            val client = okhttp3.OkHttpClient()
+            val gateway = OkHttpHubGateway(client, attemptTimeoutMillis = 1_000)
+
+            val events = try {
+                gateway.invoke(loopbackConfig(server), TEST_REQUEST).toList()
+            } finally {
+                gateway.close()
+                client.dispatcher.executorService.shutdown()
+                client.connectionPool.evictAll()
+            }
+
+            assertEquals(ExecutionEvent.Starting(1), events.first())
+            assertEquals("hub_response_timeout", (events.last() as ExecutionEvent.Error).code)
+            assertTrue(events.none { it is ExecutionEvent.Ready })
+            assertEquals(1, discoveryRequests.get())
+            assertEquals(1, server.requestCount)
+        }
+    }
+
+    @Test
     fun authenticationFailureDoesNotRetry() = runTest {
         MockWebServer().use { server ->
             server.start()
@@ -137,8 +243,8 @@ class OkHttpHubGatewayTest {
             server.enqueue(
                 MockResponse.Builder()
                     .webSocketUpgrade(
-                        object : ClosingServerListener() {
-                            override fun onOpen(webSocket: WebSocket, response: Response) {
+                        object : DiscoveryServerListener() {
+                            override fun onInvocation(webSocket: WebSocket) {
                                 webSocket.send(resultEnvelope(UUID.fromString("22222222-2222-4222-8222-222222222222")))
                             }
                         },
@@ -197,6 +303,70 @@ class OkHttpHubGatewayTest {
     }
 
     @Test
+    fun retriesDiscoveryDisconnectsBeforeInvocationIsSent() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            repeat(3) {
+                server.enqueue(
+                    MockResponse.Builder()
+                        .webSocketUpgrade(
+                            object : ClosingServerListener() {
+                                override fun onMessage(webSocket: WebSocket, text: String) {
+                                    assertTrue(
+                                        text.contains(
+                                            "\"messageType\":\"CapabilityDiscoveryRequest\"",
+                                        ),
+                                    )
+                                    webSocket.close(1011, "discovery interrupted")
+                                }
+                            },
+                        )
+                        .build(),
+                )
+            }
+
+            val events = collectEvents(server)
+
+            assertEquals(
+                listOf(
+                    ExecutionEvent.Starting(1),
+                    ExecutionEvent.Starting(2),
+                    ExecutionEvent.Starting(3),
+                ),
+                events.take(3),
+            )
+            assertEquals("transport_connect_failed", (events.last() as ExecutionEvent.Error).code)
+            assertTrue(events.none { it is ExecutionEvent.Ready })
+            assertEquals(3, server.requestCount)
+        }
+    }
+
+    @Test
+    fun neverReplaysAfterInvocationBytesAreSent() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(
+                MockResponse.Builder()
+                    .webSocketUpgrade(
+                        object : DiscoveryServerListener() {
+                            override fun onInvocation(webSocket: WebSocket) {
+                                webSocket.close(1011, "invocation interrupted")
+                            }
+                        },
+                    )
+                    .build(),
+            )
+
+            val events = collectEvents(server)
+
+            assertEquals(ExecutionEvent.Starting(1), events.first())
+            assertEquals(ExecutionEvent.Ready, events[1])
+            assertEquals("transport_disconnected", (events.last() as ExecutionEvent.Error).code)
+            assertEquals(1, server.requestCount)
+        }
+    }
+
+    @Test
     fun collectorCancellationCancelsTheActiveSocket() = runTest {
         MockWebServer().use { server ->
             server.start()
@@ -205,7 +375,7 @@ class OkHttpHubGatewayTest {
             server.enqueue(
                 MockResponse.Builder()
                     .webSocketUpgrade(
-                        object : ClosingServerListener() {
+                        object : DiscoveryServerListener() {
                             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                                 disconnectLatch.countDown()
                             }
@@ -267,12 +437,28 @@ class OkHttpHubGatewayTest {
         }
     }
 
+    private abstract class DiscoveryServerListener : ClosingServerListener() {
+        final override fun onMessage(webSocket: WebSocket, text: String) {
+            when {
+                text.contains("\"messageType\":\"CapabilityDiscoveryRequest\"") ->
+                    webSocket.send(capabilityEnvelope(TEST_REQUEST.discoveryMessageId))
+                text.contains("\"messageType\":\"ToolInvocation\"") -> onInvocation(webSocket)
+                else -> error("unexpected client message")
+            }
+        }
+
+        open fun onInvocation(webSocket: WebSocket) = Unit
+    }
+
     private companion object {
         private val TEST_REQUEST = ToolInvocationRequest(
             messageId = UUID.fromString("11111111-1111-4111-8111-111111111111"),
             toolName = "mac.system_info",
             encodedMessage =
-                """{"protocolVersion":"0.1.0","messageId":"11111111-1111-4111-8111-111111111111","timestamp":"2026-07-13T16:00:00Z","deviceId":"android-test","messageType":"ToolInvocation","payload":{"toolName":"mac.system_info","arguments":{}},"correlationId":null}""",
+                """{"protocolVersion":"0.2.0","messageId":"11111111-1111-4111-8111-111111111111","timestamp":"2026-07-13T16:00:00Z","deviceId":"android-test","messageType":"ToolInvocation","payload":{"toolName":"mac.system_info","arguments":{}},"correlationId":null}""",
+            discoveryMessageId = UUID.fromString("77777777-7777-4777-8777-777777777777"),
+            encodedDiscoveryMessage =
+                """{"protocolVersion":"0.2.0","messageId":"77777777-7777-4777-8777-777777777777","timestamp":"2026-07-13T16:00:00Z","deviceId":"android-test","messageType":"CapabilityDiscoveryRequest","payload":{"toolName":"mac.system_info"},"correlationId":null}""",
         )
 
         private fun progressEnvelope(
@@ -316,12 +502,24 @@ class OkHttpHubGatewayTest {
                     """{"code":"tool_not_found","message":"The requested tool is unavailable or unauthorized.","retryable":false}""",
             )
 
+        private fun capabilityEnvelope(correlationId: UUID, tools: String = capabilityTool()): String =
+            eventEnvelope(
+                messageId = "88888888-8888-4888-8888-888888888888",
+                messageType = "CapabilityDiscoveryResponse",
+                correlationId = correlationId,
+                payload =
+                    """{"mcpProtocolVersion":"2025-11-25","listChanged":false,"tools":[$tools]}""",
+            )
+
+        private fun capabilityTool(): String =
+            """{"name":"mac.system_info","title":"Mac system information","description":"Read a minimal, non-sensitive snapshot of the Hub host.","inputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{},"type":"object"},"outputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"architecture":{"type":"string"},"operatingSystem":{"type":"string"},"status":{"type":"string"}},"required":["status","operatingSystem","architecture"],"type":"object"},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"_meta":{"dev.goffy/toolVersion":"1.0.0","dev.goffy/executionTarget":"MAC","dev.goffy/permission":"SAFE","dev.goffy/timeoutMs":3000}}"""
+
         private fun eventEnvelope(
             messageId: String,
             messageType: String,
             correlationId: UUID,
             payload: String,
         ): String =
-            """{"protocolVersion":"0.1.0","messageId":"$messageId","timestamp":"2026-07-13T16:00:01Z","deviceId":"goffy-hub","messageType":"$messageType","payload":$payload,"correlationId":"$correlationId"}"""
+            """{"protocolVersion":"0.2.0","messageId":"$messageId","timestamp":"2026-07-13T16:00:01Z","deviceId":"goffy-hub","messageType":"$messageType","payload":$payload,"correlationId":"$correlationId"}"""
     }
 }

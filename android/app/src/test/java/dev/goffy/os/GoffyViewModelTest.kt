@@ -372,20 +372,28 @@ class GoffyViewModelTest {
         ),
         approvalTtlMillis: Long = 60_000,
         nowMillis: () -> Long = System::currentTimeMillis,
-    ): GoffyViewModel = GoffyViewModel(
-        gateway = gateway,
-        phoneGateway = phoneGateway,
-        codec = GoffyProtocolCodec(
-            now = { Instant.parse("2026-07-13T16:00:00Z") },
-            nextMessageId = { UUID.fromString("11111111-1111-4111-8111-111111111111") },
-        ),
-        allowInsecureLoopback = true,
-        defaultEndpoint = endpoint,
-        deviceId = "goffy-android-test",
-        nextTaskId = { UUID.fromString("22222222-2222-4222-8222-222222222222") },
-        approvalTtlMillis = approvalTtlMillis,
-        nowMillis = nowMillis,
-    )
+    ): GoffyViewModel {
+        val protocolMessageIds = ArrayDeque(
+            listOf(
+                UUID.fromString("11111111-1111-4111-8111-111111111111"),
+                UUID.fromString("33333333-3333-4333-8333-333333333333"),
+            ),
+        )
+        return GoffyViewModel(
+            gateway = gateway,
+            phoneGateway = phoneGateway,
+            codec = GoffyProtocolCodec(
+                now = { Instant.parse("2026-07-13T16:00:00Z") },
+                nextMessageId = { protocolMessageIds.removeFirst() },
+            ),
+            allowInsecureLoopback = true,
+            defaultEndpoint = endpoint,
+            deviceId = "goffy-android-test",
+            nextTaskId = { UUID.fromString("22222222-2222-4222-8222-222222222222") },
+            approvalTtlMillis = approvalTtlMillis,
+            nowMillis = nowMillis,
+        )
+    }
 
     private fun phoneGateway(
         noteStore: NoteStore = fakeNoteStore(),

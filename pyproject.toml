@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "goffy-os"
-version = "0.1.0"
+version = "0.2.0"
 description = "GOFFY OS typed protocol and Mac Hub foundation"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -20,6 +20,7 @@ dependencies = [
 dev = [
   "build>=1.2,<2",
   "httpx2>=2.5,<3",
+  "jsonschema>=4.24,<5",
   "mypy>=1.15,<2",
   "pytest>=8.3,<10",
   "pytest-asyncio>=0.25,<2",

@@ -38,7 +38,8 @@ class GoffyTaskReducerTest {
         state = state.apply(taskId, ExecutionEvent.Starting(1))
         assertEquals("Starting MAC Hub connection", state.entries.single().summary)
         state = state.apply(taskId, ExecutionEvent.Ready)
-        assertEquals("MAC Hub ready; invocation sent", state.entries.single().summary)
+        assertEquals("MAC capability compatible; invocation sent", state.entries.single().summary)
+        assertTrue(state.entries.single().events.last().message.contains("capability discovered"))
         state = state.apply(taskId, progress(plan.toolName, ExecutionTarget.MAC, "accepted", 0))
         state = state.apply(taskId, progress(plan.toolName, ExecutionTarget.MAC, "completed", 1))
         state = state.apply(

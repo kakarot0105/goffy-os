@@ -15,10 +15,14 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 
-const val GOFFY_PROTOCOL_VERSION = "0.1.0"
+const val GOFFY_PROTOCOL_VERSION = "0.2.0"
+const val MCP_PROTOCOL_VERSION = "2025-11-25"
+const val MAC_SYSTEM_INFO_TOOL_VERSION = "1.0.0"
 const val MAX_PROTOCOL_MESSAGE_BYTES = 32_768
 
 enum class MessageType(val wireName: String) {
+    CAPABILITY_DISCOVERY_REQUEST("CapabilityDiscoveryRequest"),
+    CAPABILITY_DISCOVERY_RESPONSE("CapabilityDiscoveryResponse"),
     TOOL_INVOCATION("ToolInvocation"),
     TOOL_PROGRESS("ToolProgress"),
     TOOL_RESULT("ToolResult"),
@@ -41,7 +45,23 @@ data class ToolInvocationRequest(
     val messageId: UUID,
     val toolName: String,
     val encodedMessage: String,
+    val discoveryMessageId: UUID,
+    val encodedDiscoveryMessage: String,
 )
+
+data class DiscoveredToolCapability(
+    val name: String,
+    val toolVersion: String,
+    val executionTarget: ExecutionTarget,
+    val permission: String,
+    val timeoutMillis: Int,
+)
+
+sealed interface CapabilityDiscoveryMessage {
+    data class Response(val capability: DiscoveredToolCapability?) : CapabilityDiscoveryMessage
+
+    data class Error(val event: ExecutionEvent.Error) : CapabilityDiscoveryMessage
+}
 
 data class ToolProgress(
     val toolName: String,
@@ -156,26 +176,56 @@ class GoffyProtocolCodec(
         requireBounded("deviceId", deviceId, 1, 128)
         requireToolName(toolName)
         val messageId = nextMessageId()
+        val discoveryMessageId = nextMessageId()
+        if (discoveryMessageId == messageId) {
+            throw ProtocolException("discovery and invocation IDs must be unique")
+        }
+        val invocationPayload = buildJsonObject {
+            put("toolName", toolName)
+            put("arguments", JsonObject(emptyMap()))
+        }
+        val discoveryPayload = buildJsonObject { put("toolName", toolName) }
+        val encodedDiscoveryMessage = encodeEnvelope(
+            messageId = discoveryMessageId,
+            deviceId = deviceId,
+            messageType = MessageType.CAPABILITY_DISCOVERY_REQUEST,
+            payload = discoveryPayload,
+        )
+        val encodedMessage = encodeEnvelope(
+            messageId = messageId,
+            deviceId = deviceId,
+            messageType = MessageType.TOOL_INVOCATION,
+            payload = invocationPayload,
+        )
+        return ToolInvocationRequest(
+            messageId = messageId,
+            toolName = toolName,
+            encodedMessage = encodedMessage,
+            discoveryMessageId = discoveryMessageId,
+            encodedDiscoveryMessage = encodedDiscoveryMessage,
+        )
+    }
+
+    private fun encodeEnvelope(
+        messageId: UUID,
+        deviceId: String,
+        messageType: MessageType,
+        payload: JsonObject,
+    ): String {
         val root = buildJsonObject {
             put("protocolVersion", GOFFY_PROTOCOL_VERSION)
             put("messageId", messageId.toString())
             put("timestamp", now().toString())
             put("deviceId", deviceId)
-            put("messageType", MessageType.TOOL_INVOCATION.wireName)
-            put(
-                "payload",
-                buildJsonObject {
-                    put("toolName", toolName)
-                    put("arguments", JsonObject(emptyMap()))
-                },
-            )
+            put("messageType", messageType.wireName)
+            put("payload", payload)
             put("correlationId", JsonNull)
         }
         val encoded = json.encodeToString(JsonObject.serializer(), root)
         if (encoded.encodeToByteArray().size > MAX_PROTOCOL_MESSAGE_BYTES) {
             throw ProtocolException("outbound message exceeds the protocol size limit")
         }
-        return ToolInvocationRequest(messageId, toolName, encoded)
+        return encoded
     }
 
     fun decodeEvent(
@@ -183,10 +233,48 @@ class GoffyProtocolCodec(
         expectedCorrelationId: UUID,
         expectedToolName: String,
     ): ExecutionEvent {
+        requireToolName(expectedToolName)
+        val envelope = decodeInboundEnvelope(rawMessage, expectedCorrelationId)
+
+        return when (envelope.messageType) {
+            MessageType.TOOL_PROGRESS -> decodeProgress(envelope.payload, expectedToolName)
+            MessageType.TOOL_RESULT -> decodeResult(envelope.payload, expectedToolName)
+            MessageType.TOOL_ERROR -> decodeError(envelope.payload)
+            MessageType.VERIFICATION_RESULT -> decodeVerification(envelope.payload)
+            MessageType.CAPABILITY_DISCOVERY_REQUEST,
+            MessageType.CAPABILITY_DISCOVERY_RESPONSE,
+            MessageType.TOOL_INVOCATION,
+            -> throw ProtocolException("unexpected inbound message type")
+        }
+    }
+
+    fun decodeCapabilityDiscovery(
+        rawMessage: String,
+        expectedCorrelationId: UUID,
+        expectedToolName: String,
+    ): CapabilityDiscoveryMessage {
+        requireToolName(expectedToolName)
+        val envelope = decodeInboundEnvelope(rawMessage, expectedCorrelationId)
+        return when (envelope.messageType) {
+            MessageType.CAPABILITY_DISCOVERY_RESPONSE ->
+                decodeCapabilityResponse(envelope.payload, expectedToolName)
+            MessageType.TOOL_ERROR -> CapabilityDiscoveryMessage.Error(decodeError(envelope.payload))
+            MessageType.CAPABILITY_DISCOVERY_REQUEST,
+            MessageType.TOOL_INVOCATION,
+            MessageType.TOOL_PROGRESS,
+            MessageType.TOOL_RESULT,
+            MessageType.VERIFICATION_RESULT,
+            -> throw ProtocolException("unexpected discovery response type")
+        }
+    }
+
+    private fun decodeInboundEnvelope(
+        rawMessage: String,
+        expectedCorrelationId: UUID,
+    ): DecodedEnvelope {
         if (rawMessage.encodeToByteArray().size > MAX_PROTOCOL_MESSAGE_BYTES) {
             throw ProtocolException("inbound message exceeds the protocol size limit")
         }
-        requireToolName(expectedToolName)
         val root = parseObject(rawMessage)
         root.requireKeys(ENVELOPE_REQUIRED_KEYS, ENVELOPE_OPTIONAL_KEYS)
         if (root.requireString("protocolVersion") != GOFFY_PROTOCOL_VERSION) {
@@ -201,16 +289,103 @@ class GoffyProtocolCodec(
             ?.let { parseUuid(it, "correlationId") }
             ?: throw ProtocolException("missing event correlation ID")
         if (correlationId != expectedCorrelationId) {
-            throw ProtocolException("event correlation ID does not match the invocation")
+            throw ProtocolException("event correlation ID does not match the request")
         }
-        val payload = root.requireObject("payload")
+        return DecodedEnvelope(messageType, root.requireObject("payload"))
+    }
 
-        return when (messageType) {
-            MessageType.TOOL_PROGRESS -> decodeProgress(payload, expectedToolName)
-            MessageType.TOOL_RESULT -> decodeResult(payload, expectedToolName)
-            MessageType.TOOL_ERROR -> decodeError(payload)
-            MessageType.VERIFICATION_RESULT -> decodeVerification(payload)
-            MessageType.TOOL_INVOCATION -> throw ProtocolException("unexpected inbound invocation")
+    private fun decodeCapabilityResponse(
+        payload: JsonObject,
+        expectedToolName: String,
+    ): CapabilityDiscoveryMessage.Response {
+        payload.requireKeys(CAPABILITY_RESPONSE_KEYS)
+        if (payload.requireString("mcpProtocolVersion") != MCP_PROTOCOL_VERSION) {
+            throw ProtocolException("unsupported MCP metadata version")
+        }
+        if (payload.requireBoolean("listChanged")) {
+            throw ProtocolException("dynamic capability lists are not supported")
+        }
+        val tools = payload.requireArray("tools")
+        if (tools.size > 1) throw ProtocolException("discovery returned too many tools")
+        if (tools.isEmpty()) return CapabilityDiscoveryMessage.Response(capability = null)
+        val tool = tools.single() as? JsonObject
+            ?: throw ProtocolException("discovered tool must be an object")
+        tool.requireKeys(TOOL_CAPABILITY_KEYS)
+        val toolName = tool.requireString("name")
+        requireExpectedTool(toolName, expectedToolName)
+        tool.requireBoundedString("title", 1, 128)
+        tool.requireBoundedString("description", 1, 512)
+        validateSystemInfoInputSchema(tool.requireObject("inputSchema"))
+        validateSystemInfoOutputSchema(tool.requireObject("outputSchema"))
+        validateSystemInfoAnnotations(tool.requireObject("annotations"))
+
+        val metadata = tool.requireObject("_meta")
+        metadata.requireKeys(GOFFY_METADATA_KEYS)
+        val toolVersion = metadata.requireString("dev.goffy/toolVersion")
+        if (toolVersion != MAC_SYSTEM_INFO_TOOL_VERSION) {
+            throw ProtocolException("unsupported tool contract version")
+        }
+        val target = metadata.requireExecutionTarget("dev.goffy/executionTarget")
+        if (target != ExecutionTarget.MAC) {
+            throw ProtocolException("discovered tool has an unexpected execution target")
+        }
+        val permission = metadata.requireString("dev.goffy/permission")
+        if (permission != "SAFE") {
+            throw ProtocolException("discovered tool has an unexpected permission")
+        }
+        val timeoutMillis = metadata.requireInt("dev.goffy/timeoutMs")
+        if (timeoutMillis !in 1..MAX_DISCOVERED_TIMEOUT_MILLIS) {
+            throw ProtocolException("discovered tool timeout is outside the client policy")
+        }
+        return CapabilityDiscoveryMessage.Response(
+            DiscoveredToolCapability(
+                name = toolName,
+                toolVersion = toolVersion,
+                executionTarget = target,
+                permission = permission,
+                timeoutMillis = timeoutMillis,
+            ),
+        )
+    }
+
+    private fun validateSystemInfoInputSchema(schema: JsonObject) {
+        schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS)
+        validateObjectSchemaRoot(schema)
+        schema.requireObject("properties").requireKeys(emptySet())
+    }
+
+    private fun validateSystemInfoOutputSchema(schema: JsonObject) {
+        schema.requireKeys(OUTPUT_SCHEMA_KEYS)
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(SYSTEM_INFO_KEYS)
+        SYSTEM_INFO_KEYS.forEach { field ->
+            val fieldSchema = properties.requireObject(field)
+            fieldSchema.requireKeys(STRING_SCHEMA_KEYS)
+            if (fieldSchema.requireString("type") != "string") {
+                throw ProtocolException("system information field schema must be a string")
+            }
+        }
+        schema.requireArray("required").requireExactStrings(SYSTEM_INFO_KEYS, "required")
+    }
+
+    private fun validateObjectSchemaRoot(schema: JsonObject) {
+        if (schema.requireString("\$schema") != JSON_SCHEMA_DIALECT ||
+            schema.requireString("type") != "object" ||
+            schema.requireBoolean("additionalProperties")
+        ) {
+            throw ProtocolException("tool schema is incompatible with the local contract")
+        }
+    }
+
+    private fun validateSystemInfoAnnotations(annotations: JsonObject) {
+        annotations.requireKeys(ANNOTATION_KEYS)
+        if (!annotations.requireBoolean("readOnlyHint") ||
+            annotations.requireBoolean("destructiveHint") ||
+            !annotations.requireBoolean("idempotentHint") ||
+            annotations.requireBoolean("openWorldHint")
+        ) {
+            throw ProtocolException("tool annotations are incompatible with the local policy")
         }
     }
 
@@ -262,7 +437,7 @@ class GoffyProtocolCodec(
         )
     }
 
-    private fun decodeError(payload: JsonObject): ExecutionEvent {
+    private fun decodeError(payload: JsonObject): ExecutionEvent.Error {
         payload.requireKeys(ERROR_KEYS)
         return ExecutionEvent.Error(
             code = payload.requireBoundedString("code", 1, 64),
@@ -318,10 +493,19 @@ class GoffyProtocolCodec(
     }
 
     private fun JsonObject.requireExecutionTarget(): ExecutionTarget {
-        val value = requireString("executionTarget")
+        return requireExecutionTarget("executionTarget")
+    }
+
+    private fun JsonObject.requireExecutionTarget(key: String): ExecutionTarget {
+        val value = requireString(key)
         return ExecutionTarget.entries.firstOrNull { it.name == value }
             ?: throw ProtocolException("unsupported execution target")
     }
+
+    private data class DecodedEnvelope(
+        val messageType: MessageType,
+        val payload: JsonObject,
+    )
 }
 
 private fun JsonObject.requireKeys(required: Set<String>, optional: Set<String> = emptySet()) {
@@ -352,6 +536,16 @@ private fun JsonObject.requireInt(key: String): Int = (this[key] as? JsonPrimiti
 private fun JsonObject.requireBoolean(key: String): Boolean =
     (this[key] as? JsonPrimitive)?.booleanOrNull
         ?: throw ProtocolException("$key must be a boolean")
+
+private fun JsonArray.requireExactStrings(expected: Set<String>, field: String) {
+    val values = map { element ->
+        element.stringValueOrNull()
+            ?: throw ProtocolException("$field entries must be strings")
+    }
+    if (values.size != expected.size || values.toSet() != expected) {
+        throw ProtocolException("$field entries do not match the local contract")
+    }
+}
 
 private fun JsonObject.requireBoundedString(key: String, minimum: Int, maximum: Int): String {
     val value = requireString(key)
@@ -396,3 +590,35 @@ private val RESULT_KEYS = setOf("toolName", "executionTarget", "structuredConten
 private val SYSTEM_INFO_KEYS = setOf("status", "operatingSystem", "architecture")
 private val ERROR_KEYS = setOf("code", "message", "retryable")
 private val VERIFICATION_KEYS = setOf("succeeded", "summary", "checks")
+private const val JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
+private const val MAX_DISCOVERED_TIMEOUT_MILLIS = 30_000
+private val CAPABILITY_RESPONSE_KEYS = setOf("mcpProtocolVersion", "listChanged", "tools")
+private val TOOL_CAPABILITY_KEYS = setOf(
+    "name",
+    "title",
+    "description",
+    "inputSchema",
+    "outputSchema",
+    "annotations",
+    "_meta",
+)
+private val GOFFY_METADATA_KEYS = setOf(
+    "dev.goffy/toolVersion",
+    "dev.goffy/executionTarget",
+    "dev.goffy/permission",
+    "dev.goffy/timeoutMs",
+)
+private val ANNOTATION_KEYS = setOf(
+    "readOnlyHint",
+    "destructiveHint",
+    "idempotentHint",
+    "openWorldHint",
+)
+private val EMPTY_INPUT_SCHEMA_KEYS = setOf(
+    "\$schema",
+    "type",
+    "additionalProperties",
+    "properties",
+)
+private val OUTPUT_SCHEMA_KEYS = EMPTY_INPUT_SCHEMA_KEYS + "required"
+private val STRING_SCHEMA_KEYS = setOf("type")

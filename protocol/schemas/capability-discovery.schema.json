@@ -1,0 +1,354 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goffy.dev/protocol/0.2.0/capability-discovery.schema.json",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/CapabilityDiscoveryRequestPayload"
+    },
+    {
+      "$ref": "#/$defs/CapabilityDiscoveryResponsePayload"
+    }
+  ],
+  "$defs": {
+    "CapabilityDiscoveryRequestPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "toolName"
+      ],
+      "properties": {
+        "toolName": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.]*$",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    },
+    "CapabilityDiscoveryResponsePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mcpProtocolVersion",
+        "listChanged",
+        "tools"
+      ],
+      "properties": {
+        "mcpProtocolVersion": {
+          "const": "2025-11-25"
+        },
+        "listChanged": {
+          "const": false
+        },
+        "tools": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "$ref": "#/$defs/ToolCapability"
+          }
+        }
+      }
+    },
+    "ToolCapability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "title",
+        "description",
+        "inputSchema",
+        "outputSchema",
+        "annotations",
+        "_meta"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_.]*$",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "inputSchema": {
+          "$ref": "#/$defs/NormalizedObjectSchema"
+        },
+        "outputSchema": {
+          "$ref": "#/$defs/NormalizedObjectSchema"
+        },
+        "annotations": {
+          "$ref": "#/$defs/ToolAnnotations"
+        },
+        "_meta": {
+          "$ref": "#/$defs/GoffyToolMetadata"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "const": "mac.system_info"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "inputSchema": {
+                "$ref": "#/$defs/MacSystemInfoInputSchema"
+              },
+              "outputSchema": {
+                "$ref": "#/$defs/MacSystemInfoOutputSchema"
+              },
+              "annotations": {
+                "$ref": "#/$defs/MacSystemInfoAnnotations"
+              },
+              "_meta": {
+                "$ref": "#/$defs/MacSystemInfoMetadata"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "NormalizedObjectSchema": {
+      "type": "object",
+      "required": [
+        "$schema",
+        "type",
+        "additionalProperties",
+        "properties"
+      ],
+      "properties": {
+        "$schema": {
+          "const": "https://json-schema.org/draft/2020-12/schema"
+        },
+        "type": {
+          "const": "object"
+        },
+        "additionalProperties": {
+          "const": false
+        },
+        "properties": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
+    "ToolAnnotations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "readOnlyHint",
+        "destructiveHint",
+        "idempotentHint",
+        "openWorldHint"
+      ],
+      "properties": {
+        "readOnlyHint": {
+          "type": "boolean"
+        },
+        "destructiveHint": {
+          "type": "boolean"
+        },
+        "idempotentHint": {
+          "type": "boolean"
+        },
+        "openWorldHint": {
+          "type": "boolean"
+        }
+      }
+    },
+    "MacSystemInfoInputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "type",
+        "additionalProperties",
+        "properties"
+      ],
+      "properties": {
+        "$schema": {
+          "const": "https://json-schema.org/draft/2020-12/schema"
+        },
+        "type": {
+          "const": "object"
+        },
+        "additionalProperties": {
+          "const": false
+        },
+        "properties": {
+          "type": "object",
+          "maxProperties": 0
+        }
+      }
+    },
+    "MacSystemInfoOutputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "$schema",
+        "type",
+        "additionalProperties",
+        "properties",
+        "required"
+      ],
+      "properties": {
+        "$schema": {
+          "const": "https://json-schema.org/draft/2020-12/schema"
+        },
+        "type": {
+          "const": "object"
+        },
+        "additionalProperties": {
+          "const": false
+        },
+        "properties": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "status",
+            "operatingSystem",
+            "architecture"
+          ],
+          "properties": {
+            "status": {
+              "$ref": "#/$defs/StringSchema"
+            },
+            "operatingSystem": {
+              "$ref": "#/$defs/StringSchema"
+            },
+            "architecture": {
+              "$ref": "#/$defs/StringSchema"
+            }
+          }
+        },
+        "required": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "status",
+              "operatingSystem",
+              "architecture"
+            ]
+          }
+        }
+      }
+    },
+    "StringSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "const": "string"
+        }
+      }
+    },
+    "MacSystemInfoAnnotations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "readOnlyHint",
+        "destructiveHint",
+        "idempotentHint",
+        "openWorldHint"
+      ],
+      "properties": {
+        "readOnlyHint": {
+          "const": true
+        },
+        "destructiveHint": {
+          "const": false
+        },
+        "idempotentHint": {
+          "const": true
+        },
+        "openWorldHint": {
+          "const": false
+        }
+      }
+    },
+    "MacSystemInfoMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dev.goffy/toolVersion",
+        "dev.goffy/executionTarget",
+        "dev.goffy/permission",
+        "dev.goffy/timeoutMs"
+      ],
+      "properties": {
+        "dev.goffy/toolVersion": {
+          "const": "1.0.0"
+        },
+        "dev.goffy/executionTarget": {
+          "const": "MAC"
+        },
+        "dev.goffy/permission": {
+          "const": "SAFE"
+        },
+        "dev.goffy/timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30000
+        }
+      }
+    },
+    "GoffyToolMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dev.goffy/toolVersion",
+        "dev.goffy/executionTarget",
+        "dev.goffy/permission",
+        "dev.goffy/timeoutMs"
+      ],
+      "properties": {
+        "dev.goffy/toolVersion": {
+          "type": "string",
+          "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
+        },
+        "dev.goffy/executionTarget": {
+          "type": "string",
+          "enum": [
+            "PHONE",
+            "MAC",
+            "CLOUD"
+          ]
+        },
+        "dev.goffy/permission": {
+          "type": "string",
+          "enum": [
+            "SAFE",
+            "CONFIRM",
+            "SENSITIVE",
+            "BLOCKED"
+          ]
+        },
+        "dev.goffy/timeoutMs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30000
+        }
+      }
+    }
+  }
+}

@@ -29,6 +29,21 @@ include real credentials or unrelated personal data.
   `localhost` and `127.0.0.1` for the documented USB port-reversal flow.
 - Automatic reconnect occurs only before an invocation is sent. Sent requests
   are not replayed, and local cancellation does not claim Hub-side termination.
+- MAC invocation requires an authenticated, same-socket capability discovery
+  preflight. Discovery is bound to one locally allowlisted tool and consumed by
+  one invocation attempt; it cannot grant authority for an unknown tool.
+- Android validates the exact `mac.system_info` tool version, target, permission,
+  schema subset, and safety annotations before sending invocation bytes. Configured
+  timeout metadata is range-checked rather than treated as authority.
+- Hub registration currently rejects every non-`SAFE`, non-read-only Mac tool.
+  SAFE metadata must also be non-destructive, idempotent, closed-world, and use
+  closed object schemas. CONFIRM and SENSITIVE tools remain unavailable until an
+  explicit authorization protocol exists.
+- A complete Android Hub attempt is bounded to 35 seconds. Timeout cancels the
+  socket and reports failure without retrying an ambiguously delivered invocation.
+- The Hub rejects duplicate message IDs on a connection, caps each connection at
+  64 unique messages, and applies the configured byte limit to inbound and outbound
+  envelopes. Cross-connection replay protection remains a pairing milestone.
 - Tool names are resolved only from an in-process allowlist.
 - `phone.battery.status` performs one foreground-requested BatteryManager read,
   validates its typed output, and requires no Android permission or background receiver.
@@ -62,6 +77,8 @@ include real credentials or unrelated personal data.
   non-intent package queries.
 - `mac.system_info` uses Python standard-library APIs and never invokes a shell.
 - Protocol inputs reject unknown fields and unsupported versions.
+- GOFFY protocol `0.2.0`, MCP metadata revision `2025-11-25`, and individual tool
+  contract versions are separate compatibility boundaries.
 - Errors returned to clients are stable codes without stack traces or secrets.
 
 ## Explicitly prohibited

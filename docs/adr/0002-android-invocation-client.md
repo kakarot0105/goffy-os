@@ -1,6 +1,6 @@
 # ADR 0002: Android invocation client
 
-- Status: Accepted
+- Status: Accepted, amended by ADR 0007
 - Date: 2026-07-13
 
 ## Context
@@ -14,7 +14,8 @@ introducing pairing, broad routing, or mutable Mac authority.
 - Route only the exact `Show/Check [me] my Mac status` command family to
   `SAFE mac.system_info`.
 - Open a fresh authenticated WebSocket for each invocation and send the bearer
-  token only in the `Authorization` header.
+  token only in the `Authorization` header. ADR 0007 adds a mandatory same-socket
+  capability preflight before invocation bytes are sent.
 - Use a strict Kotlin codec and task reducer that reject unsupported fields,
   mismatched correlation IDs, unexpected execution targets, invalid ordering,
   and oversized messages.

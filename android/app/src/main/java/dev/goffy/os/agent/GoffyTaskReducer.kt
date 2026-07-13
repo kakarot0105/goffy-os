@@ -393,13 +393,13 @@ data class TaskTimelineState(
     }
 
     private fun TaskTimelineEntry.readySummary(): String = when (executionTarget) {
-        ExecutionTarget.MAC -> "MAC Hub ready; invocation sent"
+        ExecutionTarget.MAC -> "MAC capability compatible; invocation sent"
         ExecutionTarget.PHONE -> "PHONE local execution ready"
         ExecutionTarget.CLOUD -> "CLOUD execution ready"
     }
 
     private fun TaskTimelineEntry.readyEventMessage(): String = when (executionTarget) {
-        ExecutionTarget.MAC -> "Authenticated MAC Hub connection ready"
+        ExecutionTarget.MAC -> "Authenticated MAC Hub capability discovered and compatible"
         ExecutionTarget.PHONE -> "PHONE local execution ready"
         ExecutionTarget.CLOUD -> "CLOUD execution ready"
     }

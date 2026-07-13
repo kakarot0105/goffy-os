@@ -18,7 +18,10 @@ from goffy_hub.registry import (
 from goffy_hub.settings import HubSettings
 from goffy_hub.tools import build_mac_system_tool
 from goffy_protocol import (
+    MCP_PROTOCOL_VERSION,
     PROTOCOL_VERSION,
+    CapabilityDiscoveryRequestPayload,
+    CapabilityDiscoveryResponsePayload,
     ExecutionTarget,
     MessageEnvelope,
     MessageType,
@@ -31,7 +34,8 @@ from goffy_protocol import (
 )
 
 LOGGER = logging.getLogger(__name__)
-SendEvent = Callable[[MessageType, BaseModel, UUID | None], Awaitable[None]]
+SendEvent = Callable[[MessageType, BaseModel, UUID | None], Awaitable[bool]]
+MAX_MESSAGES_PER_CONNECTION = 64
 
 
 class HealthResponse(BaseModel):
@@ -51,7 +55,7 @@ def build_registry(settings: HubSettings) -> ToolRegistry:
 def create_app(settings: HubSettings | None = None) -> FastAPI:
     resolved_settings = settings or HubSettings.from_environment()
     registry = build_registry(resolved_settings)
-    app = FastAPI(title="GOFFY Hub", version="0.1.0", docs_url="/docs")
+    app = FastAPI(title="GOFFY Hub", version="0.2.0", docs_url="/docs")
     app.state.settings = resolved_settings
     app.state.registry = registry
 
@@ -70,16 +74,26 @@ def create_app(settings: HubSettings | None = None) -> FastAPI:
             return
 
         await websocket.accept()
+        discovered_tools: set[str] = set()
+        seen_message_ids: set[UUID] = set()
+        outbound_closed = False
 
         async def send_event(
             message_type: MessageType, payload: BaseModel, correlation_id: UUID | None
-        ) -> None:
+        ) -> bool:
+            nonlocal outbound_closed
             event = build_envelope(
                 message_type=message_type,
                 payload=payload,
                 correlation_id=correlation_id,
             )
-            await websocket.send_text(event.model_dump_json(by_alias=True))
+            encoded = event.model_dump_json(by_alias=True)
+            if len(encoded.encode("utf-8")) > resolved_settings.max_message_bytes:
+                outbound_closed = True
+                await websocket.close(code=1009, reason="outbound message too large")
+                return False
+            await websocket.send_text(encoded)
+            return True
 
         try:
             while True:
@@ -93,17 +107,32 @@ def create_app(settings: HubSettings | None = None) -> FastAPI:
                     )
                     await websocket.close(code=1009, reason="message too large")
                     return
-                await _handle_message(raw_message, registry, send_event)
+                await _handle_message(
+                    raw_message,
+                    registry,
+                    discovered_tools,
+                    seen_message_ids,
+                    send_event,
+                )
+                if outbound_closed:
+                    return
         except WebSocketDisconnect:
             return
 
     return app
 
 
-async def _handle_message(raw_message: str, registry: ToolRegistry, send_event: SendEvent) -> None:
+async def _handle_message(
+    raw_message: str,
+    registry: ToolRegistry,
+    discovered_tools: set[str],
+    seen_message_ids: set[UUID],
+    send_event: SendEvent,
+) -> None:
     try:
         envelope = MessageEnvelope.model_validate_json(raw_message)
     except ValidationError:
+        discovered_tools.clear()
         await _send_error(
             send_event,
             code="invalid_message",
@@ -112,15 +141,67 @@ async def _handle_message(raw_message: str, registry: ToolRegistry, send_event: 
         )
         return
 
+    if envelope.message_id in seen_message_ids:
+        discovered_tools.clear()
+        await _send_error(
+            send_event,
+            code="duplicate_message",
+            message="Message ID has already been used on this connection.",
+            correlation_id=envelope.message_id,
+        )
+        return
+    if len(seen_message_ids) >= MAX_MESSAGES_PER_CONNECTION:
+        discovered_tools.clear()
+        await _send_error(
+            send_event,
+            code="connection_message_limit",
+            message="Connection message limit reached.",
+            correlation_id=envelope.message_id,
+        )
+        return
+    seen_message_ids.add(envelope.message_id)
+
+    if envelope.message_type is MessageType.CAPABILITY_DISCOVERY_REQUEST:
+        discovered_tools.clear()
+        try:
+            discovery_request = CapabilityDiscoveryRequestPayload.model_validate(envelope.payload)
+        except ValidationError:
+            await _send_error(
+                send_event,
+                code="invalid_capability_discovery",
+                message="Capability discovery payload is invalid.",
+                correlation_id=envelope.message_id,
+            )
+            return
+
+        tools = registry.discover(discovery_request.tool_name)
+        if tools:
+            discovered_tools.add(tools[0].name)
+        await send_event(
+            MessageType.CAPABILITY_DISCOVERY_RESPONSE,
+            CapabilityDiscoveryResponsePayload(
+                mcp_protocol_version=MCP_PROTOCOL_VERSION,
+                list_changed=False,
+                tools=tools,
+            ),
+            envelope.message_id,
+        )
+        return
+
     if envelope.message_type is not MessageType.TOOL_INVOCATION:
+        discovered_tools.clear()
         await _send_error(
             send_event,
             code="unsupported_message_type",
-            message="This Hub endpoint accepts ToolInvocation messages only.",
+            message=(
+                "This Hub endpoint accepts capability discovery and tool invocation messages only."
+            ),
             correlation_id=envelope.message_id,
         )
         return
 
+    invocation_capabilities = frozenset(discovered_tools)
+    discovered_tools.clear()
     try:
         invocation = ToolInvocationPayload.model_validate(envelope.payload)
     except ValidationError:
@@ -132,7 +213,16 @@ async def _handle_message(raw_message: str, registry: ToolRegistry, send_event: 
         )
         return
 
-    await send_event(
+    if invocation.tool_name not in invocation_capabilities:
+        await _send_error(
+            send_event,
+            code="capability_discovery_required",
+            message="Capability discovery must succeed before invoking this tool.",
+            correlation_id=envelope.message_id,
+        )
+        return
+
+    if not await send_event(
         MessageType.TOOL_PROGRESS,
         ToolProgressPayload(
             tool_name=invocation.tool_name,
@@ -142,7 +232,8 @@ async def _handle_message(raw_message: str, registry: ToolRegistry, send_event: 
             message="Invocation accepted by the Hub.",
         ),
         envelope.message_id,
-    )
+    ):
+        return
 
     try:
         result = await registry.invoke(invocation.tool_name, invocation.arguments)
@@ -172,7 +263,7 @@ async def _handle_message(raw_message: str, registry: ToolRegistry, send_event: 
         )
         return
 
-    await send_event(
+    if not await send_event(
         MessageType.TOOL_PROGRESS,
         ToolProgressPayload(
             tool_name=invocation.tool_name,
@@ -182,8 +273,9 @@ async def _handle_message(raw_message: str, registry: ToolRegistry, send_event: 
             message="Tool returned schema-valid structured output.",
         ),
         envelope.message_id,
-    )
-    await send_event(
+    ):
+        return
+    if not await send_event(
         MessageType.TOOL_RESULT,
         ToolResultPayload(
             tool_name=invocation.tool_name,
@@ -191,7 +283,8 @@ async def _handle_message(raw_message: str, registry: ToolRegistry, send_event: 
             structured_content=result.structured_content,
         ),
         envelope.message_id,
-    )
+    ):
+        return
     await send_event(
         MessageType.VERIFICATION_RESULT,
         VerificationResultPayload(

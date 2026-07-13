@@ -1,6 +1,7 @@
 package dev.goffy.os.hub
 
 import dev.goffy.os.protocol.GoffyProtocolCodec
+import dev.goffy.os.protocol.CapabilityDiscoveryMessage
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ProtocolException
 import dev.goffy.os.protocol.ToolInvocationRequest
@@ -9,12 +10,16 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.coroutines.resume
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -26,13 +31,33 @@ class OkHttpHubGateway private constructor(
     private val client: OkHttpClient,
     private val codec: GoffyProtocolCodec,
     private val ownsClient: Boolean,
+    private val attemptTimeoutMillis: Long,
+    private val timeoutDispatcher: CoroutineDispatcher,
 ) : HubGateway {
-    constructor() : this(defaultClient(), GoffyProtocolCodec(), ownsClient = true)
+    constructor() : this(
+        defaultClient(),
+        GoffyProtocolCodec(),
+        ownsClient = true,
+        attemptTimeoutMillis = DEFAULT_ATTEMPT_TIMEOUT_MILLIS,
+        timeoutDispatcher = Dispatchers.IO,
+    )
 
     internal constructor(
         client: OkHttpClient,
         codec: GoffyProtocolCodec = GoffyProtocolCodec(),
-    ) : this(client, codec, ownsClient = false)
+        attemptTimeoutMillis: Long = DEFAULT_ATTEMPT_TIMEOUT_MILLIS,
+        timeoutDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    ) : this(
+        client,
+        codec,
+        ownsClient = false,
+        attemptTimeoutMillis = attemptTimeoutMillis,
+        timeoutDispatcher = timeoutDispatcher,
+    )
+
+    init {
+        require(attemptTimeoutMillis > 0) { "attemptTimeoutMillis must be positive" }
+    }
 
     private val closed = AtomicBoolean(false)
     private val activeSockets = ConcurrentHashMap.newKeySet<WebSocket>()
@@ -92,14 +117,22 @@ class OkHttpHubGateway private constructor(
         while (attempt <= MAX_ATTEMPTS && !closed.get()) {
             emit(ExecutionEvent.Starting(attempt))
 
-            when (
-                val outcome = performAttempt(
-                    config = config,
-                    request = request,
-                    invocationSocket = invocationSocket,
-                    emit = emit,
-                )
-            ) {
+            val outcome = withContext(timeoutDispatcher) {
+                withTimeoutOrNull(attemptTimeoutMillis) {
+                    performAttempt(
+                        config = config,
+                        request = request,
+                        invocationSocket = invocationSocket,
+                        emit = emit,
+                    )
+                }
+            } ?: AttemptOutcome.FinalFailure(
+                terminalError(
+                    code = "hub_response_timeout",
+                    message = "Hub discovery or execution exceeded the bounded response window.",
+                ),
+            )
+            when (outcome) {
                 AttemptOutcome.Completed -> return
                 is AttemptOutcome.FinalFailure -> {
                     emit(outcome.event)
@@ -127,7 +160,8 @@ class OkHttpHubGateway private constructor(
         invocationSocket: AtomicReference<WebSocket?>,
         emit: (ExecutionEvent) -> Unit,
     ): AttemptOutcome = suspendCancellableCoroutine { continuation ->
-        val messageSent = AtomicBoolean(false)
+        val discoverySent = AtomicBoolean(false)
+        val invocationSent = AtomicBoolean(false)
         val terminalEventReceived = AtomicBoolean(false)
         val closingOutcome = AtomicReference<AttemptOutcome?>(null)
         val finished = AtomicBoolean(false)
@@ -158,18 +192,16 @@ class OkHttpHubGateway private constructor(
 
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                emit(ExecutionEvent.Ready)
-
-                if (webSocket.send(request.encodedMessage)) {
-                    messageSent.set(true)
-                } else {
+                discoverySent.set(true)
+                if (!webSocket.send(request.encodedDiscoveryMessage)) {
+                    discoverySent.set(false)
                     closeWithOutcome(
                         webSocket = webSocket,
                         status = NORMAL_CLOSURE_STATUS,
                         outcome = AttemptOutcome.RetryableFailure(
                             retryableError(
                                 code = "transport_send_failed",
-                                message = "Hub request could not be sent.",
+                                message = "Hub capability discovery could not be sent.",
                             ),
                         ),
                         closingOutcome = closingOutcome,
@@ -179,6 +211,66 @@ class OkHttpHubGateway private constructor(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                if (!invocationSent.get()) {
+                    val discovery = try {
+                        codec.decodeCapabilityDiscovery(
+                            rawMessage = text,
+                            expectedCorrelationId = request.discoveryMessageId,
+                            expectedToolName = request.toolName,
+                        )
+                    } catch (_: ProtocolException) {
+                        closeWithProtocolFailure(
+                            webSocket = webSocket,
+                            closingOutcome = closingOutcome,
+                            finish = ::finish,
+                        )
+                        return
+                    }
+
+                    val failure = when (discovery) {
+                        is CapabilityDiscoveryMessage.Error -> discovery.event
+                        is CapabilityDiscoveryMessage.Response ->
+                            if (discovery.capability == null) {
+                                terminalError(
+                                    code = "capability_unavailable",
+                                    message = "The required Hub capability is unavailable.",
+                                )
+                            } else {
+                                null
+                            }
+                    }
+                    if (failure != null) {
+                        closeWithOutcome(
+                            webSocket = webSocket,
+                            status = NORMAL_CLOSURE_STATUS,
+                            outcome = AttemptOutcome.FinalFailure(failure),
+                            closingOutcome = closingOutcome,
+                            finish = ::finish,
+                        )
+                        return
+                    }
+
+                    invocationSent.set(true)
+                    if (webSocket.send(request.encodedMessage)) {
+                        emit(ExecutionEvent.Ready)
+                    } else {
+                        invocationSent.set(false)
+                        closeWithOutcome(
+                            webSocket = webSocket,
+                            status = NORMAL_CLOSURE_STATUS,
+                            outcome = AttemptOutcome.RetryableFailure(
+                                retryableError(
+                                    code = "transport_send_failed",
+                                    message = "Hub request could not be sent.",
+                                ),
+                            ),
+                            closingOutcome = closingOutcome,
+                            finish = ::finish,
+                        )
+                    }
+                    return
+                }
+
                 val event = try {
                     codec.decodeEvent(
                         rawMessage = text,
@@ -219,11 +311,15 @@ class OkHttpHubGateway private constructor(
                 when {
                     closingOutcome.get() != null -> finish(checkNotNull(closingOutcome.get()))
                     terminalEventReceived.get() -> finish(AttemptOutcome.Completed)
-                    !messageSent.get() -> finish(
+                    !invocationSent.get() -> finish(
                         AttemptOutcome.RetryableFailure(
                             retryableError(
                                 code = "transport_connect_failed",
-                                message = "Hub connection closed before the request was sent.",
+                                message = if (discoverySent.get()) {
+                                    "Hub connection closed before the request was sent."
+                                } else {
+                                    "Hub connection closed before capability discovery was sent."
+                                },
                             ),
                         ),
                     )
@@ -260,7 +356,7 @@ class OkHttpHubGateway private constructor(
                             ),
                         )
                     }
-                    !messageSent.get() -> {
+                    !invocationSent.get() -> {
                         AttemptOutcome.RetryableFailure(
                             retryableError(
                                 code = "transport_connect_failed",
@@ -333,6 +429,7 @@ class OkHttpHubGateway private constructor(
         private const val PROTOCOL_ERROR_STATUS = 1002
         private const val HTTP_UNAUTHORIZED = 401
         private const val HTTP_FORBIDDEN = 403
+        private const val DEFAULT_ATTEMPT_TIMEOUT_MILLIS = 35_000L
 
         private fun defaultClient(): OkHttpClient =
             OkHttpClient.Builder()

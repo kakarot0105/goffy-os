@@ -49,15 +49,20 @@ review both published checksums during any wrapper upgrade.
   permission. Its callback is removed on every success, failure, timeout, or cancel.
 - Any extra instruction, unrelated command, or appended authority is rejected on
   the phone before a Hub connection opens.
+- Before a Mac invocation, Android requests only the locally routed capability on
+  the same authenticated socket. It sends no invocation until tool version,
+  target, permission, schemas, and safety annotations are compatible.
+- Missing or incompatible discovery ends the task without `Ready`, progress, or
+  tool execution. The timeline records when capability compatibility succeeds.
 - Android treats `ToolResult` as data only. The task becomes successful only
   after a matching `VerificationResult`.
 - Battery status reads `BatteryManager` once per command, validates `0..100`,
   requests no permission, and performs no polling or background work.
 - Device info reads static `Build` display fields once, requests no permission,
   and excludes identifiers such as serial, IMEI, Android ID, MAC, and fingerprint.
-- Automatic reconnect is bounded to connection failures before the invocation is
-  sent: at most 2 retries and 3 total attempts. After send, the client does not
-  replay the request.
+- Automatic reconnect is bounded to discovery and connection failures before the
+  invocation is sent: at most 2 retries and 3 total attempts. After send, the
+  client does not replay the request. A complete attempt times out after 35 seconds.
 - Cancel only stops the local job and socket. Hub-side completion is not
   guaranteed.
 - Cancelling a pending note approval guarantees no tool invocation. Once the
@@ -90,6 +95,10 @@ review both published checksums during any wrapper upgrade.
 5. In the app, configure the Hub endpoint as `ws://127.0.0.1:8787/ws/v1`, then
    enter the same bearer token.
 6. Submit `Show my Mac status` or `Check my Mac status`.
+
+The task timeline should show an authenticated compatible MAC capability before
+accepted tool progress. A Hub using GOFFY protocol `0.1.0`, a missing tool, or a
+changed tool contract must fail before invocation rather than silently falling back.
 
 Debug cleartext is allowed only for `localhost` and `127.0.0.1` through the
 debug network security config. Release builds should use `wss://.../ws/v1`.

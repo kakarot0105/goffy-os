@@ -1,5 +1,7 @@
 from starlette.testclient import TestClient
 
+from goffy_protocol import PROTOCOL_VERSION
+
 
 def test_health_is_typed_and_minimal(client: TestClient) -> None:
     response = client.get("/health")
@@ -7,6 +9,7 @@ def test_health_is_typed_and_minimal(client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "status": "ok",
-        "protocolVersion": "0.1.0",
+        "protocolVersion": PROTOCOL_VERSION,
         "toolAccess": "enabled",
     }
+    assert client.app.version == "0.2.0"

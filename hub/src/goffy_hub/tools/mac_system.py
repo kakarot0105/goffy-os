@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 from goffy_hub.registry import ToolDefinition
-from goffy_protocol import ExecutionTarget, PermissionLevel
+from goffy_protocol import ExecutionTarget, PermissionLevel, ToolAnnotations
 
 
 class MacSystemInfoInput(BaseModel):
@@ -40,16 +40,17 @@ def build_mac_system_tool(timeout_seconds: float) -> ToolDefinition:
         name="mac.system_info",
         title="Mac system information",
         description="Read a minimal, non-sensitive snapshot of the Hub host.",
+        tool_version="1.0.0",
         permission=PermissionLevel.SAFE,
         execution_target=ExecutionTarget.MAC,
         timeout_seconds=timeout_seconds,
         input_model=MacSystemInfoInput,
         output_model=MacSystemInfoOutput,
         handler=read_mac_system_info,
-        annotations={
-            "readOnlyHint": True,
-            "destructiveHint": False,
-            "idempotentHint": True,
-            "openWorldHint": False,
-        },
+        annotations=ToolAnnotations(
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        ),
     )

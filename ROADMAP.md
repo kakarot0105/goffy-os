@@ -37,9 +37,20 @@
 - [x] Approval-gated, callback-verified `phone.flashlight.set`
 - [ ] Physical Moto G battery-status verification
 
-## Milestones 3-8
+## Milestone 3: MCP core - in progress
 
-3. MCP capability registry and standards-compliant MCP servers
+- [x] Typed Hub capability registry with bounded, stable discovery metadata
+- [x] GOFFY protocol `0.2.0` capability discovery request and response
+- [x] MCP `2025-11-25`-aligned tool schemas, annotations, and namespaced metadata
+- [x] Android discovery gate before `mac.system_info` invocation
+- [x] Per-invocation discovery consumption, bounded timeout, and no post-send replay
+- [ ] Unified PHONE capability registry
+- [ ] Standards-compliant MCP JSON-RPC initialization, `tools/list`, and `tools/call`
+- [ ] Tool-health checks and list-change notifications
+- [ ] Persistent, user-visible capability audit trail
+
+## Milestones 4-8
+
 4. Foreground-only voice, camera, QR, and OCR
 5. Narrow, approval-gated Mac automation
 6. Inspectable and deletable user-approved memory

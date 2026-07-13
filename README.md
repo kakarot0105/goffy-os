@@ -5,9 +5,10 @@ Android phone provides the command surface and small local engine; a macOS Hub
 provides controlled access to heavier local capabilities. MCP-compatible typed
 tools are the capability boundary.
 
-> Status: Milestone 2 phone engine in progress. The current repo implements five
-> offline PHONE actions and the software path for one SAFE Mac action, but physical
-> Moto G verification, pairing, and trusted LAN transport remain open.
+> Status: Milestone 3 MCP core in progress. The current repo implements five
+> offline PHONE actions and a discovery-gated SAFE Mac action, but physical Moto G
+> verification, pairing, a standards-compliant MCP transport, and trusted LAN
+> operation remain open.
 
 ## Current vertical slice
 
@@ -21,8 +22,9 @@ tools are the capability boundary.
 - Approval-gated `CONFIRM phone.flashlight.set` with CameraManager callback verification
 - Exact-task, exact-arguments, expiring, single-use phone approval grants
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
+- Per-invocation discovery of the locally allowlisted Mac tool before execution
 - FastAPI Hub bound to `127.0.0.1` by default
-- Versioned, typed phone-to-Hub protocol models
+- GOFFY protocol `0.2.0` with MCP `2025-11-25`-aligned tool metadata
 - Allowlisted, read-only `SAFE mac.system_info` tool
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
@@ -63,6 +65,10 @@ curl http://127.0.0.1:8787/health
 Tool access remains disabled when `GOFFY_HUB_TOKEN` is unset. Never commit a
 real token. Use localhost for now; LAN remains unsupported until trusted TLS
 and pairing exist. See [Hub setup](docs/setup/hub.md) for WebSocket usage.
+
+`/ws/v1` is GOFFY's typed application protocol, not an MCP JSON-RPC endpoint.
+Its discovery records intentionally mirror MCP tool schemas and annotations so
+the same registry can back a standards-compliant MCP server in a later slice.
 
 ## Android setup
 

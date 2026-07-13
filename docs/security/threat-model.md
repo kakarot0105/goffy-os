@@ -14,8 +14,12 @@
 | Token leakage | Bearer token in header only; not in URL, saved state, or stringified config output | Secure mobile storage for future non-debug flows |
 | Accidental cleartext exposure | Release endpoint validation requires `wss`; debug cleartext is limited to `localhost` and `127.0.0.1` | Trusted TLS provisioning and pairing |
 | Command injection or authority expansion | Anchored routes plus fixed SAFE MAC and PHONE gateways reject appended instructions | Review every future route and tool |
-| Replay after partial delivery | Retries are limited to failures before send; sent invocations are not replayed automatically | Idempotency strategy for future mutating tools |
+| Replay after partial delivery | Retries are limited to failures before send; sent invocations are not replayed automatically; duplicate IDs are rejected within a Hub connection | Device-bound cross-connection replay protection before mutating Mac tools |
 | Protocol confusion | Explicit version plus strict Python and Kotlin codecs | Compatibility test matrix as message types expand |
+| Remote registry authority expansion | Discovery requests only the locally routed tool; Android exact-checks policy metadata and schemas; Hub consumes discovery once | Signed capability manifests and pairing identity |
+| Stale or replayed discovery | Each valid discovery replaces prior session state and is consumed by one invocation attempt | Session-bound audit identifiers |
+| Registry metadata resource exhaustion | One tool per response, 64-tool Hub registry cap, 64 messages per connection, bidirectional envelope limits, and no cache or polling | Cursor pagination for future standards-compliant MCP listing |
+| Hung discovery or Hub execution | Android cancels the socket after a bounded 35-second attempt and does not retry ambiguous delivery | Tool-specific negotiated deadlines and cancellation protocol |
 | Host information leakage | `mac.system_info` returns status, OS family, and architecture only | User-visible field policy for future tools |
 | Unnecessary phone-state collection | Battery state is read once only after an explicit command; no receiver, polling, or permission | Field policy for future phone tools |
 | Device fingerprinting | Device info is local-only and limited to manufacturer, model, Android release, and SDK; stable identifiers and build fingerprint are excluded | Reassess before persistence or remote transmission |
