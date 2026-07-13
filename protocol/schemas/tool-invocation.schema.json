@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goffy.dev/protocol/0.1.0/tool-invocation.schema.json",
+  "title": "GOFFY Tool Invocation Payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["toolName", "arguments"],
+  "properties": {
+    "toolName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_.]*$",
+      "maxLength": 128
+    },
+    "arguments": { "type": "object" }
+  }
+}

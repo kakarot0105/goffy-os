@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goffy.dev/protocol/0.1.0/envelope.schema.json",
+  "title": "GOFFY Message Envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "messageId",
+    "timestamp",
+    "deviceId",
+    "messageType",
+    "payload"
+  ],
+  "properties": {
+    "protocolVersion": { "const": "0.1.0" },
+    "messageId": { "type": "string", "format": "uuid" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "deviceId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "messageType": { "type": "string", "minLength": 1 },
+    "payload": { "type": "object" },
+    "correlationId": {
+      "oneOf": [
+        { "type": "string", "format": "uuid" },
+        { "type": "null" }
+      ]
+    }
+  }
+}

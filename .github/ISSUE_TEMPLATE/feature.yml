@@ -1,0 +1,33 @@
+name: Feature proposal
+description: Propose one narrow, verifiable capability
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: User outcome
+      description: What should the user be able to accomplish?
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Primary execution target
+      options: [PHONE, MAC, CLOUD]
+    validations:
+      required: true
+  - type: dropdown
+    id: permission
+    attributes:
+      label: Expected permission level
+      options: [SAFE, CONFIRM, SENSITIVE, BLOCKED or uncertain]
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: Success verification
+      description: How can GOFFY prove the requested outcome occurred?
+    validations:
+      required: true

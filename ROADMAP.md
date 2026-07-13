@@ -1,0 +1,38 @@
+# GOFFY OS Roadmap
+
+## Milestone 0: Foundation - in progress
+
+- [x] Monorepo structure and governance documents
+- [x] Android Compose GOFFY LITE shell source
+- [x] FastAPI Hub shell and health endpoint
+- [x] Versioned protocol models and schemas
+- [x] Authenticated WebSocket boundary
+- [x] Typed `mac.system_info` registry tool
+- [x] Python unit and integration tests
+- [x] CI, lint, type, and security configuration
+- [ ] Android build verified on a configured JDK 17 / SDK 36 toolchain
+- [ ] GOFFY home shell verified on the Moto G physical device
+
+## Milestone 1: First end-to-end action
+
+- Android WebSocket client with reconnect and cancellation
+- Deterministic routing for `Show my Mac status`
+- Runtime approval and task-state reducer
+- Progress/result/verification timeline rendering
+- End-to-end failure and reconnection tests
+
+## Milestone 2: Phone engine
+
+- Battery and device status
+- Approval-gated flashlight, note, and timer tools
+- Offline deterministic router
+- PHONE, MAC, and CLOUD routing state
+
+## Milestones 3-8
+
+3. MCP capability registry and standards-compliant MCP servers
+4. Foreground-only voice, camera, QR, and OCR
+5. Narrow, approval-gated Mac automation
+6. Inspectable and deletable user-approved memory
+7. Polished, accessible, battery-aware GOFFY UI
+8. Signed beta, packaged Hub, diagnostics, upgrade, and rollback

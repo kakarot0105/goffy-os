@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Goffy Agent OS</title>
+    <meta
+      name="description"
+      content="A browser-based agentic phone OS shell designed for repurposed Android hardware."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Syne:wght@500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="icon" type="image/svg+xml" href="icon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body data-theme="sunset">
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+    <main class="shell">
+      <section class="intro-panel">
+        <p class="eyebrow">Agent Shell</p>
+        <h1>Goffy Agent OS</h1>
+        <p class="intro-copy">
+          A phone-first operating shell for repurposed Android hardware:
+          command console, execution queue, routines, memory, devices, and a
+          remote-first agent workflow.
+        </p>
+        <div class="intro-pills">
+          <span>Kiosk-ready</span>
+          <span>Remote-first</span>
+          <span>Persistent state</span>
+        </div>
+      </section>
+
+      <section class="device-stage" aria-label="Goffy Agent OS phone shell">
+        <div class="device-shadow"></div>
+        <div class="phone" id="phone">
+          <div class="camera-island"></div>
+          <header class="status-bar">
+            <span id="statusTime">9:41</span>
+            <div class="status-icons" aria-hidden="true">
+              <span id="runtimeBadge">REM</span>
+              <span class="battery-pill">
+                <span class="battery-fill"></span>
+              </span>
+            </div>
+          </header>
+
+          <div class="screen">
+            <section class="view boot-view active" id="bootView">
+              <div class="boot-logo">
+                <span>GO</span>
+                <span>FFY</span>
+              </div>
+              <p class="boot-caption">Bringing the shell online</p>
+              <div class="boot-bar">
+                <span id="bootProgress"></span>
+              </div>
+              <p class="boot-tip" id="bootTip">Syncing command surfaces...</p>
+            </section>
+
+            <section class="view lock-view" id="lockView">
+              <div class="lock-glow"></div>
+              <div class="lock-copy">
+                <p class="lock-label">Goffy Agent OS</p>
+                <h2 id="lockTime">9:41</h2>
+                <p id="lockDate">Monday, July 13</p>
+                <p class="lock-weather">
+                  Remote core linked. Swipe into the command surface.
+                </p>
+              </div>
+              <button class="unlock-button" id="unlockButton" type="button">
+                Enter shell
+              </button>
+            </section>
+
+            <section class="view home-view" id="homeView">
+              <div class="wallpaper-noise"></div>
+              <article class="hero-card">
+                <p class="eyebrow">Mission Control</p>
+                <h2 id="heroGreeting">Route the day from one screen.</h2>
+                <p id="heroMessage">
+                  Remote agent live, queue healthy, and device surfaces ready.
+                </p>
+                <div class="hero-meta">
+                  <span id="runtimeStatus">Remote core linked</span>
+                  <span id="queueStatus">0 active tasks</span>
+                </div>
+              </article>
+
+              <div class="widget-row">
+                <button class="mini-widget" data-app="tasks" type="button">
+                  <span class="mini-label">Execution Queue</span>
+                  <strong id="queueWidgetValue">0 active tasks</strong>
+                </button>
+                <button class="mini-widget" id="peekButton" type="button">
+                  <span class="mini-label">System State</span>
+                  <strong id="systemWidgetValue">Remote core linked</strong>
+                </button>
+              </div>
+
+              <div class="command-strip" aria-label="Quick commands">
+                <button class="command-pill" data-home-prompt="Give me a daily brief" type="button">
+                  Daily brief
+                </button>
+                <button class="command-pill" data-home-prompt="Summarize connected devices" type="button">
+                  Room state
+                </button>
+                <button class="command-pill" data-home-prompt="Run bedtime routine" type="button">
+                  Bedtime
+                </button>
+              </div>
+
+              <section class="app-grid" aria-label="Installed apps">
+                <button class="app-icon console" data-app="console" type="button">
+                  <span class="app-swatch">CN</span>
+                  <span>Console</span>
+                </button>
+                <button class="app-icon tasks" data-app="tasks" type="button">
+                  <span class="app-swatch">TS</span>
+                  <span>Tasks</span>
+                </button>
+                <button class="app-icon routines" data-app="routines" type="button">
+                  <span class="app-swatch">RT</span>
+                  <span>Routines</span>
+                </button>
+                <button class="app-icon memory" data-app="memory" type="button">
+                  <span class="app-swatch">MM</span>
+                  <span>Memory</span>
+                </button>
+                <button class="app-icon devices" data-app="devices" type="button">
+                  <span class="app-swatch">DV</span>
+                  <span>Devices</span>
+                </button>
+                <button class="app-icon settings" data-app="settings" type="button">
+                  <span class="app-swatch">ST</span>
+                  <span>Settings</span>
+                </button>
+              </section>
+
+              <nav class="dock" aria-label="Favorite apps">
+                <button class="dock-icon" data-app="console" type="button">Console</button>
+                <button class="dock-icon" data-app="tasks" type="button">Tasks</button>
+                <button class="dock-icon" data-app="devices" type="button">Devices</button>
+                <button class="dock-icon" data-app="settings" type="button">Settings</button>
+              </nav>
+
+              <div class="home-indicator" aria-hidden="true"></div>
+            </section>
+
+            <section class="view app-view" id="appView">
+              <header class="app-header">
+                <button id="appBack" class="ghost-button" type="button">
+                  Back
+                </button>
+                <div class="app-header-copy">
+                  <p id="appEyebrow" class="eyebrow">App</p>
+                  <h2 id="appTitle">Console</h2>
+                </div>
+                <button id="appSheet" class="ghost-button" type="button">
+                  Control
+                </button>
+              </header>
+              <div class="app-content" id="appContent"></div>
+            </section>
+
+            <aside class="notification-sheet" id="notificationSheet">
+              <div class="sheet-handle"></div>
+              <div class="sheet-topline">
+                <p class="eyebrow">Control Surface</p>
+                <strong id="sheetStatus">Remote core nominal.</strong>
+              </div>
+
+              <div class="quick-toggles">
+                <button class="toggle-chip active" data-toggle="mic" type="button">
+                  Mic
+                </button>
+                <button class="toggle-chip active" data-toggle="sync" type="button">
+                  Sync
+                </button>
+                <button class="toggle-chip active" data-toggle="guard" type="button">
+                  Guard
+                </button>
+                <button class="toggle-chip" data-toggle="quiet" type="button">
+                  Quiet
+                </button>
+              </div>
+
+              <div class="notification-list" id="notificationList"></div>
+            </aside>
+
+            <button
+              class="sheet-toggle"
+              id="sheetToggle"
+              type="button"
+              aria-label="Open control surface"
+            >
+              Control
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

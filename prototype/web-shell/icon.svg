@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Goffy OS icon">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff8f61" />
+      <stop offset="55%" stop-color="#ffc868" />
+      <stop offset="100%" stop-color="#2a4f8a" />
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="34" fill="url(#bg)" />
+  <circle cx="42" cy="44" r="16" fill="#fff3df" opacity="0.9" />
+  <path
+    d="M31 82c0-16.6 13.4-30 30-30h12c13.8 0 24 10.2 24 23s-10.2 23-24 23H49c-9.9 0-18-8.1-18-18z"
+    fill="#fff3df"
+    opacity="0.92"
+  />
+</svg>

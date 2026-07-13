@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">GOFFY OS</string>
+    <string name="home_kicker">AGENTIC OPERATING ENVIRONMENT</string>
+    <string name="home_title">GOFFY</string>
+    <string name="home_subtitle">Observe. Plan. Act. Verify.</string>
+    <string name="orb_description">GOFFY agent orb, idle</string>
+    <string name="connection_label">MAC LINK</string>
+    <string name="connection_disconnected">DISCONNECTED</string>
+    <string name="connection_connecting">CONNECTING</string>
+    <string name="connection_connected">CONNECTED</string>
+    <string name="target_label">EXECUTION TARGET</string>
+    <string name="target_mac">MAC</string>
+    <string name="performance_lite">GOFFY LITE</string>
+    <string name="command_hint">Ask GOFFY to do something</string>
+    <string name="send_command">Send</string>
+    <string name="microphone_placeholder">Voice input is coming in Milestone 4</string>
+    <string name="camera_placeholder">Camera input is coming in Milestone 4</string>
+    <string name="microphone_short">MIC</string>
+    <string name="camera_short">CAM</string>
+    <string name="timeline_title">TASK TIMELINE</string>
+    <string name="timeline_empty">No actions yet. Every GOFFY step will appear here.</string>
+    <string name="waiting_for_hub">Waiting for a secure Hub connection</string>
+</resources>
