@@ -49,6 +49,7 @@
 - [x] Bounded, fail-closed tool-health checks
 - [x] Persistent, user-visible Android audit trail for terminal tasks
 - [x] Resumable MCP list-change notifications
+- [x] Loopback bootstrap pairing with stable, revocable paired-device credentials
 - [ ] Direct Hub/MCP operator audit after stable paired identity and user-visible retrieval
 
 ## Milestones 4-8

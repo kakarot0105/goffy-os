@@ -20,15 +20,33 @@ include real credentials or unrelated personal data.
 
 - Hub network binding is `127.0.0.1` by default.
 - Non-local binding requires explicit LAN mode and configured TLS files.
-- Tool authentication is disabled unless a token is explicitly configured;
-  disabled means all tool requests are rejected.
+- Legacy tool authentication is disabled unless a bootstrap token is explicitly
+  configured. In paired mode, tool access remains disabled until at least one
+  active paired credential exists.
+- Paired mode requires an explicit absolute `GOFFY_PAIRING_DATABASE_PATH`. The
+  bootstrap token then has loopback pairing-admin scope only and cannot access
+  `/ws/v1` or `/mcp`.
+- Paired mode rejects a non-local Hub bind even if LAN mode, TLS files, and MCP
+  allowlists are configured. Paired tool credentials are local-only in this slice.
+- Pairing challenge creation, redemption, credential listing, and revocation are
+  loopback-only even when LAN binding guards are configured. Challenge creation
+  also requires bootstrap administration.
+- Challenges are memory-only, random, one-time, 120 seconds by default, capped at
+  three pending entries, and invalidated after five failed attempts. Redemption
+  JSON is capped at 2 KiB, validation errors never echo secret input, and
+  secret-bearing success responses disable caching.
+- Paired bearers contain 256 bits of randomness and are returned once. SQLite
+  stores only a domain-separated SHA-256 digest, generated credential ID, bounded
+  device metadata, and timestamps in a `0600` file. Active credentials are capped
+  at 32 and total retained rows at 64.
 - The exact `/mcp` endpoint uses the official MCP SDK's stateful Streamable HTTP
   transport. It accepts `POST`, authenticated session `GET` for server events,
   and authenticated session `DELETE`. It is separate from GOFFY `/ws/v1`.
-- MCP operations require initialization and the issued session ID. Sessions are
-  credential-bound by the SDK, explicitly terminable, limited to eight active
-  sessions by default, and idle-reaped after 60 seconds. A connected event stream
-  remains counted and is server-rotated after 45 seconds before bounded reconnect.
+- MCP operations require initialization and the issued session ID. Paired sessions
+  are bound to a unique credential-ID principal by the SDK, explicitly terminable,
+  limited to eight active sessions by default, and idle-reaped after 60 seconds. A
+  connected event stream remains counted and is server-rotated after 45 seconds
+  before bounded reconnect.
 - MCP requests require the fail-closed bearer token and pass exact Host and Origin
   allowlists before JSON-RPC parsing. Local defaults include only loopback names.
 - MCP JSON request and response bodies share the configured Hub byte limit. SSE
@@ -38,11 +56,15 @@ include real credentials or unrelated personal data.
   and 8 KiB per structured output.
 - MCP execution defaults to two concurrent calls with a bounded one-second queue.
   Registry tool timeouts remain authoritative after admission.
-- The current bearer token is a development authentication placeholder, not MCP
-  OAuth, pairing, rotation, revocation, or device identity.
+- Paired credentials are not MCP OAuth. Token rotation and trusted LAN onboarding
+  remain unimplemented.
+- Revocation persists before the Hub terminates every indexed live WebSocket and
+  MCP session for that credential and releases its capacity slot. New
+  authentication checks the digest store; revoked state survives restart.
 - WebSocket tokens are passed in the `Authorization` header, never in URLs.
-- The Android client keeps the development token in memory only and excludes it
-  from saved UI state and string representations.
+- The Android client still accepts a token through its debug configuration, keeps
+  it in memory only, and excludes it from saved UI state and string representations.
+  Guided QR pairing and secure Android credential storage are not implemented.
 - Release Android clients require `wss://`; debug cleartext is limited to
   `localhost` and `127.0.0.1` for the documented USB port-reversal flow.
 - Automatic reconnect occurs only before an invocation is sent. Sent requests
@@ -136,8 +158,8 @@ include real credentials or unrelated personal data.
   background retry or WorkManager recovery.
 - Android backup and device-to-device transfer are disabled for app data, and
   uninstall removes local audit records.
-- Direct Hub/MCP operator audit remains deferred until stable paired identity
-  and user-visible retrieval exist.
+- Direct Hub/MCP operator audit remains deferred until user-visible retrieval and
+  bounded audit storage exist; stable paired identity is now available.
 - CI validates both the strict source manifest and freshly merged debug and release
   manifests, rejecting permission variants, undeclared hardware features, and
   non-intent package queries.

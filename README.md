@@ -7,10 +7,11 @@ tools are the capability boundary.
 
 > Status: Milestone 3 MCP core in progress. The current repo implements five
 > offline PHONE actions, a discovery-gated SAFE Mac action, an official MCP
-> Streamable HTTP boundary, and a persistent user-visible Android audit trail
+> Streamable HTTP boundary, stable Hub paired-device credentials, and a persistent
+> user-visible Android audit trail
 > for the newest 50 terminal tasks. MCP tool-list changes now stream with
-> bounded, session-local reconnect replay. Physical Moto G verification, pairing,
-> direct Hub/MCP operator audit, and trusted LAN operation remain open.
+> bounded, session-local reconnect replay. Android guided pairing, physical Moto G
+> verification, direct Hub/MCP operator audit, and trusted LAN operation remain open.
 
 ## Current vertical slice
 
@@ -34,6 +35,7 @@ tools are the capability boundary.
 - MCP initialization, `tools/list`, and registry-backed `tools/call`
 - Bounded, fail-closed Hub tool-health checks
 - Authenticated MCP tool-list change notifications with bounded reconnect replay
+- Explicit loopback pairing with digest-only, revocable per-device Hub credentials
 - Allowlisted, read-only `SAFE mac.system_info` tool
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
@@ -72,9 +74,12 @@ The Hub listens only on `127.0.0.1:8787` by default. Check it with:
 curl http://127.0.0.1:8787/health
 ```
 
-Tool access remains disabled when `GOFFY_HUB_TOKEN` is unset. Never commit a
-real token. Use localhost for now; LAN remains unsupported until trusted TLS
-and pairing exist. See [Hub setup](docs/setup/hub.md) for WebSocket and MCP usage.
+Legacy tool access remains disabled when `GOFFY_HUB_TOKEN` is unset; paired mode
+can still authenticate previously issued active credentials. Never commit a real
+token. The default command above is legacy USB development mode. To enable
+stable paired identity, configure the explicit state path and follow
+[Hub setup](docs/setup/hub.md). Pairing remains loopback-only and trusted LAN use
+is still unsupported.
 With the Hub running, verify the official MCP path in another terminal:
 
 ```bash
@@ -160,7 +165,7 @@ ROM remains a later hardware-specific project after the agent runtime is proven.
 .venv/bin/ruff check .
 .venv/bin/mypy hub/src protocol/python
 .venv/bin/python -m build
-.venv/bin/pytest -q
+.venv/bin/python -m pytest -q
 .venv/bin/python scripts/security_scan.py
 ```
 

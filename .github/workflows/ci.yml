@@ -34,7 +34,7 @@ jobs:
       - name: Build package
         run: python -m build
       - name: Test
-        run: pytest -q
+        run: python -m pytest -q
       - name: Security invariants
         run: python scripts/security_scan.py
 

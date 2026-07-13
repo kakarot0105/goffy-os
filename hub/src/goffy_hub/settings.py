@@ -16,6 +16,8 @@ class HubSettings(BaseModel):
     port: int = Field(default=8787, ge=1, le=65535)
     allow_lan: bool = False
     auth_token: SecretStr | None = Field(default=None, min_length=24)
+    pairing_database_path: Path | None = None
+    pairing_challenge_ttl_seconds: int = Field(default=120, ge=30, le=300)
     tls_cert_file: Path | None = None
     tls_key_file: Path | None = None
     max_message_bytes: int = Field(default=32_768, ge=1_024, le=1_048_576)
@@ -35,6 +37,11 @@ class HubSettings(BaseModel):
         for tls_file in (self.tls_cert_file, self.tls_key_file):
             if tls_file is not None and not tls_file.is_file():
                 raise ValueError("configured TLS files must exist and be regular files")
+
+        if self.pairing_database_path is not None and not self.pairing_database_path.is_absolute():
+            raise ValueError("GOFFY_PAIRING_DATABASE_PATH must be absolute")
+        if self.pairing_database_path is not None and self.host not in LOCAL_HOSTS:
+            raise ValueError("paired mode requires a local Hub binding")
 
         if self.host not in LOCAL_HOSTS and not self.allow_lan:
             raise ValueError("non-local Hub binding requires GOFFY_HUB_ALLOW_LAN=true")
@@ -86,6 +93,10 @@ class HubSettings(BaseModel):
             port=int(os.getenv("GOFFY_HUB_PORT", "8787")),
             allow_lan=allow_lan == "true",
             auth_token=SecretStr(token) if token else None,
+            pairing_database_path=_optional_path("GOFFY_PAIRING_DATABASE_PATH"),
+            pairing_challenge_ttl_seconds=int(
+                os.getenv("GOFFY_PAIRING_CHALLENGE_TTL_SECONDS", "120")
+            ),
             tls_cert_file=_optional_path("GOFFY_HUB_TLS_CERT_FILE"),
             tls_key_file=_optional_path("GOFFY_HUB_TLS_KEY_FILE"),
             tool_health_timeout_seconds=float(os.getenv("GOFFY_TOOL_HEALTH_TIMEOUT_SECONDS", "1")),

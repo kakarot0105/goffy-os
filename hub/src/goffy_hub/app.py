@@ -10,8 +10,12 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic.alias_generators import to_camel
 
-from goffy_hub.auth import is_authorized
+from goffy_hub.auth import SAFE_TOOL_SCOPE, CredentialAuthenticator
+from goffy_hub.connections import WebSocketConnectionRegistry
+from goffy_hub.credentials import CredentialStore
 from goffy_hub.mcp_server import build_mcp_runtime
+from goffy_hub.pairing import PairingService
+from goffy_hub.pairing_api import build_pairing_router
 from goffy_hub.registry import (
     ToolArgumentsError,
     ToolExecutionError,
@@ -71,7 +75,22 @@ def create_app(
     resolved_settings = settings or HubSettings.from_environment()
     registry = registry or build_registry(resolved_settings)
     registry.seal()
-    mcp_runtime = build_mcp_runtime(resolved_settings, registry)
+    credential_store = (
+        CredentialStore(resolved_settings.pairing_database_path)
+        if resolved_settings.pairing_database_path is not None
+        else None
+    )
+    authenticator = CredentialAuthenticator(resolved_settings, credential_store)
+    pairing_service = (
+        PairingService(
+            credential_store,
+            challenge_ttl_seconds=resolved_settings.pairing_challenge_ttl_seconds,
+        )
+        if credential_store is not None
+        else None
+    )
+    websocket_connections = WebSocketConnectionRegistry()
+    mcp_runtime = build_mcp_runtime(resolved_settings, registry, authenticator)
     tool_health_monitor = ToolHealthMonitor(
         registry,
         interval_seconds=resolved_settings.tool_health_interval_seconds,
@@ -95,6 +114,26 @@ def create_app(
     app.state.registry = registry
     app.state.mcp_runtime = mcp_runtime
     app.state.tool_health_monitor = tool_health_monitor
+    app.state.authenticator = authenticator
+    app.state.credential_store = credential_store
+    app.state.pairing_service = pairing_service
+    app.state.websocket_connections = websocket_connections
+
+    if pairing_service is not None:
+
+        async def revoke_live_access(credential_id: UUID) -> None:
+            await asyncio.gather(
+                websocket_connections.revoke(credential_id),
+                mcp_runtime.revoke_credential(credential_id),
+            )
+
+        app.include_router(
+            build_pairing_router(
+                authenticator,
+                pairing_service,
+                on_revoke=revoke_live_access,
+            )
+        )
 
     @app.get("/health", response_model=HealthResponse, response_model_by_alias=True)
     async def health() -> HealthResponse:
@@ -104,7 +143,7 @@ def create_app(
         return HealthResponse(
             status="ok" if healthy_tool_count == total_tool_count else "degraded",
             protocol_version=PROTOCOL_VERSION,
-            tool_access="enabled" if resolved_settings.auth_token else "disabled",
+            tool_access="enabled" if await authenticator.tool_access_enabled() else "disabled",
             healthy_tool_count=healthy_tool_count,
             unavailable_tool_count=total_tool_count - healthy_tool_count,
             tool_registry_revision=tool_health.revision,
@@ -112,11 +151,22 @@ def create_app(
 
     @app.websocket("/ws/v1")
     async def websocket_endpoint(websocket: WebSocket) -> None:
-        if not is_authorized(websocket.headers.get("authorization"), resolved_settings):
+        principal = await authenticator.authenticate_header(websocket.headers.get("authorization"))
+        if principal is None:
             await websocket.close(code=4401, reason="authentication required")
+            return
+        if not principal.has_scope(SAFE_TOOL_SCOPE):
+            await websocket.close(code=4403, reason="insufficient scope")
             return
 
         await websocket.accept()
+        credential_id = principal.credential_id
+        if credential_id is not None:
+            await websocket_connections.register(credential_id, websocket)
+            if not await authenticator.is_active(principal):
+                await websocket_connections.unregister(credential_id, websocket)
+                await websocket.close(code=4403, reason="credential revoked")
+                return
         discovered_tools: set[str] = set()
         seen_message_ids: set[UUID] = set()
         outbound_closed = False
@@ -161,6 +211,9 @@ def create_app(
                     return
         except WebSocketDisconnect:
             return
+        finally:
+            if credential_id is not None:
+                await websocket_connections.unregister(credential_id, websocket)
 
     # The terminal mount preserves the exact /mcp path without Starlette's slash redirect.
     app.mount("/", mcp_runtime.application, name="mcp")

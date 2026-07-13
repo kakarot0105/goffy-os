@@ -10,16 +10,18 @@
 
 | Threat | Current control | Remaining work |
 | --- | --- | --- |
-| Unauthenticated tool use | Fail-closed bearer token check on every `/ws/v1` connection and `/mcp` request | MCP authorization profile, pairing, rotation, and revocation |
-| Token leakage | Bearer token in header only; not in URL, saved state, or stringified config output | Secure mobile storage for future non-debug flows |
-| Accidental cleartext exposure | Release endpoint validation requires `wss`; debug cleartext is limited to `localhost` and `127.0.0.1` | Trusted TLS provisioning and pairing |
+| Unauthenticated tool use | Fail-closed bearer check on every `/ws/v1` connection and `/mcp` request; paired mode gives each credential a stable principal and removes tool scope from bootstrap admin | MCP authorization profile and token rotation |
+| Token leakage | Bearer in header only; paired token returned once; only domain-separated digest persists; invalid pairing errors do not echo input | Secure Android storage for future guided flows |
+| Pairing replay or credential farming | Loopback-only bootstrap creation and redemption; 256-bit memory-only challenges; 120-second TTL; single-use lock; three pending and five-failure caps; 2 KiB typed body | Device-aware rate limits and guided QR UX |
+| Stale access after revocation | Revoked state persists before indexed live WebSocket and MCP sessions terminate; new auth rechecks the store | Real-network race and process-failure testing |
+| Accidental cleartext exposure | Release endpoint validation requires `wss`; paired mode requires a local Hub bind; debug and all pairing delivery are loopback-only | Trusted TLS certificate provisioning for LAN |
 | Command injection or authority expansion | Anchored routes plus fixed SAFE MAC and PHONE gateways reject appended instructions | Review every future route and tool |
 | Replay after partial delivery | Retries are limited to failures before send; sent invocations are not replayed automatically; duplicate IDs are rejected within a Hub connection | Device-bound cross-connection replay protection before mutating Mac tools |
 | Protocol confusion | Explicit version plus strict Python and Kotlin codecs | Compatibility test matrix as message types expand |
-| Remote registry authority expansion | Discovery requests only the locally routed tool; Android exact-checks policy metadata and schemas; Hub consumes discovery once | Signed capability manifests and pairing identity |
+| Remote registry authority expansion | Discovery requests only the locally routed tool; Android exact-checks policy metadata and schemas; Hub consumes discovery once | Signed capability manifests |
 | Stale or replayed discovery | Each valid discovery replaces prior session state and is consumed by one invocation attempt | Session-bound audit identifiers |
 | MCP DNS rebinding or cross-origin request | Exact Host and Origin allowlists run before authentication and JSON-RPC parsing | Trusted certificate provisioning and deployed-origin testing |
-| MCP request, session, or execution exhaustion | 32-tool and 24 KiB registry caps, request/response and tool-output byte limits, eight credential-bound sessions with 60-second idle reaping, two concurrent calls, one-second queue, and tool deadlines | Per-device rate limits after pairing identity exists |
+| MCP request, session, or execution exhaustion | 32-tool and 24 KiB registry caps, request/response and tool-output byte limits, eight credential-bound sessions with 60-second idle reaping, two concurrent calls, one-second queue, and tool deadlines | Per-device request rate limits |
 | Stale or failing tool availability | Sealed registry, startup probe, bounded periodic local checks, four-probe concurrency cap, generic unavailable state, Android per-invocation discovery, and MCP re-listing | Reconnect-safe MCP list-change delivery, persistent health history, and operator diagnostics |
 | Registry metadata resource exhaustion | One tool per Android discovery response, 32-tool Hub registry cap, 24 KiB aggregate metadata cap, 64 messages per WebSocket, and bidirectional envelope limits | MCP pagination if the capability set approaches the current budget |
 | Hung discovery or Hub execution | Android cancels the socket after a bounded 35-second attempt and does not retry ambiguous delivery | Tool-specific negotiated deadlines and cancellation protocol |
@@ -42,13 +44,14 @@
 | Android capability creep | Security scan rejects unexpected source-manifest structure and checks exact permissions and queries in freshly merged debug and release manifests | Review allowlist changes as security decisions |
 | Misleading success | Output validation plus separate `VerificationResult` event | Tool-specific state re-read |
 | False cancel expectations | UI states that cancel is local-only and Hub completion is not guaranteed | End-to-end cancellation protocol |
-| Missing direct Hub/MCP operator audit | Deferred until stable paired identity and user-visible Android retrieval exist; the persistent slice is Android-local only for now | Design and ship bounded Hub/MCP operator audit |
+| Missing direct Hub/MCP operator audit | Stable paired identity now exists, but the persistent slice is Android-local only | Design bounded Hub/MCP audit with user-visible Android retrieval |
 
 ## Current non-goals
 
-The development token is not a pairing or MCP OAuth system. Neither transport is
-approved for LAN use. There is no trusted certificate provisioning, secure mobile
-token storage, token rotation or revocation, device-aware rate limiting,
-server-side cancellation, MCP server push, or direct Hub/MCP operator audit yet.
+Paired credentials are not MCP OAuth. Neither transport is approved for LAN use,
+and pairing delivery is loopback-only. There is no trusted certificate
+provisioning, secure mobile token storage, guided QR pairing, token rotation,
+device-aware request rate limiting, server-side cancellation, or direct Hub/MCP
+operator audit yet.
 The Android audit trail is local-only, redacted, bounded, display-only on
 restore, and still lacks explicit clear controls and cryptographic tamper evidence.

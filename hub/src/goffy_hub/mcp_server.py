@@ -8,6 +8,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from secrets import token_urlsafe
 from typing import Any, cast
+from uuid import UUID
 from weakref import WeakValueDictionary
 
 import anyio
@@ -41,7 +42,12 @@ from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from goffy_hub.auth import BEARER_PREFIX, is_authorized
+from goffy_hub.auth import (
+    HUB_ISSUER,
+    SAFE_TOOL_SCOPE,
+    CredentialAuthenticator,
+    paired_client_id,
+)
 from goffy_hub.registry import (
     ToolArgumentsError,
     ToolExecutionError,
@@ -52,7 +58,7 @@ from goffy_hub.settings import HubSettings
 from goffy_protocol import ToolCapability
 
 MCP_SERVER_VERSION = "0.2.0"
-MCP_SAFE_TOOL_SCOPE = "goffy.tools.safe"
+MCP_SAFE_TOOL_SCOPE = SAFE_TOOL_SCOPE
 MCP_CALL_QUEUE_TIMEOUT_SECONDS = 1.0
 MCP_SESSION_IDLE_TIMEOUT_SECONDS = 60.0
 MCP_NOTIFICATION_TIMEOUT_SECONDS = 1.0
@@ -63,18 +69,19 @@ MCP_REPLAY_MAX_BYTES = 16_384
 
 
 class HubTokenVerifier:
-    def __init__(self, settings: HubSettings) -> None:
-        self._settings = settings
+    def __init__(self, authenticator: CredentialAuthenticator) -> None:
+        self._authenticator = authenticator
 
     async def verify_token(self, token: str) -> AccessToken | None:
-        if not is_authorized(f"{BEARER_PREFIX}{token}", self._settings):
+        principal = await self._authenticator.authenticate_token(token)
+        if principal is None:
             return None
         return AccessToken(
             token=token,
-            client_id="goffy-local-client",
-            scopes=[MCP_SAFE_TOOL_SCOPE],
-            subject="local-operator",
-            claims={"iss": "goffy-hub"},
+            client_id=principal.client_id,
+            scopes=list(principal.scopes),
+            subject=principal.subject,
+            claims={"iss": HUB_ISSUER},
         )
 
 
@@ -301,19 +308,33 @@ class McpRuntime:
     async def notify_tool_list_changed(self) -> None:
         await self.notifier.notify(self.session_manager.active_session_ids)
 
+    async def revoke_credential(self, credential_id: UUID) -> None:
+        await self.session_manager.terminate_client(paired_client_id(credential_id))
+
 
 class GoffyStreamableHTTPSessionManager(StreamableHTTPSessionManager):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         notifier = kwargs.pop("notifier", None)
         if not isinstance(notifier, McpToolListNotifier):
             raise ValueError("GOFFY MCP session manager requires a tool-list notifier")
+        authenticator = kwargs.pop("authenticator", None)
+        if not isinstance(authenticator, CredentialAuthenticator):
+            raise ValueError("GOFFY MCP session manager requires a credential authenticator")
         self._notifier = notifier
+        self._authenticator = authenticator
         super().__init__(*args, **kwargs)
         if self.event_store is not None:
             raise ValueError("GOFFY requires a distinct replay store per MCP session")
         self._event_store_creation_lock = asyncio.Lock()
         self._get_request_lock = asyncio.Lock()
         self._get_request_counts: dict[str, int] = {}
+        self._termination_callback: Callable[[Collection[str]], Awaitable[None]] | None = None
+
+    def set_termination_callback(
+        self,
+        callback: Callable[[Collection[str]], Awaitable[None]],
+    ) -> None:
+        self._termination_callback = callback
 
     @property
     def active_session_count(self) -> int:
@@ -327,12 +348,18 @@ class GoffyStreamableHTTPSessionManager(StreamableHTTPSessionManager):
         connection = HTTPConnection(scope)
         session_id = connection.headers.get("mcp-session-id")
         if session_id is None:
+            user = scope.get("user")
+            requestor = authorization_context(user) if isinstance(user, AuthenticatedUser) else None
             async with self._event_store_creation_lock:
                 self.event_store = BoundedMcpEventStore()
                 try:
                     await super().handle_request(scope, receive, send)
                 finally:
                     self.event_store = None
+            if requestor is not None and isinstance(user, AuthenticatedUser):
+                current = await self._authenticator.authenticate_token(user.access_token.token)
+                if current is None or current.client_id != requestor["client_id"]:
+                    await self.terminate_client(requestor["client_id"])
             return
 
         transport = self._server_instances.get(session_id)
@@ -439,8 +466,35 @@ class GoffyStreamableHTTPSessionManager(StreamableHTTPSessionManager):
             await self._notifier.unregister(session_id)
             return True
 
+    async def terminate_client(self, client_id: str) -> None:
+        async with self._session_creation_lock:
+            session_ids = tuple(
+                session_id
+                for session_id, owner in self._session_owners.items()
+                if owner["client_id"] == client_id
+            )
+            transports = tuple(
+                self._server_instances.pop(session_id)
+                for session_id in session_ids
+                if session_id in self._server_instances
+            )
+            for session_id in session_ids:
+                self._session_owners.pop(session_id, None)
 
-def build_mcp_runtime(settings: HubSettings, registry: ToolRegistry) -> McpRuntime:
+        async with self._get_request_lock:
+            for session_id in session_ids:
+                self._get_request_counts.pop(session_id, None)
+        await asyncio.gather(*(self._notifier.unregister(session_id) for session_id in session_ids))
+        await asyncio.gather(*(transport.terminate() for transport in transports))
+        if self._termination_callback is not None:
+            await self._termination_callback(session_ids)
+
+
+def build_mcp_runtime(
+    settings: HubSettings,
+    registry: ToolRegistry,
+    authenticator: CredentialAuthenticator,
+) -> McpRuntime:
     adapter = RegistryMcpAdapter(
         registry,
         max_concurrent_calls=settings.mcp_max_concurrent_calls,
@@ -493,6 +547,7 @@ def build_mcp_runtime(settings: HubSettings, registry: ToolRegistry) -> McpRunti
         security_settings=security_settings,
         session_idle_timeout=MCP_SESSION_IDLE_TIMEOUT_SECONDS,
         notifier=notifier,
+        authenticator=authenticator,
     )
 
     manager_application = _BoundedHttpMessageMiddleware(
@@ -502,6 +557,7 @@ def build_mcp_runtime(settings: HubSettings, registry: ToolRegistry) -> McpRunti
         session_idle_timeout_seconds=MCP_SESSION_IDLE_TIMEOUT_SECONDS,
         terminated_session_cleanup=session_manager.remove_terminated_session,
     )
+    session_manager.set_termination_callback(manager_application.remove_sessions)
     authenticated_application: ASGIApp = AuthenticationMiddleware(
         AuthContextMiddleware(
             RequireAuthMiddleware(
@@ -509,7 +565,7 @@ def build_mcp_runtime(settings: HubSettings, registry: ToolRegistry) -> McpRunti
                 required_scopes=[MCP_SAFE_TOOL_SCOPE],
             )
         ),
-        backend=BearerAuthBackend(HubTokenVerifier(settings)),
+        backend=BearerAuthBackend(HubTokenVerifier(authenticator)),
     )
     application = _ExactMcpEndpoint(
         authenticated_application,
@@ -792,6 +848,12 @@ class _BoundedHttpMessageMiddleware:
         async with self._session_lock:
             self._active_sessions.pop(session_id, None)
             self._streaming_session_counts.pop(session_id, None)
+
+    async def remove_sessions(self, session_ids: Collection[str]) -> None:
+        async with self._session_lock:
+            for session_id in session_ids:
+                self._active_sessions.pop(session_id, None)
+                self._streaming_session_counts.pop(session_id, None)
 
     async def _mark_session_streaming(self, session_id: str, *, increment: int) -> None:
         async with self._session_lock:

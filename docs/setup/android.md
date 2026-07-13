@@ -122,7 +122,7 @@ future work.
 
 4. Install and run the debug app from Android Studio or with the debug APK.
 5. In the app, configure the Hub endpoint as `ws://127.0.0.1:8787/ws/v1`, then
-   enter the same bearer token.
+   enter the legacy development bearer or the one-time returned paired bearer.
 6. Submit `Show my Mac status` or `Check my Mac status`.
 
 The task timeline should show an authenticated compatible MAC capability before
@@ -131,7 +131,8 @@ changed tool contract must fail before invocation rather than silently falling b
 
 Debug cleartext is allowed only for `localhost` and `127.0.0.1` through the
 debug network security config. Release builds should use `wss://.../ws/v1`.
-LAN use is still unsupported until trusted TLS and pairing exist.
+LAN use is still unsupported until trusted certificate onboarding and guided
+device pairing exist.
 
 ## Physical-device status
 

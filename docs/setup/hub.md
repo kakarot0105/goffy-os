@@ -12,8 +12,9 @@ export GOFFY_HUB_TOKEN='replace-with-a-long-random-development-token'
 `GET /health` is intentionally unauthenticated and returns no private host data.
 It reports `degraded` when any registered tool is unavailable and includes
 healthy/unavailable counts plus a registry revision, but no names or probe details.
-`/ws/v1` requires `Authorization: Bearer <token>`. If the token is absent from
-Hub configuration, every WebSocket and MCP tool request is rejected. Each Android
+`/ws/v1` requires `Authorization: Bearer <token>`. Without paired mode, the
+bootstrap token is the legacy SAFE-tool credential; if it is absent, every
+WebSocket and MCP tool request is rejected. Each Android
 Mac task opens its own authenticated WebSocket, sends a
 `CapabilityDiscoveryRequest` for the locally routed tool, validates the response,
 then sends one `ToolInvocation`. The Hub consumes that discovery on the invocation
@@ -23,6 +24,75 @@ terminal `ToolError`.
 GOFFY protocol `0.2.0` is required on both sides. Discovery records use MCP
 `2025-11-25` tool fields and JSON Schema 2020-12, but `/ws/v1` is not an MCP
 JSON-RPC endpoint. Do not connect a generic MCP client to this path.
+
+## Local paired-device mode
+
+Paired mode is opt-in and currently operator-driven. Configure an absolute state
+path outside the repository before starting the Hub:
+
+```bash
+state_dir="$HOME/Library/Application Support/GOFFY Hub"
+mkdir -p "$state_dir"
+chmod 700 "$state_dir"
+export GOFFY_PAIRING_DATABASE_PATH="$state_dir/credentials.sqlite3"
+export GOFFY_HUB_TOKEN='replace-with-a-long-random-bootstrap-token'
+.venv/bin/goffy-hub
+```
+
+The Hub creates the database with mode `0600`. It stores only bearer digests and
+bounded metadata. The configured bootstrap token now has pairing-admin scope only;
+it cannot call `/ws/v1` or `/mcp`.
+
+From the same Mac, create one 120-second challenge:
+
+```bash
+challenge_json=$(curl -fsS -X POST \
+  -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
+  http://127.0.0.1:8787/admin/v1/pairing/challenges)
+challenge_id=$(printf '%s' "$challenge_json" | \
+  .venv/bin/python -c 'import json,sys; print(json.load(sys.stdin)["challengeId"])')
+pairing_token=$(printf '%s' "$challenge_json" | \
+  .venv/bin/python -c 'import json,sys; print(json.load(sys.stdin)["pairingToken"])')
+```
+
+The future guided flow encodes that challenge in a QR code. For the current local
+operator API, redeem it over loopback. The response contains `accessToken` exactly
+once; do not put it in source control, logs, command-line arguments, or screenshots.
+
+```bash
+export GOFFY_PAIRING_CHALLENGE_ID="$challenge_id"
+export GOFFY_PAIRING_TOKEN="$pairing_token"
+.venv/bin/python - <<'PY' | curl -fsS -X POST \
+  -H 'Content-Type: application/json' --data-binary @- \
+  http://127.0.0.1:8787/pairing/v1/redeem
+import json, os
+print(json.dumps({
+    "challengeId": os.environ["GOFFY_PAIRING_CHALLENGE_ID"],
+    "pairingToken": os.environ["GOFFY_PAIRING_TOKEN"],
+    "deviceId": "setup-observation-1",
+    "displayName": "Moto G",
+}))
+PY
+unset GOFFY_PAIRING_CHALLENGE_ID GOFFY_PAIRING_TOKEN
+```
+
+Use the returned bearer in Android's existing in-memory debug configuration or an
+MCP client. `deviceId` is descriptive setup metadata; the returned `credentialId`
+is the security principal. List and revoke credentials with the bootstrap token:
+
+```bash
+curl -fsS -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
+  http://127.0.0.1:8787/admin/v1/credentials
+curl -fsS -X DELETE -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
+  http://127.0.0.1:8787/admin/v1/credentials/REPLACE_WITH_CREDENTIAL_ID
+```
+
+Revocation closes indexed live WebSocket and MCP sessions before success is
+returned and survives Hub restart. Pending challenges are memory-only and do not.
+Paired mode requires a local Hub bind, and all pairing and administration routes
+also reject non-loopback clients. Configured LAN TLS and allowlists do not override
+these guards. Android secure storage, guided QR pairing, rotation, and trusted LAN
+onboarding are not implemented yet.
 
 ## MCP client
 
@@ -59,8 +129,8 @@ export GOFFY_TOOL_HEALTH_INTERVAL_SECONDS='30'
 Wildcards are rejected. A native MCP client usually sends no `Origin`; if it does,
 the value must match exactly. Non-local binding additionally requires explicit
 LAN mode, TLS files, and `GOFFY_MCP_ALLOWED_HOSTS`. These checks do not make LAN
-operation production-ready: pairing, revocation, trusted certificate provisioning,
-and the MCP authorization profile are still absent.
+operation production-ready: pairing delivery remains loopback-only, and trusted
+certificate provisioning plus the MCP authorization profile are still absent.
 
 The Hub seals the registry and completes one health pass before accepting traffic.
 It then checks only compiled local probes at the configured interval, with a
@@ -78,9 +148,9 @@ network health probe or busy polling is used by the current `mac.system_info` to
 
 Non-local binding requires `GOFFY_HUB_ALLOW_LAN=true` plus existing
 `GOFFY_HUB_TLS_CERT_FILE` and `GOFFY_HUB_TLS_KEY_FILE` paths. This is a transport
-guard, not a pairing system. Trusted LAN use is still unsupported until pairing,
-revocation, and a trusted TLS story exist, so localhost remains the recommended
-mode.
+guard, not trusted pairing transport. Configuring paired mode with a non-local
+bind is rejected; trusted LAN use is still unsupported until certificate
+onboarding exists, so localhost remains the recommended mode.
 
 ## Android debug over USB
 

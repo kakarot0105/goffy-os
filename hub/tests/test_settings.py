@@ -33,6 +33,23 @@ def test_lan_mode_requires_existing_tls_pair(tmp_path: Path) -> None:
     assert settings.allow_lan is True
 
 
+def test_paired_mode_rejects_non_local_binding_even_with_lan_tls(tmp_path: Path) -> None:
+    certificate = tmp_path / "certificate.pem"
+    private_key = tmp_path / "private-key.pem"
+    certificate.write_text("test certificate", encoding="utf-8")
+    private_key.write_text("test key", encoding="utf-8")
+
+    with pytest.raises(ValidationError, match="paired mode requires a local"):
+        HubSettings(
+            host="0.0.0.0",
+            allow_lan=True,
+            tls_cert_file=certificate,
+            tls_key_file=private_key,
+            mcp_allowed_hosts=("goffy.local:8787",),
+            pairing_database_path=tmp_path / "credentials.sqlite3",
+        )
+
+
 def test_local_mcp_transport_defaults_are_exact() -> None:
     settings = HubSettings()
 
@@ -73,6 +90,9 @@ def test_mcp_environment_allowlists_are_parsed(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("GOFFY_MCP_MAX_ACTIVE_SESSIONS", "4")
     monkeypatch.setenv("GOFFY_TOOL_HEALTH_TIMEOUT_SECONDS", "2")
     monkeypatch.setenv("GOFFY_TOOL_HEALTH_INTERVAL_SECONDS", "45")
+    pairing_database = Path("/Users/test/.goffy/credentials.sqlite3")
+    monkeypatch.setenv("GOFFY_PAIRING_DATABASE_PATH", str(pairing_database))
+    monkeypatch.setenv("GOFFY_PAIRING_CHALLENGE_TTL_SECONDS", "90")
 
     settings = HubSettings.from_environment()
 
@@ -82,6 +102,8 @@ def test_mcp_environment_allowlists_are_parsed(monkeypatch: pytest.MonkeyPatch) 
     assert settings.mcp_max_active_sessions == 4
     assert settings.tool_health_timeout_seconds == 2
     assert settings.tool_health_interval_seconds == 45
+    assert settings.pairing_database_path == pairing_database
+    assert settings.pairing_challenge_ttl_seconds == 90
 
 
 @pytest.mark.parametrize(
@@ -96,3 +118,14 @@ def test_mcp_environment_allowlists_are_parsed(monkeypatch: pytest.MonkeyPatch) 
 def test_tool_health_settings_are_bounded(field: str, value: float) -> None:
     with pytest.raises(ValidationError):
         HubSettings.model_validate({field: value})
+
+
+def test_pairing_database_path_must_be_absolute() -> None:
+    with pytest.raises(ValidationError, match="GOFFY_PAIRING_DATABASE_PATH"):
+        HubSettings(pairing_database_path=Path("relative.sqlite3"))
+
+
+@pytest.mark.parametrize("value", [29, 301])
+def test_pairing_challenge_ttl_is_bounded(value: int) -> None:
+    with pytest.raises(ValidationError):
+        HubSettings(pairing_challenge_ttl_seconds=value)
