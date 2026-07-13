@@ -3,7 +3,7 @@ from __future__ import annotations
 import platform
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 from pydantic.alias_generators import to_camel
 
 from goffy_hub.registry import ToolDefinition
@@ -25,6 +25,20 @@ class MacSystemInfoOutput(BaseModel):
     status: str
     operating_system: str
     architecture: str
+
+    @field_validator("status")
+    @classmethod
+    def bound_status(cls, value: str) -> str:
+        if len(value) not in range(1, 65):
+            raise ValueError("status is outside the supported length")
+        return value
+
+    @field_validator("operating_system", "architecture")
+    @classmethod
+    def bound_platform_field(cls, value: str) -> str:
+        if len(value) not in range(1, 129):
+            raise ValueError("platform field is outside the supported length")
+        return value
 
 
 async def read_mac_system_info(_request: BaseModel) -> dict[str, Any]:

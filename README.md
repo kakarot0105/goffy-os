@@ -6,9 +6,9 @@ provides controlled access to heavier local capabilities. MCP-compatible typed
 tools are the capability boundary.
 
 > Status: Milestone 3 MCP core in progress. The current repo implements five
-> offline PHONE actions and a discovery-gated SAFE Mac action, but physical Moto G
-> verification, pairing, a standards-compliant MCP transport, and trusted LAN
-> operation remain open.
+> offline PHONE actions, a discovery-gated SAFE Mac action, and an official MCP
+> Streamable HTTP boundary. Physical Moto G verification, pairing, persistent
+> audit, and trusted LAN operation remain open.
 
 ## Current vertical slice
 
@@ -25,6 +25,8 @@ tools are the capability boundary.
 - Per-invocation discovery of the locally allowlisted Mac tool before execution
 - FastAPI Hub bound to `127.0.0.1` by default
 - GOFFY protocol `0.2.0` with MCP `2025-11-25`-aligned tool metadata
+- Official, authenticated MCP Streamable HTTP endpoint at exact `/mcp`
+- MCP initialization, `tools/list`, and registry-backed `tools/call`
 - Allowlisted, read-only `SAFE mac.system_info` tool
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
@@ -64,11 +66,17 @@ curl http://127.0.0.1:8787/health
 
 Tool access remains disabled when `GOFFY_HUB_TOKEN` is unset. Never commit a
 real token. Use localhost for now; LAN remains unsupported until trusted TLS
-and pairing exist. See [Hub setup](docs/setup/hub.md) for WebSocket usage.
+and pairing exist. See [Hub setup](docs/setup/hub.md) for WebSocket and MCP usage.
+With the Hub running, verify the official MCP path in another terminal:
+
+```bash
+GOFFY_HUB_TOKEN='replace-with-the-same-development-token' .venv/bin/python scripts/demo_mcp.py
+```
 
 `/ws/v1` is GOFFY's typed application protocol, not an MCP JSON-RPC endpoint.
-Its discovery records intentionally mirror MCP tool schemas and annotations so
-the same registry can back a standards-compliant MCP server in a later slice.
+`/mcp` is the separate session-aware MCP `2025-11-25` JSON-RPC endpoint. Both are
+backed by the same fail-closed typed tool registry; neither provides arbitrary
+shell execution.
 
 ## Android setup
 

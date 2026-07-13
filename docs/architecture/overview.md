@@ -19,6 +19,8 @@ deterministic router
                          |            |-> discover locally allowlisted tool
                          |            `-> invoke only after compatibility gate
                          `--------------> FastAPI Hub -> SAFE mac.system_info
+
+Official MCP client -> authenticated POST /mcp -> MCP SDK -> same ToolRegistry
 ```
 
 All routes emit the same typed preparation, progress, result, error, and
@@ -53,6 +55,8 @@ not replayed. A whole attempt is bounded to 35 seconds.
 14. Local cancel stops the active coroutine; MAC cancellation does not guarantee Hub-side termination.
 15. The Hub rejects duplicate message IDs within a connection and applies the
     configured message-size limit in both transport directions.
+16. `/mcp` validates exact Host and Origin allowlists, bearer authentication,
+    message bounds, and concurrency before registry execution.
 
 ## Performance posture
 
@@ -66,6 +70,8 @@ The seven-envelope discovery-first MAC fixture lives at
 `protocol/fixtures/mac-system-info-flow.jsonl` and is validated by both Android
 and Python tests.
 
-`/ws/v1` is a GOFFY application protocol endpoint. Its tool records follow the
-MCP `2025-11-25` shape, but standards-compliant MCP JSON-RPC initialization,
-`tools/list`, and `tools/call` remain a distinct Milestone 3 deliverable.
+`/ws/v1` remains GOFFY's Android application protocol. Exact `/mcp` is a separate,
+session-aware MCP `2025-11-25` Streamable HTTP endpoint implemented by the official
+Python SDK. Sessions are credential-bound, explicitly terminable, and idle-reaped.
+Both transports adapt the same bounded `ToolRegistry`; neither transport defines
+or executes tools independently.

@@ -45,7 +45,7 @@
 - [x] Android discovery gate before `mac.system_info` invocation
 - [x] Per-invocation discovery consumption, bounded timeout, and no post-send replay
 - [ ] Unified PHONE capability registry
-- [ ] Standards-compliant MCP JSON-RPC initialization, `tools/list`, and `tools/call`
+- [x] Official MCP Streamable HTTP initialization, `tools/list`, and registry-backed `tools/call`
 - [ ] Tool-health checks and list-change notifications
 - [ ] Persistent, user-visible capability audit trail
 

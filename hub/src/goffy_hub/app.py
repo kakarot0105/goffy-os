@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from uuid import UUID
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -9,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic.alias_generators import to_camel
 
 from goffy_hub.auth import is_authorized
+from goffy_hub.mcp_server import build_mcp_runtime
 from goffy_hub.registry import (
     ToolArgumentsError,
     ToolExecutionError,
@@ -55,9 +57,17 @@ def build_registry(settings: HubSettings) -> ToolRegistry:
 def create_app(settings: HubSettings | None = None) -> FastAPI:
     resolved_settings = settings or HubSettings.from_environment()
     registry = build_registry(resolved_settings)
-    app = FastAPI(title="GOFFY Hub", version="0.2.0", docs_url="/docs")
+    mcp_runtime = build_mcp_runtime(resolved_settings, registry)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        async with mcp_runtime.session_manager.run():
+            yield
+
+    app = FastAPI(title="GOFFY Hub", version="0.2.0", docs_url="/docs", lifespan=lifespan)
     app.state.settings = resolved_settings
     app.state.registry = registry
+    app.state.mcp_runtime = mcp_runtime
 
     @app.get("/health", response_model=HealthResponse, response_model_by_alias=True)
     async def health() -> HealthResponse:
@@ -119,6 +129,8 @@ def create_app(settings: HubSettings | None = None) -> FastAPI:
         except WebSocketDisconnect:
             return
 
+    # The terminal mount preserves the exact /mcp path without Starlette's slash redirect.
+    app.mount("/", mcp_runtime.application, name="mcp")
     return app
 
 

@@ -1,9 +1,12 @@
+from typing import Any
+
 import pytest
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, create_model
 
 from goffy_hub.app import build_registry
 from goffy_hub.registry import (
     MAX_REGISTERED_TOOLS,
+    MAX_TOOL_OUTPUT_BYTES,
     ToolArgumentsError,
     ToolDefinition,
     ToolExecutionError,
@@ -30,6 +33,10 @@ async def failing_handler(_request: BaseModel) -> dict[str, object]:
 
 async def successful_handler(_request: BaseModel) -> dict[str, object]:
     return {"ok": True}
+
+
+async def oversized_output_handler(_request: BaseModel) -> dict[str, object]:
+    return {"value": "x" * (MAX_TOOL_OUTPUT_BYTES + 1)}
 
 
 def build_test_tool(
@@ -155,7 +162,7 @@ def test_registry_rejects_invalid_metadata_and_annotation_combinations() -> None
         registry.register(
             build_test_tool(
                 name="invalid.annotations",
-                annotations=ToolAnnotations.model_construct(
+                annotations=ToolAnnotations.model_construct(  # type: ignore[call-arg]
                     read_only_hint=True,
                     destructive_hint=True,
                 ),
@@ -179,7 +186,7 @@ def test_registry_rejects_invalid_metadata_and_annotation_combinations() -> None
         registry.register(
             build_test_tool(
                 name="missing.annotation",
-                annotations=ToolAnnotations.model_construct(
+                annotations=ToolAnnotations.model_construct(  # type: ignore[call-arg]
                     read_only_hint=True,
                     destructive_hint=False,
                     idempotent_hint=True,
@@ -214,14 +221,49 @@ def test_registry_rejects_invalid_metadata_and_annotation_combinations() -> None
         )
 
 
-def test_registry_rejects_more_than_sixty_four_tools() -> None:
+def test_registry_rejects_more_than_configured_tool_limit() -> None:
     registry = ToolRegistry()
 
     for index in range(MAX_REGISTERED_TOOLS):
         registry.register(build_test_tool(name=f"tool.{index}"))
 
-    with pytest.raises(ValueError, match="cannot exceed 64 tools"):
+    with pytest.raises(
+        ValueError,
+        match=rf"cannot exceed {MAX_REGISTERED_TOOLS} tools",
+    ):
         registry.register(build_test_tool(name="tool.overflow"))
+
+
+def test_registry_rejects_oversized_capability_metadata() -> None:
+    large_fields: dict[str, Any] = {f"field_{index}": (str, ...) for index in range(600)}
+    large_input = create_model(
+        "LargeInput",
+        __config__=ConfigDict(extra="forbid", strict=True),
+        **large_fields,
+    )
+    registry = ToolRegistry()
+
+    with pytest.raises(ValueError, match="capability exceeds the metadata size limit"):
+        registry.register(
+            ToolDefinition(
+                name="test.large_metadata",
+                title="Large metadata",
+                description="Exercise the capability metadata boundary.",
+                tool_version="1.0.0",
+                permission=PermissionLevel.SAFE,
+                execution_target=ExecutionTarget.MAC,
+                timeout_seconds=1,
+                input_model=large_input,
+                output_model=EmptyOutput,
+                handler=successful_handler,
+                annotations=ToolAnnotations(
+                    read_only_hint=True,
+                    destructive_hint=False,
+                    idempotent_hint=True,
+                    open_world_hint=False,
+                ),
+            )
+        )
 
 
 @pytest.mark.asyncio
@@ -266,3 +308,36 @@ async def test_registry_contains_unexpected_handler_failure() -> None:
 
     with pytest.raises(ToolExecutionError, match="handler_failure"):
         await registry.invoke("test.failure", {})
+
+
+@pytest.mark.asyncio
+async def test_registry_rejects_oversized_structured_output() -> None:
+    class LargeOutput(BaseModel):
+        model_config = ConfigDict(extra="forbid", strict=True)
+
+        value: str
+
+    registry = ToolRegistry()
+    registry.register(
+        ToolDefinition(
+            name="test.large_output",
+            title="Large output test",
+            description="Exercise the structured output boundary.",
+            tool_version="1.0.0",
+            permission=PermissionLevel.SAFE,
+            execution_target=ExecutionTarget.MAC,
+            timeout_seconds=1,
+            input_model=EmptyInput,
+            output_model=LargeOutput,
+            handler=oversized_output_handler,
+            annotations=ToolAnnotations(
+                read_only_hint=True,
+                destructive_hint=False,
+                idempotent_hint=True,
+                open_world_hint=False,
+            ),
+        )
+    )
+
+    with pytest.raises(ToolExecutionError, match="output_too_large"):
+        await registry.invoke("test.large_output", {})

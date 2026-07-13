@@ -22,6 +22,21 @@ include real credentials or unrelated personal data.
 - Non-local binding requires explicit LAN mode and configured TLS files.
 - Tool authentication is disabled unless a token is explicitly configured;
   disabled means all tool requests are rejected.
+- The exact `/mcp` endpoint uses the official MCP SDK's stateful Streamable HTTP
+  transport. It accepts `POST` plus authenticated session `DELETE`, while `GET`
+  server-push streams remain disabled. It is separate from GOFFY `/ws/v1`.
+- MCP operations require initialization and the issued session ID. Sessions are
+  credential-bound by the SDK, explicitly terminable, limited to eight active
+  sessions by default, and idle-reaped after 60 seconds.
+- MCP requests require the fail-closed bearer token and pass exact Host and Origin
+  allowlists before JSON-RPC parsing. Local defaults include only loopback names.
+- MCP request and response bodies share the configured Hub byte limit. The
+  registry is capped at 32 tools, 24 KiB aggregate metadata, 8 KiB per capability,
+  and 8 KiB per structured output.
+- MCP execution defaults to two concurrent calls with a bounded one-second queue.
+  Registry tool timeouts remain authoritative after admission.
+- The current bearer token is a development authentication placeholder, not MCP
+  OAuth, pairing, rotation, revocation, or device identity.
 - WebSocket tokens are passed in the `Authorization` header, never in URLs.
 - The Android client keeps the development token in memory only and excludes it
   from saved UI state and string representations.

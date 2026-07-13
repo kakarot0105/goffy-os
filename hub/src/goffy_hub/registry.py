@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -17,7 +18,10 @@ from goffy_protocol import (
 )
 
 ToolHandler = Callable[[BaseModel], Awaitable[dict[str, Any]]]
-MAX_REGISTERED_TOOLS = 64
+MAX_REGISTERED_TOOLS = 32
+MAX_TOOL_CAPABILITY_BYTES = 8_192
+MAX_REGISTRY_CAPABILITY_BYTES = 24_576
+MAX_TOOL_OUTPUT_BYTES = 8_192
 
 
 class ToolRegistryError(Exception):
@@ -77,6 +81,7 @@ class ToolRegistry:
     def __init__(self) -> None:
         self._tools: dict[str, ToolDefinition] = {}
         self._capabilities: dict[str, ToolCapability] = {}
+        self._capability_bytes = 0
 
     def register(self, definition: ToolDefinition) -> None:
         if definition.name in self._tools:
@@ -99,8 +104,16 @@ class ToolRegistry:
             raise ValueError("SAFE tools must declare idempotentHint=true")
         if capability.annotations.open_world_hint is not False:
             raise ValueError("SAFE tools must declare openWorldHint=false")
+        capability_bytes = len(
+            capability.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8")
+        )
+        if capability_bytes > MAX_TOOL_CAPABILITY_BYTES:
+            raise ValueError("tool capability exceeds the metadata size limit")
+        if self._capability_bytes + capability_bytes > MAX_REGISTRY_CAPABILITY_BYTES:
+            raise ValueError("tool registry exceeds the metadata size limit")
         self._tools[definition.name] = definition
         self._capabilities[definition.name] = capability
+        self._capability_bytes += capability_bytes
 
     def describe(self) -> list[ToolCapability]:
         return [
@@ -134,7 +147,22 @@ class ToolRegistry:
         except Exception as error:
             raise ToolExecutionError("handler_failure") from error
 
+        structured_content = output.model_dump(mode="json", by_alias=True)
+        try:
+            output_bytes = len(
+                json.dumps(
+                    structured_content,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")
+            )
+        except (TypeError, ValueError) as error:  # pragma: no cover - Pydantic JSON mode is safe
+            raise ToolExecutionError("invalid_output") from error
+        if output_bytes > MAX_TOOL_OUTPUT_BYTES:
+            raise ToolExecutionError("output_too_large")
+
         return ToolInvocationResult(
             definition=definition,
-            structured_content=output.model_dump(mode="json", by_alias=True),
+            structured_content=structured_content,
         )

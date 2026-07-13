@@ -10,7 +10,7 @@
 
 | Threat | Current control | Remaining work |
 | --- | --- | --- |
-| Unauthenticated tool use | Fail-closed bearer token check on every `/ws/v1` invocation | Pairing, rotation, and revocation |
+| Unauthenticated tool use | Fail-closed bearer token check on every `/ws/v1` connection and `/mcp` request | MCP authorization profile, pairing, rotation, and revocation |
 | Token leakage | Bearer token in header only; not in URL, saved state, or stringified config output | Secure mobile storage for future non-debug flows |
 | Accidental cleartext exposure | Release endpoint validation requires `wss`; debug cleartext is limited to `localhost` and `127.0.0.1` | Trusted TLS provisioning and pairing |
 | Command injection or authority expansion | Anchored routes plus fixed SAFE MAC and PHONE gateways reject appended instructions | Review every future route and tool |
@@ -18,7 +18,9 @@
 | Protocol confusion | Explicit version plus strict Python and Kotlin codecs | Compatibility test matrix as message types expand |
 | Remote registry authority expansion | Discovery requests only the locally routed tool; Android exact-checks policy metadata and schemas; Hub consumes discovery once | Signed capability manifests and pairing identity |
 | Stale or replayed discovery | Each valid discovery replaces prior session state and is consumed by one invocation attempt | Session-bound audit identifiers |
-| Registry metadata resource exhaustion | One tool per response, 64-tool Hub registry cap, 64 messages per connection, bidirectional envelope limits, and no cache or polling | Cursor pagination for future standards-compliant MCP listing |
+| MCP DNS rebinding or cross-origin request | Exact Host and Origin allowlists run before authentication and JSON-RPC parsing | Trusted certificate provisioning and deployed-origin testing |
+| MCP request, session, or execution exhaustion | 32-tool and 24 KiB registry caps, request/response and tool-output byte limits, eight credential-bound sessions with 60-second idle reaping, two concurrent calls, one-second queue, and tool deadlines | Per-device rate limits after pairing identity exists |
+| Registry metadata resource exhaustion | One tool per Android discovery response, 32-tool Hub registry cap, 24 KiB aggregate metadata cap, 64 messages per WebSocket, and bidirectional envelope limits | MCP pagination if the capability set approaches the current budget |
 | Hung discovery or Hub execution | Android cancels the socket after a bounded 35-second attempt and does not retry ambiguous delivery | Tool-specific negotiated deadlines and cancellation protocol |
 | Host information leakage | `mac.system_info` returns status, OS family, and architecture only | User-visible field policy for future tools |
 | Unnecessary phone-state collection | Battery state is read once only after an explicit command; no receiver, polling, or permission | Field policy for future phone tools |
@@ -39,7 +41,7 @@
 
 ## Current non-goals
 
-The development token is not a pairing system. The WebSocket is not approved for
-LAN use. There is no trusted certificate provisioning, secure mobile token
-storage, token revocation, transport rate limiting, server-side cancellation, or
-persistent audit log yet.
+The development token is not a pairing or MCP OAuth system. Neither transport is
+approved for LAN use. There is no trusted certificate provisioning, secure mobile
+token storage, token rotation or revocation, device-aware rate limiting,
+server-side cancellation, MCP server push, or persistent audit log yet.
