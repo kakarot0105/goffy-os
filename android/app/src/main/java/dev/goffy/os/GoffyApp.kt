@@ -68,6 +68,9 @@ import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PhoneTimerDispatched
 import dev.goffy.os.protocol.ToolResultContent
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 private val Void = Color(0xFF05090C)
@@ -78,6 +81,7 @@ private val Mist = Color(0xFF94A5AC)
 private val Acid = Color(0xFFB6F23A)
 private val Signal = Color(0xFF41D7C7)
 private val Warning = Color(0xFFFF7A59)
+private val AuditTimestampFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
 private val GoffyColors = darkColorScheme(
     primary = Acid,
@@ -191,6 +195,8 @@ private fun GoffyHomeScreen(
         Timeline(
             entries = state.timeline.entries,
             pendingApproval = state.pendingApproval,
+            auditPersistence = state.auditPersistence,
+            discardedAuditRecords = state.discardedAuditRecords,
             onApprove = onApprove,
             onDeny = onDeny,
         )
@@ -499,6 +505,8 @@ private fun PlaceholderAction(shortLabel: String, description: String) {
 private fun Timeline(
     entries: List<TaskTimelineEntry>,
     pendingApproval: PendingApproval?,
+    auditPersistence: AuditPersistenceState,
+    discardedAuditRecords: Int,
     onApprove: (UUID) -> Unit,
     onDeny: (UUID) -> Unit,
 ) {
@@ -510,7 +518,28 @@ private fun Timeline(
             .border(1.dp, Line, RoundedCornerShape(22.dp))
             .padding(16.dp),
     ) {
-        Label(stringResource(R.string.timeline_title))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Label(stringResource(R.string.timeline_title))
+            val auditLabel = when (auditPersistence) {
+                AuditPersistenceState.LOADING -> stringResource(R.string.audit_loading)
+                AuditPersistenceState.READY -> stringResource(R.string.audit_ready)
+                AuditPersistenceState.DEGRADED -> if (discardedAuditRecords > 0) {
+                    stringResource(R.string.audit_degraded_records, discardedAuditRecords)
+                } else {
+                    stringResource(R.string.audit_degraded)
+                }
+            }
+            Text(
+                text = auditLabel,
+                color = if (auditPersistence == AuditPersistenceState.DEGRADED) Warning else Signal,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+            )
+        }
         Spacer(Modifier.height(12.dp))
         if (entries.isEmpty()) {
             Text(stringResource(R.string.timeline_empty), color = Mist, fontSize = 14.sp)
@@ -586,6 +615,20 @@ private fun TaskCard(
                 color = Signal,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 10.sp,
+            )
+        }
+        entry.auditRecordedAtEpochMillis?.let { recordedAt ->
+            Spacer(Modifier.height(5.dp))
+            Text(
+                text = stringResource(
+                    R.string.audit_recorded_at,
+                    AuditTimestampFormatter.format(
+                        Instant.ofEpochMilli(recordedAt).atZone(ZoneId.systemDefault()),
+                    ),
+                ),
+                color = Mist,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
             )
         }
         entry.result?.let { result ->

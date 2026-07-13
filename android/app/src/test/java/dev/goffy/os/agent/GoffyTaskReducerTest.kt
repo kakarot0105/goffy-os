@@ -59,11 +59,13 @@ class GoffyTaskReducerTest {
         state = state.apply(
             taskId,
             ExecutionEvent.Verification(true, "Schema verified", listOf("output schema")),
+            terminalAtEpochMillis = 4_242L,
         )
 
         assertEquals(TaskPhase.VERIFIED, state.entries.single().phase)
         assertNull(state.activeTaskId)
         assertEquals("Darwin", (state.entries.single().result as MacSystemInfo).operatingSystem)
+        assertEquals(4_242L, state.entries.single().terminalAtEpochMillis)
     }
 
     @Test

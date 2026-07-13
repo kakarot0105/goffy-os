@@ -6,9 +6,10 @@ provides controlled access to heavier local capabilities. MCP-compatible typed
 tools are the capability boundary.
 
 > Status: Milestone 3 MCP core in progress. The current repo implements five
-> offline PHONE actions, a discovery-gated SAFE Mac action, and an official MCP
-> Streamable HTTP boundary. Physical Moto G verification, pairing, persistent
-> audit, and trusted LAN operation remain open.
+> offline PHONE actions, a discovery-gated SAFE Mac action, an official MCP
+> Streamable HTTP boundary, and a persistent user-visible Android audit trail
+> for the newest 50 terminal tasks. Physical Moto G verification, pairing,
+> direct Hub/MCP operator audit, and trusted LAN operation remain open.
 
 ## Current vertical slice
 
@@ -22,6 +23,8 @@ tools are the capability boundary.
 - Approval-gated `CONFIRM phone.flashlight.set` with CameraManager callback verification
 - Immutable, bounded PHONE capability registry with MCP-shaped closed schemas
 - Exact-task, exact-arguments, expiring, single-use phone approval grants
+- Persistent, user-visible Android audit trail with app-private SQLite retention
+  for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
 - Per-invocation discovery of the locally allowlisted Mac tool before execution
 - FastAPI Hub bound to `127.0.0.1` by default
@@ -125,6 +128,24 @@ gateway independently rechecks tool name, target, permission, typed arguments,
 and the compiled timeout before touching an Android source. Registry metadata is
 descriptive, not authorization: CONFIRM tools still require an exact, expiring,
 single-use approval and are not exported through the Hub MCP endpoint.
+
+Android also persists the newest 50 terminal task cards in app-private SQLite
+and restores them into the visible timeline after restart. Stored audit data is
+closed metadata only: audit schema and protocol versions, task UUID and time,
+source, PHONE or MAC target, allowlisted tool or `null`, SAFE or CONFIRM
+permission or `null`, terminal phase, approval outcome, and bounded event kinds.
+It never stores raw command text, typed arguments, note text, row IDs, tool
+results, device info, approval text, event messages, endpoint or token values,
+free-form summaries, or verification checks. Records are written only after
+`VERIFIED`, `UNVERIFIED`, `FAILED`, or `CANCELLED`, so process death mid-task
+creates no synthetic success. Read or write failure visibly degrades the audit
+badge and may leave affected history in memory only; corrupt rows are discarded
+while valid restored rows remain visible with a discarded-row count. None of
+these failures rewrites the execution verdict, and GOFFY performs no polling,
+WorkManager retry, or background repair.
+Android backup and device transfer are disabled for app data; uninstall removes
+the records. Explicit clear controls, cryptographic tamper evidence, and direct
+Hub/MCP operator audit remain future work.
 
 This is an Android application layer, not a flashable replacement ROM. A custom
 ROM remains a later hardware-specific project after the agent runtime is proven.

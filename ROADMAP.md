@@ -47,8 +47,9 @@
 - [x] Unified, bounded PHONE capability registry with shared schema fixture
 - [x] Official MCP Streamable HTTP initialization, `tools/list`, and registry-backed `tools/call`
 - [x] Bounded, fail-closed tool-health checks
+- [x] Persistent, user-visible Android audit trail for terminal tasks
 - [ ] Resumable MCP list-change notifications
-- [ ] Persistent, user-visible capability audit trail
+- [ ] Direct Hub/MCP operator audit after stable paired identity and user-visible retrieval
 
 ## Milestones 4-8
 

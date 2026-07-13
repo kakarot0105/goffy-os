@@ -7,6 +7,11 @@ import androidx.lifecycle.viewModelScope
 import dev.goffy.os.agent.GoffyExecutionPlan
 import dev.goffy.os.agent.GoffyIntentRouter
 import dev.goffy.os.agent.RoutingDecision
+import dev.goffy.os.audit.AndroidSqliteTerminalAuditStore
+import dev.goffy.os.audit.ClosedTerminalAuditLoadResult
+import dev.goffy.os.audit.ClosedTerminalAuditRecord
+import dev.goffy.os.audit.TerminalAuditStore
+import dev.goffy.os.audit.toClosedTerminalAuditRecord
 import dev.goffy.os.hub.HubConfig
 import dev.goffy.os.hub.HubConfigurationException
 import dev.goffy.os.hub.HubGateway
@@ -28,14 +33,19 @@ import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import dev.goffy.os.protocol.PermissionLevel
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class GoffyViewModel internal constructor(
     private val gateway: HubGateway,
@@ -47,6 +57,8 @@ class GoffyViewModel internal constructor(
     private val nextTaskId: () -> UUID,
     private val approvalTtlMillis: Long = DEFAULT_APPROVAL_TTL_MILLIS,
     private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val auditStore: TerminalAuditStore = NoOpTerminalAuditStore,
+    private val auditDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     constructor(context: Context) : this(
         gateway = OkHttpHubGateway(),
@@ -62,11 +74,8 @@ class GoffyViewModel internal constructor(
         defaultEndpoint = if (BuildConfig.DEBUG) DEBUG_HUB_ENDPOINT else RELEASE_HUB_ENDPOINT_HINT,
         deviceId = "goffy-android-${UUID.randomUUID()}",
         nextTaskId = UUID::randomUUID,
+        auditStore = AndroidSqliteTerminalAuditStore(context),
     )
-
-    init {
-        require(approvalTtlMillis > 0) { "approvalTtlMillis must be positive" }
-    }
 
     private val mutableUiState = MutableStateFlow(GoffyUiState(hubEndpoint = defaultEndpoint))
     val uiState: StateFlow<GoffyUiState> = mutableUiState.asStateFlow()
@@ -75,6 +84,51 @@ class GoffyViewModel internal constructor(
     private var activeJob: Job? = null
     private var pendingExecution: PendingPhoneExecution? = null
     private var approvalExpiryJob: Job? = null
+
+    init {
+        require(approvalTtlMillis > 0) { "approvalTtlMillis must be positive" }
+        observeTerminalAudit()
+    }
+
+    private fun observeTerminalAudit() {
+        viewModelScope.launch {
+            val attemptedTaskIds = mutableSetOf<UUID>()
+            try {
+                val loaded = withContext(auditDispatcher) { auditStore.load() }
+                attemptedTaskIds += loaded.records.map(ClosedTerminalAuditRecord::taskId)
+                mutableUiState.value = mutableUiState.value.auditLoaded(
+                    restoredEntries = loaded.records.map(ClosedTerminalAuditRecord::toTimelineEntry),
+                    discardedRecords = loaded.discardedCorruptRows,
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                mutableUiState.value = mutableUiState.value.auditFailed()
+            }
+
+            mutableUiState.map { it.timeline.entries }.collect { entries ->
+                entries.forEach { entry ->
+                    if (entry.id in attemptedTaskIds) return@forEach
+                    val terminalAt = entry.terminalAtEpochMillis ?: return@forEach
+                    attemptedTaskIds += entry.id
+                    try {
+                        val record = checkNotNull(entry.toClosedTerminalAuditRecord(terminalAt)) {
+                            "only terminal entries may carry terminal timestamps"
+                        }
+                        val stored = withContext(auditDispatcher) { auditStore.upsert(record) }
+                        mutableUiState.value = mutableUiState.value.auditRecorded(
+                            stored.taskId,
+                            stored.recordedAtEpochMillis,
+                        )
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (_: Exception) {
+                        mutableUiState.value = mutableUiState.value.auditFailed()
+                    }
+                }
+            }
+        }
+    }
 
     fun configureHub(endpoint: String, bearerToken: String): Boolean {
         val config = try {
@@ -94,7 +148,7 @@ class GoffyViewModel internal constructor(
     fun forgetHub() {
         cancelActiveTask()
         hubConfig = null
-        mutableUiState.value = mutableUiState.value.forgetHub(defaultEndpoint)
+        mutableUiState.value = mutableUiState.value.forgetHub(defaultEndpoint, nowMillis())
     }
 
     fun submitCommand(command: String) {
@@ -102,6 +156,7 @@ class GoffyViewModel internal constructor(
             mutableUiState.value = mutableUiState.value.rejectCommand(
                 command,
                 "Another task is already running; cancel it before submitting a new command",
+                nowMillis(),
             )
             return
         }
@@ -110,6 +165,7 @@ class GoffyViewModel internal constructor(
             mutableUiState.value = mutableUiState.value.rejectCommand(
                 command,
                 "No safe deterministic route is available for this command yet",
+                nowMillis(),
             )
             return
         }
@@ -120,18 +176,20 @@ class GoffyViewModel internal constructor(
             ExecutionTarget.MAC -> {
                 val config = hubConfig
                 if (config == null) {
-                    mutableUiState.value = mutableUiState.value.rejectCommand(
-                        command,
+                    mutableUiState.value = mutableUiState.value.rejectPlan(
+                        plan,
                         "Configure a secure GOFFY Hub link before running a Mac task",
+                        nowMillis(),
                     )
                     return
                 }
                 val request = codec.createToolInvocation(deviceId, plan.toolName)
                 executeTask(request.messageId, plan, gateway.invoke(config, request))
             }
-            ExecutionTarget.CLOUD -> mutableUiState.value = mutableUiState.value.rejectCommand(
-                command,
+            ExecutionTarget.CLOUD -> mutableUiState.value = mutableUiState.value.rejectPlan(
+                plan,
                 "Cloud execution is not available in this build",
+                nowMillis(),
             )
         }
     }
@@ -147,9 +205,10 @@ class GoffyViewModel internal constructor(
             PermissionLevel.CONFIRM -> requestPhoneApproval(taskId, plan)
             PermissionLevel.SENSITIVE,
             PermissionLevel.BLOCKED,
-            -> mutableUiState.value = mutableUiState.value.rejectCommand(
-                plan.command,
+            -> mutableUiState.value = mutableUiState.value.rejectPlan(
+                plan,
                 "This phone action is blocked in the current security policy",
+                nowMillis(),
             )
         }
     }
@@ -157,9 +216,10 @@ class GoffyViewModel internal constructor(
     private fun requestPhoneApproval(taskId: UUID, plan: GoffyExecutionPlan) {
         val description = plan.approvalDescription()
         if (description == null) {
-            mutableUiState.value = mutableUiState.value.rejectCommand(
-                plan.command,
+            mutableUiState.value = mutableUiState.value.rejectPlan(
+                plan,
                 "The confirmation request did not match a typed phone tool",
+                nowMillis(),
             )
             return
         }
@@ -171,7 +231,9 @@ class GoffyViewModel internal constructor(
             expiresAtEpochMillis = expiresAt,
             durationSeconds = (approvalTtlMillis + 999L) / 1_000L,
         )
-        mutableUiState.value = mutableUiState.value.startTask(taskId, plan).awaitApproval(approval)
+        mutableUiState.value = mutableUiState.value
+            .startTask(taskId, plan)
+            .awaitApproval(approval, nowMillis())
         pendingExecution = PendingPhoneExecution(taskId, plan, expiresAt)
         approvalExpiryJob = viewModelScope.launch {
             delay(approvalTtlMillis)
@@ -207,7 +269,7 @@ class GoffyViewModel internal constructor(
         pendingExecution = null
         approvalExpiryJob?.cancel()
         approvalExpiryJob = null
-        mutableUiState.value = mutableUiState.value.grantApproval(taskId)
+        mutableUiState.value = mutableUiState.value.grantApproval(taskId, nowMillis())
         collectTask(
             taskId,
             phoneGateway.invoke(
@@ -233,6 +295,7 @@ class GoffyViewModel internal constructor(
         mutableUiState.value = mutableUiState.value.denyApproval(
             taskId,
             "Approval denied; no phone tool was invoked",
+            nowMillis(),
         )
         return true
     }
@@ -242,7 +305,7 @@ class GoffyViewModel internal constructor(
         if (pending.taskId != taskId) return
         pendingExecution = null
         approvalExpiryJob = null
-        mutableUiState.value = mutableUiState.value.expireApproval(taskId)
+        mutableUiState.value = mutableUiState.value.expireApproval(taskId, nowMillis())
     }
 
     private fun executeTask(
@@ -261,7 +324,11 @@ class GoffyViewModel internal constructor(
         val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
             try {
                 events.collect { event ->
-                    mutableUiState.value = mutableUiState.value.applyTaskEvent(taskId, event)
+                    mutableUiState.value = mutableUiState.value.applyTaskEvent(
+                        taskId,
+                        event,
+                        nowMillis(),
+                    )
                 }
                 if (mutableUiState.value.timeline.activeTaskId == taskId) {
                     mutableUiState.value = mutableUiState.value.applyTaskEvent(
@@ -271,6 +338,7 @@ class GoffyViewModel internal constructor(
                             message = "Execution stopped before verification",
                             retryable = false,
                         ),
+                        nowMillis(),
                     )
                 }
             } catch (error: CancellationException) {
@@ -283,6 +351,7 @@ class GoffyViewModel internal constructor(
                         message = "The Android execution client stopped before verification",
                         retryable = false,
                     ),
+                    nowMillis(),
                 )
             } finally {
                 if (activeJob === coroutineContext[Job]) {
@@ -303,16 +372,18 @@ class GoffyViewModel internal constructor(
             mutableUiState.value = mutableUiState.value.denyApproval(
                 pending.taskId,
                 "Approval cancelled; no phone tool was invoked",
+                nowMillis(),
             )
             return
         }
         activeJob?.cancel()
         activeJob = null
-        mutableUiState.value = mutableUiState.value.cancelActiveTask()
+        mutableUiState.value = mutableUiState.value.cancelActiveTask(nowMillis())
     }
 
     override fun onCleared() {
         approvalExpiryJob?.cancel()
+        auditStore.close()
         phoneGateway.close()
         gateway.close()
         super.onCleared()
@@ -342,4 +413,12 @@ class GoffyViewModel internal constructor(
         val plan: GoffyExecutionPlan,
         val expiresAtEpochMillis: Long,
     )
+
+    private object NoOpTerminalAuditStore : TerminalAuditStore {
+        override suspend fun load() = ClosedTerminalAuditLoadResult(emptyList(), 0)
+
+        override suspend fun upsert(record: ClosedTerminalAuditRecord) = record
+
+        override fun close() = Unit
+    }
 }

@@ -1,6 +1,7 @@
 package dev.goffy.os
 
 import dev.goffy.os.agent.GoffyExecutionPlan
+import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.agent.TaskTimelineState
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
@@ -12,6 +13,12 @@ enum class MacConnectionState {
     CONNECTED,
 }
 
+enum class AuditPersistenceState {
+    LOADING,
+    READY,
+    DEGRADED,
+}
+
 data class GoffyUiState(
     val macConnection: MacConnectionState = MacConnectionState.DISCONNECTED,
     val executionTarget: ExecutionTarget = ExecutionTarget.PHONE,
@@ -20,6 +27,8 @@ data class GoffyUiState(
     val hubEndpoint: String,
     val linkError: String? = null,
     val pendingApproval: PendingApproval? = null,
+    val auditPersistence: AuditPersistenceState = AuditPersistenceState.LOADING,
+    val discardedAuditRecords: Int = 0,
 ) {
     val isBusy: Boolean
         get() = timeline.activeTaskId != null
@@ -35,12 +44,15 @@ data class GoffyUiState(
         linkError = message.take(MAX_ERROR_LENGTH),
     )
 
-    fun forgetHub(defaultEndpoint: String): GoffyUiState = copy(
+    fun forgetHub(
+        defaultEndpoint: String,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): GoffyUiState = copy(
         macConnection = MacConnectionState.DISCONNECTED,
         hubConfigured = false,
         hubEndpoint = defaultEndpoint,
         linkError = null,
-        timeline = timeline.cancelActive(),
+        timeline = timeline.cancelActive(terminalAtEpochMillis),
         pendingApproval = null,
     )
 
@@ -49,43 +61,64 @@ data class GoffyUiState(
         timeline = timeline.start(taskId, plan),
     )
 
-    fun awaitApproval(approval: PendingApproval): GoffyUiState {
+    fun awaitApproval(
+        approval: PendingApproval,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): GoffyUiState {
         if (approval.taskId != timeline.activeTaskId || pendingApproval != null) return this
         return copy(
-            timeline = timeline.awaitApproval(approval.taskId, approval.description),
+            timeline = timeline.awaitApproval(
+                approval.taskId,
+                approval.description,
+                terminalAtEpochMillis,
+            ),
             pendingApproval = approval,
         )
     }
 
-    fun grantApproval(taskId: UUID): GoffyUiState {
+    fun grantApproval(
+        taskId: UUID,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): GoffyUiState {
         if (pendingApproval?.taskId != taskId) return this
         return copy(
-            timeline = timeline.grantApproval(taskId),
+            timeline = timeline.grantApproval(taskId, terminalAtEpochMillis),
             pendingApproval = null,
         )
     }
 
-    fun denyApproval(taskId: UUID, summary: String): GoffyUiState {
+    fun denyApproval(
+        taskId: UUID,
+        summary: String,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): GoffyUiState {
         if (pendingApproval?.taskId != taskId) return this
         return copy(
-            timeline = timeline.denyApproval(taskId, summary),
+            timeline = timeline.denyApproval(taskId, summary, terminalAtEpochMillis),
             pendingApproval = null,
         )
     }
 
-    fun expireApproval(taskId: UUID): GoffyUiState {
+    fun expireApproval(
+        taskId: UUID,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): GoffyUiState {
         if (pendingApproval?.taskId != taskId) return this
         return copy(
-            timeline = timeline.expireApproval(taskId),
+            timeline = timeline.expireApproval(taskId, terminalAtEpochMillis),
             pendingApproval = null,
         )
     }
 
-    fun applyTaskEvent(taskId: UUID, event: ExecutionEvent): GoffyUiState {
+    fun applyTaskEvent(
+        taskId: UUID,
+        event: ExecutionEvent,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): GoffyUiState {
         if (taskId != timeline.activeTaskId) return this
         val isMacTask = timeline.entries.lastOrNull { it.id == taskId }
             ?.executionTarget == ExecutionTarget.MAC
-        val nextTimeline = timeline.apply(taskId, event)
+        val nextTimeline = timeline.apply(taskId, event, terminalAtEpochMillis)
         val connection = if (!isMacTask) {
             macConnection
         } else if (nextTimeline.activeTaskId != taskId) {
@@ -108,16 +141,60 @@ data class GoffyUiState(
         )
     }
 
-    fun rejectCommand(command: String, summary: String): GoffyUiState = copy(
-        timeline = timeline.reject(command, summary),
+    fun rejectCommand(
+        command: String,
+        summary: String,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): GoffyUiState = copy(
+        timeline = timeline.reject(command, summary, terminalAtEpochMillis),
     )
 
-    fun cancelActiveTask(): GoffyUiState {
+    fun rejectPlan(
+        plan: GoffyExecutionPlan,
+        summary: String,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): GoffyUiState = copy(
+        executionTarget = plan.executionTarget,
+        timeline = timeline.reject(
+            command = plan.command,
+            summary = summary,
+            terminalAtEpochMillis = terminalAtEpochMillis,
+            executionTarget = plan.executionTarget,
+            toolName = plan.toolName,
+            permission = plan.permission,
+        ),
+    )
+
+    fun auditLoaded(
+        restoredEntries: List<TaskTimelineEntry>,
+        discardedRecords: Int,
+    ): GoffyUiState {
+        require(discardedRecords >= 0) { "discarded audit count cannot be negative" }
+        return copy(
+            timeline = timeline.mergeRestoredAudit(restoredEntries),
+            auditPersistence = if (discardedRecords == 0) {
+                AuditPersistenceState.READY
+            } else {
+                AuditPersistenceState.DEGRADED
+            },
+            discardedAuditRecords = discardedRecords,
+        )
+    }
+
+    fun auditFailed(): GoffyUiState = copy(auditPersistence = AuditPersistenceState.DEGRADED)
+
+    fun auditRecorded(taskId: UUID, recordedAtEpochMillis: Long): GoffyUiState = copy(
+        timeline = timeline.markAuditRecorded(taskId, recordedAtEpochMillis),
+    )
+
+    fun cancelActiveTask(
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): GoffyUiState {
         val cancellingMacTask = timeline.entries.lastOrNull { it.id == timeline.activeTaskId }
             ?.executionTarget == ExecutionTarget.MAC
         return copy(
             macConnection = if (cancellingMacTask) MacConnectionState.DISCONNECTED else macConnection,
-            timeline = timeline.cancelActive(),
+            timeline = timeline.cancelActive(terminalAtEpochMillis),
             pendingApproval = null,
         )
     }

@@ -3,12 +3,18 @@ package dev.goffy.os
 import dev.goffy.os.agent.GoffyIntentRouter
 import dev.goffy.os.agent.RoutingDecision
 import dev.goffy.os.agent.TaskPhase
+import dev.goffy.os.agent.TaskEventKind
+import dev.goffy.os.agent.TaskTimelineEntry
+import dev.goffy.os.agent.TaskTimelineEvent
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
+import dev.goffy.os.protocol.PermissionLevel
 import java.util.UUID
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -27,6 +33,47 @@ class GoffyUiStateTest {
         assertEquals(ExecutionTarget.PHONE, state.executionTarget)
         assertTrue(state.timeline.entries.isEmpty())
         assertFalse(state.hubConfigured)
+        assertEquals(AuditPersistenceState.LOADING, state.auditPersistence)
+    }
+
+    @Test
+    fun restoredAuditIsDisplayOnlyAndNeverResumesAuthority() {
+        val restored = TaskTimelineEntry(
+            id = taskId,
+            command = "Show Mac status",
+            executionTarget = ExecutionTarget.MAC,
+            toolName = MAC_SYSTEM_INFO_TOOL,
+            phase = TaskPhase.VERIFIED,
+            summary = "Verified Mac status",
+            events = listOf(TaskTimelineEvent(TaskEventKind.VERIFY, "Verification completed")),
+            permission = PermissionLevel.SAFE,
+            terminalAtEpochMillis = 1_720_000_000_000,
+            auditRecordedAtEpochMillis = 1_720_000_000_000,
+        )
+
+        val state = GoffyUiState(hubEndpoint = endpoint).auditLoaded(listOf(restored), 0)
+
+        assertEquals(AuditPersistenceState.READY, state.auditPersistence)
+        assertEquals(listOf(restored), state.timeline.entries)
+        assertNull(state.timeline.activeTaskId)
+        assertNull(state.pendingApproval)
+        assertNull(state.timeline.entries.single().result)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            GoffyUiState(hubEndpoint = endpoint).auditLoaded(
+                listOf(restored.copy(approvalGranted = true)),
+                0,
+            )
+        }
+    }
+
+    @Test
+    fun discardedAuditRowsDegradeHistoryWithoutChangingEntries() {
+        val state = GoffyUiState(hubEndpoint = endpoint).auditLoaded(emptyList(), 2)
+
+        assertEquals(AuditPersistenceState.DEGRADED, state.auditPersistence)
+        assertEquals(2, state.discardedAuditRecords)
+        assertTrue(state.timeline.entries.isEmpty())
     }
 
     @Test

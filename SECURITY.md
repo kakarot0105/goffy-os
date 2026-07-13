@@ -109,6 +109,27 @@ include real credentials or unrelated personal data.
   failure, timeout, or cancellation.
 - Flashlight verification is point-in-time: a matching callback proves the approved
   state at completion, not exclusive ownership or future persistence.
+- Android persists a redacted terminal-task audit trail in app-private SQLite.
+  Each row is written only after `UNVERIFIED`, `VERIFIED`, `FAILED`, or
+  `CANCELLED`; process death mid-task records no synthetic success.
+- Audit retention is bounded to the newest 50 terminal records. Stored fields
+  are closed metadata only: audit schema/protocol versions, task UUID and time,
+  source, PHONE/MAC target, allowlisted tool or `null`, SAFE/CONFIRM permission
+  or `null`, terminal phase, approval outcome, and bounded event kinds.
+- The Android audit never stores raw command text, typed arguments, note text,
+  row IDs, tool result data, device info, approval text, event messages, endpoint
+  or token values, free-form summaries, or verification checks.
+- Restored audit entries are display-only, result-free terminal cards. They
+  cannot recreate a pending approval, active task, structured result, or
+  execution authority.
+- Audit read/write/corrupt-row failures visibly degrade the timeline to
+  memory-only history or a discarded-row count, but do not rewrite the task
+  phase or verification verdict already shown to the user. The app schedules no
+  background retry or WorkManager recovery.
+- Android backup and device-to-device transfer are disabled for app data, and
+  uninstall removes local audit records.
+- Direct Hub/MCP operator audit remains deferred until stable paired identity
+  and user-visible retrieval exist.
 - CI validates both the strict source manifest and freshly merged debug and release
   manifests, rejecting permission variants, undeclared hardware features, and
   non-intent package queries.
@@ -132,5 +153,12 @@ include real credentials or unrelated personal data.
 - Treating PHONE capability metadata or fixtures as authorization
 - Implicit timer intents or non-allowlisted Clock-handler dispatch
 - Camera opening or image capture as part of the flashlight tool
+- Persisting raw commands, typed arguments, note text, tool results, device info,
+  approval text, event messages, endpoint or token values, free-form summaries,
+  or verification checks in the Android audit trail
+- Restoring audit rows as pending approval state, active execution, structured
+  result data, or resumable authority
+- Shipping direct Hub/MCP operator audit before paired identity and user-visible
+  retrieval exist
 
 See [the initial threat model](docs/security/threat-model.md) for remaining risks.

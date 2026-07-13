@@ -46,4 +46,9 @@
     <string name="camera_short">CAM</string>
     <string name="timeline_title">TASK TIMELINE</string>
     <string name="timeline_empty">No actions yet. Every GOFFY step will appear here.</string>
+    <string name="audit_loading">AUDIT / LOADING</string>
+    <string name="audit_ready">AUDIT / READY / 50 MAX</string>
+    <string name="audit_degraded">AUDIT / DEGRADED / MEMORY ONLY</string>
+    <string name="audit_degraded_records">AUDIT / DEGRADED / %1$d DISCARDED</string>
+    <string name="audit_recorded_at">AUDIT / %1$s</string>
 </resources>

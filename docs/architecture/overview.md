@@ -2,7 +2,8 @@
 
 GOFFY OS separates intent, policy, transport, and capability execution so no
 model or UI can directly acquire ambient authority. The current runtime has five
-offline PHONE tools and one authenticated MAC tool, not a general command channel.
+offline PHONE tools, one authenticated MAC tool, and a redacted Android-local
+audit trail for terminal tasks, not a general command channel.
 
 ```text
 Android command surface
@@ -24,6 +25,7 @@ deterministic router
 Official MCP client -> authenticated POST /mcp -> MCP SDK -> same ToolRegistry
                                                         ^
 bounded health monitor -> sealed registry availability -'
+terminal task reducer -> app-private Android audit SQLite (50 max, terminal-only, redacted)
 ```
 
 All routes emit the same typed preparation, progress, result, error, and
@@ -34,6 +36,11 @@ one tool invocation. It succeeds only after a structured result followed by a
 separate verification event. Discovery and pre-send disconnects may be retried
 up to two times. Once invocation bytes are sent, disconnects fail closed and are
 not replayed. A whole attempt is bounded to 35 seconds.
+
+After a task reaches `VERIFIED`, `UNVERIFIED`, `FAILED`, or `CANCELLED`,
+Android may persist one redacted audit row and merge it back into the visible
+timeline on restart. Restore is display-only: structured result content, pending
+approval state, active work, and execution authority are not revived.
 
 ## Trust boundaries
 
@@ -56,17 +63,27 @@ not replayed. A whole attempt is bounded to 35 seconds.
 12. Device info contains four display fields and excludes stable device, network, account, and build identifiers.
 13. Mutating PHONE tools require an exact-task, exact-tool, exact-arguments,
    expiring, single-use approval.
-14. Flashlight success requires a matching CameraManager callback and releases the
+14. Terminal-task audit rows are written only after `UNVERIFIED`, `VERIFIED`,
+    `FAILED`, or `CANCELLED`; process death before then leaves no synthetic
+    success row.
+15. Audit retention is bounded to the newest 50 rows and stores only closed
+    metadata, not raw commands, arguments, results, device info, approval text,
+    or free-form summaries.
+16. Restored audit entries are result-free, display-only terminal cards. They
+    cannot revive pending approval, active execution, or authority.
+17. Audit read/write/corrupt-row failure degrades the audit badge without
+    rewriting the task verdict and without background retry.
+18. Flashlight success requires a matching CameraManager callback and releases the
    callback immediately; it never opens an image stream.
-15. A typed result carries data; a separate verification event is the success boundary.
-16. Local cancel stops the active coroutine; MAC cancellation does not guarantee Hub-side termination.
-17. The Hub rejects duplicate message IDs within a connection and applies the
+19. A typed result carries data; a separate verification event is the success boundary.
+20. Local cancel stops the active coroutine; MAC cancellation does not guarantee Hub-side termination.
+21. The Hub rejects duplicate message IDs within a connection and applies the
     configured message-size limit in both transport directions.
-18. `/mcp` validates exact Host and Origin allowlists, bearer authentication,
+22. `/mcp` validates exact Host and Origin allowlists, bearer authentication,
     message bounds, and concurrency before registry execution.
-19. The Hub seals registry definitions before serving. Health probes can only
+23. The Hub seals registry definitions before serving. Health probes can only
     remove or restore those definitions and cannot mutate their policy metadata.
-20. Health never grants authority: clients see only compiled definitions that pass
+24. Health never grants authority: clients see only compiled definitions that pass
     their current bounded probe. Admission validates availability and arguments
     before `accepted`; later health changes block new calls, not admitted work.
 
@@ -74,9 +91,10 @@ not replayed. A whole attempt is bounded to 35 seconds.
 
 The Android shell defaults to GOFFY LITE: static background, static orb, no
 camera/microphone capture initialization, no polling, and no local model. Phone state is
-read only after a matching user command. Hub operations
-are asynchronous and timeout-bounded. Histories and audit retention will be
-bounded when persistence is introduced.
+read only after a matching user command. Terminal-task audit persistence is
+bounded to the newest 50 SQLite rows, read on startup, and written once on the
+existing IO dispatcher after terminal state; there is no polling, WorkManager,
+or background retry. Hub operations are asynchronous and timeout-bounded.
 
 Hub health checks are Mac-side only: one startup pass, then a 30-second default
 sleep between passes, at most four concurrent probes, and a five-second maximum

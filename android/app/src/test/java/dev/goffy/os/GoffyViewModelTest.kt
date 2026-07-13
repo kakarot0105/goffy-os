@@ -1,6 +1,13 @@
 package dev.goffy.os
 
 import dev.goffy.os.agent.TaskPhase
+import dev.goffy.os.audit.AuditApprovalOutcome
+import dev.goffy.os.audit.AuditPermission
+import dev.goffy.os.audit.AuditSourceSurface
+import dev.goffy.os.audit.ClosedTerminalAuditLoadResult
+import dev.goffy.os.audit.ClosedTerminalAuditRecord
+import dev.goffy.os.audit.TerminalAuditPhase
+import dev.goffy.os.audit.TerminalAuditStore
 import dev.goffy.os.hub.HubConfig
 import dev.goffy.os.hub.HubGateway
 import dev.goffy.os.phone.DefaultPhoneToolGateway
@@ -12,6 +19,8 @@ import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.MacSystemInfo
+import dev.goffy.os.protocol.GOFFY_PROTOCOL_VERSION
+import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
@@ -119,6 +128,47 @@ class GoffyViewModelTest {
     }
 
     @Test
+    fun terminalTaskIsPersistedOnceAndMarkedVisible() = runTest(dispatcher) {
+        val auditStore = RecordingAuditStore()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            auditStore = auditStore,
+            nowMillis = { 4_242L },
+        )
+
+        viewModel.submitCommand("Show my battery status")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals(AuditPersistenceState.READY, viewModel.uiState.value.auditPersistence)
+        assertEquals(1, auditStore.upserts.size)
+        assertEquals(entry.id, auditStore.upserts.single().taskId)
+        assertEquals(4_242L, auditStore.upserts.single().recordedAtEpochMillis)
+        assertEquals(4_242L, entry.terminalAtEpochMillis)
+        assertTrue(entry.auditRecordedAtEpochMillis != null)
+    }
+
+    @Test
+    fun restoredAuditCannotResumeTaskOrApprovalAuthority() = runTest(dispatcher) {
+        val restored = batteryAuditRecord()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            auditStore = RecordingAuditStore(initialRecords = listOf(restored)),
+        )
+
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        val entry = state.timeline.entries.single()
+        assertEquals(restored.taskId, entry.id)
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertNull(entry.result)
+        assertNull(state.timeline.activeTaskId)
+        assertNull(state.pendingApproval)
+    }
+
+    @Test
     fun deviceInfoRunsAndVerifiesLocallyWithoutHubConfiguration() = runTest(dispatcher) {
         val hubGateway = FakeHubGateway { flowOf() }
         val phoneGateway = DefaultPhoneToolGateway(
@@ -145,11 +195,13 @@ class GoffyViewModelTest {
     @Test
     fun missingOrInvalidConfigurationFailsClosed() = runTest(dispatcher) {
         val gateway = FakeHubGateway { flowOf() }
-        val viewModel = createViewModel(gateway)
+        val auditStore = RecordingAuditStore()
+        val viewModel = createViewModel(gateway, auditStore = auditStore)
 
         viewModel.submitCommand("Show my Mac status")
         assertTrue(gateway.requests.isEmpty())
         assertEquals(TaskPhase.FAILED, viewModel.uiState.value.timeline.entries.single().phase)
+        assertEquals(ExecutionTarget.MAC, viewModel.uiState.value.timeline.entries.single().executionTarget)
 
         assertTrue(viewModel.configureHub(endpoint, token))
         assertFalse(viewModel.configureHub("ws://mac.example/ws/v1", token))
@@ -158,6 +210,9 @@ class GoffyViewModelTest {
 
         assertTrue(gateway.requests.isEmpty())
         assertFalse(viewModel.uiState.value.hubConfigured)
+        assertEquals(2, auditStore.upserts.size)
+        assertTrue(auditStore.upserts.all { it.executionTarget == ExecutionTarget.MAC })
+        assertTrue(auditStore.upserts.all { it.toolName == "mac.system_info" })
     }
 
     @Test
@@ -239,6 +294,55 @@ class GoffyViewModelTest {
         assertEquals(PhoneNoteCreated(1, "Buy milk", 1_720_000_000_000), entry.result)
         assertFalse(viewModel.approvePendingTask(pending.taskId))
         assertEquals(1, noteStore.creates)
+    }
+
+    @Test
+    fun persistedNoteAuditNeverContainsPrivateNoteText() = runTest(dispatcher) {
+        val auditStore = RecordingAuditStore()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            phoneGateway = phoneGateway(RecordingNoteStore()),
+            auditStore = auditStore,
+        )
+
+        viewModel.submitCommand("Create a note saying Buy milk")
+        runCurrent()
+        assertTrue(viewModel.approvePendingTask(viewModel.uiState.value.pendingApproval!!.taskId))
+        advanceUntilIdle()
+
+        assertEquals(1, auditStore.upserts.size)
+        assertFalse(auditStore.upserts.single().toString().contains("Buy milk"))
+    }
+
+    @Test
+    fun auditWriteFailureIsVisibleWithoutRewritingVerifiedOutcome() = runTest(dispatcher) {
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            auditStore = RecordingAuditStore(failWrites = true),
+        )
+
+        viewModel.submitCommand("Show my battery status")
+        advanceUntilIdle()
+
+        assertEquals(TaskPhase.VERIFIED, viewModel.uiState.value.timeline.entries.single().phase)
+        assertEquals(AuditPersistenceState.DEGRADED, viewModel.uiState.value.auditPersistence)
+        assertNull(viewModel.uiState.value.timeline.entries.single().auditRecordedAtEpochMillis)
+    }
+
+    @Test
+    fun auditLoadFailureIsVisibleAndDoesNotBlockNewCommands() = runTest(dispatcher) {
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            auditStore = RecordingAuditStore(failLoads = true),
+        )
+
+        runCurrent()
+        assertEquals(AuditPersistenceState.DEGRADED, viewModel.uiState.value.auditPersistence)
+
+        viewModel.submitCommand("Show my battery status")
+        advanceUntilIdle()
+
+        assertEquals(TaskPhase.VERIFIED, viewModel.uiState.value.timeline.entries.single().phase)
     }
 
     @Test
@@ -372,6 +476,7 @@ class GoffyViewModelTest {
         ),
         approvalTtlMillis: Long = 60_000,
         nowMillis: () -> Long = System::currentTimeMillis,
+        auditStore: TerminalAuditStore = RecordingAuditStore(),
     ): GoffyViewModel {
         val protocolMessageIds = ArrayDeque(
             listOf(
@@ -392,8 +497,23 @@ class GoffyViewModelTest {
             nextTaskId = { UUID.fromString("22222222-2222-4222-8222-222222222222") },
             approvalTtlMillis = approvalTtlMillis,
             nowMillis = nowMillis,
+            auditStore = auditStore,
+            auditDispatcher = dispatcher,
         )
     }
+
+    private fun batteryAuditRecord(): ClosedTerminalAuditRecord = ClosedTerminalAuditRecord(
+        taskId = UUID.fromString("44444444-4444-4444-8444-444444444444"),
+        recordedAtEpochMillis = 1_720_000_000_000,
+        protocolVersion = GOFFY_PROTOCOL_VERSION,
+        sourceSurface = AuditSourceSurface.TERMINAL_TIMELINE,
+        executionTarget = ExecutionTarget.PHONE,
+        toolName = PHONE_BATTERY_STATUS_TOOL,
+        permission = AuditPermission.SAFE,
+        phase = TerminalAuditPhase.VERIFIED,
+        approvalOutcome = AuditApprovalOutcome.NOT_REQUIRED,
+        eventKinds = emptyList(),
+    )
 
     private fun phoneGateway(
         noteStore: NoteStore = fakeNoteStore(),
@@ -473,6 +593,29 @@ class GoffyViewModelTest {
             creates += 1
             lastText = text
             return PhoneNoteCreated(1, text, 1_720_000_000_000)
+        }
+
+        override fun close() = Unit
+    }
+
+    private class RecordingAuditStore(
+        initialRecords: List<ClosedTerminalAuditRecord> = emptyList(),
+        private val failLoads: Boolean = false,
+        private val failWrites: Boolean = false,
+    ) : TerminalAuditStore {
+        private val records = initialRecords.associateByTo(linkedMapOf()) { it.taskId }
+        val upserts = mutableListOf<ClosedTerminalAuditRecord>()
+
+        override suspend fun load(): ClosedTerminalAuditLoadResult {
+            if (failLoads) error("simulated audit load failure")
+            return ClosedTerminalAuditLoadResult(records.values.toList(), 0)
+        }
+
+        override suspend fun upsert(record: ClosedTerminalAuditRecord): ClosedTerminalAuditRecord {
+            if (failWrites) error("simulated audit write failure")
+            upserts += record
+            records[record.taskId] = record
+            return record
         }
 
         override fun close() = Unit

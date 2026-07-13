@@ -63,12 +63,45 @@ data class TaskTimelineEntry(
     val executionReady: Boolean = false,
     val permission: PermissionLevel? = null,
     val approvalGranted: Boolean = false,
+    val terminalAtEpochMillis: Long? = null,
+    val auditRecordedAtEpochMillis: Long? = null,
 )
 
 data class TaskTimelineState(
     val activeTaskId: UUID? = null,
     val entries: List<TaskTimelineEntry> = emptyList(),
 ) {
+    fun mergeRestoredAudit(restoredEntries: List<TaskTimelineEntry>): TaskTimelineState {
+        require(
+            restoredEntries.all {
+                it.phase in TERMINAL_PHASES &&
+                    it.result == null &&
+                    !it.approvalGranted &&
+                    it.lastProgressSequence == null &&
+                    it.lastStartAttempt == null &&
+                    !it.executionReady &&
+                    it.terminalAtEpochMillis != null
+            },
+        ) {
+            "restored audit entries must be terminal, display-only, and authority-free"
+        }
+        val merged = LinkedHashMap<UUID, TaskTimelineEntry>()
+        restoredEntries.forEach { merged[it.id] = it }
+        entries.forEach { merged[it.id] = it }
+        return copy(entries = merged.values.toList().takeLast(MAX_TIMELINE_ITEMS))
+    }
+
+    fun markAuditRecorded(taskId: UUID, recordedAtEpochMillis: Long): TaskTimelineState {
+        require(recordedAtEpochMillis > 0) { "audit timestamp must be positive" }
+        val index = entries.indexOfLast { it.id == taskId }
+        if (index < 0 || entries[index].phase !in TERMINAL_PHASES) return this
+        return copy(
+            entries = entries.toMutableList().also {
+                it[index] = it[index].copy(auditRecordedAtEpochMillis = recordedAtEpochMillis)
+            },
+        )
+    }
+
     fun start(taskId: UUID, plan: GoffyExecutionPlan): TaskTimelineState {
         require(activeTaskId == null) { "only one task may run at a time" }
         val entry = TaskTimelineEntry(
@@ -93,22 +126,35 @@ data class TaskTimelineState(
         )
     }
 
-    fun reject(command: String, summary: String): TaskTimelineState {
+    fun reject(
+        command: String,
+        summary: String,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+        executionTarget: ExecutionTarget = ExecutionTarget.PHONE,
+        toolName: String? = null,
+        permission: PermissionLevel? = null,
+    ): TaskTimelineState {
         val normalized = command.trim().take(MAX_COMMAND_LENGTH)
         if (normalized.isEmpty()) return this
         val entry = TaskTimelineEntry(
             id = UUID.randomUUID(),
             command = normalized,
-            executionTarget = ExecutionTarget.PHONE,
-            toolName = null,
+            executionTarget = executionTarget,
+            toolName = toolName,
             phase = TaskPhase.FAILED,
             summary = summary.safeText(),
             events = listOf(TaskTimelineEvent(TaskEventKind.ERROR, summary.safeText())),
+            permission = permission,
+            terminalAtEpochMillis = terminalAtEpochMillis,
         )
         return copy(entries = (entries + entry).takeLast(MAX_TIMELINE_ITEMS))
     }
 
-    fun apply(taskId: UUID, event: ExecutionEvent): TaskTimelineState {
+    fun apply(
+        taskId: UUID,
+        event: ExecutionEvent,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): TaskTimelineState {
         if (taskId != activeTaskId) return this
         val index = entries.indexOfLast { it.id == taskId }
         if (index < 0) return copy(activeTaskId = null)
@@ -128,14 +174,19 @@ data class TaskTimelineState(
             ).withEvent(TaskEventKind.ERROR, "${event.code}: ${event.message}")
         }
 
-        val terminal = updated.phase in TERMINAL_PHASES
+        val terminalEntry = updated.withTerminalTimestamp(terminalAtEpochMillis)
+        val terminal = terminalEntry.phase in TERMINAL_PHASES
         return copy(
             activeTaskId = if (terminal) null else activeTaskId,
-            entries = entries.toMutableList().also { it[index] = updated },
+            entries = entries.toMutableList().also { it[index] = terminalEntry },
         )
     }
 
-    fun awaitApproval(taskId: UUID, summary: String): TaskTimelineState {
+    fun awaitApproval(
+        taskId: UUID,
+        summary: String,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): TaskTimelineState {
         if (taskId != activeTaskId) return this
         val index = entries.indexOfLast { it.id == taskId }
         if (index < 0) return copy(activeTaskId = null)
@@ -152,10 +203,13 @@ data class TaskTimelineState(
         } else {
             current.failSequence("Approval request failed task ordering checks")
         }
-        return replaceEntry(index, updated)
+        return replaceEntry(index, updated.withTerminalTimestamp(terminalAtEpochMillis))
     }
 
-    fun grantApproval(taskId: UUID): TaskTimelineState {
+    fun grantApproval(
+        taskId: UUID,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): TaskTimelineState {
         if (taskId != activeTaskId) return this
         val index = entries.indexOfLast { it.id == taskId }
         if (index < 0) return copy(activeTaskId = null)
@@ -173,10 +227,14 @@ data class TaskTimelineState(
         } else {
             current.failSequence("Approval grant failed task ordering checks")
         }
-        return replaceEntry(index, updated)
+        return replaceEntry(index, updated.withTerminalTimestamp(terminalAtEpochMillis))
     }
 
-    fun denyApproval(taskId: UUID, summary: String): TaskTimelineState {
+    fun denyApproval(
+        taskId: UUID,
+        summary: String,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): TaskTimelineState {
         if (taskId != activeTaskId) return this
         val index = entries.indexOfLast { it.id == taskId }
         if (index < 0) return copy(activeTaskId = null)
@@ -186,10 +244,13 @@ data class TaskTimelineState(
             phase = TaskPhase.CANCELLED,
             summary = summary.safeText(),
         ).withEvent(TaskEventKind.AUTHORIZE, summary)
-        return replaceEntry(index, updated)
+        return replaceEntry(index, updated.withTerminalTimestamp(terminalAtEpochMillis))
     }
 
-    fun expireApproval(taskId: UUID): TaskTimelineState {
+    fun expireApproval(
+        taskId: UUID,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): TaskTimelineState {
         if (taskId != activeTaskId) return this
         val index = entries.indexOfLast { it.id == taskId }
         if (index < 0) return copy(activeTaskId = null)
@@ -200,17 +261,20 @@ data class TaskTimelineState(
             phase = TaskPhase.FAILED,
             summary = summary,
         ).withEvent(TaskEventKind.ERROR, summary)
-        return replaceEntry(index, updated)
+        return replaceEntry(index, updated.withTerminalTimestamp(terminalAtEpochMillis))
     }
 
-    fun cancelActive(): TaskTimelineState {
+    fun cancelActive(terminalAtEpochMillis: Long = System.currentTimeMillis()): TaskTimelineState {
         val taskId = activeTaskId ?: return this
         val index = entries.indexOfLast { it.id == taskId }
         if (index < 0) return copy(activeTaskId = null)
         val updated = entries[index].copy(
             phase = TaskPhase.CANCELLED,
             summary = entries[index].cancellationSummary(),
-        ).withEvent(TaskEventKind.ERROR, entries[index].cancellationEventMessage())
+        ).withEvent(
+            TaskEventKind.ERROR,
+            entries[index].cancellationEventMessage(),
+        ).withTerminalTimestamp(terminalAtEpochMillis)
         return copy(
             activeTaskId = null,
             entries = entries.toMutableList().also { it[index] = updated },
@@ -307,6 +371,13 @@ data class TaskTimelineState(
         phase = TaskPhase.FAILED,
         summary = message,
     ).withEvent(TaskEventKind.ERROR, message)
+
+    private fun TaskTimelineEntry.withTerminalTimestamp(timestamp: Long): TaskTimelineEntry =
+        if (phase in TERMINAL_PHASES && terminalAtEpochMillis == null) {
+            copy(terminalAtEpochMillis = timestamp)
+        } else {
+            this
+        }
 
     private fun TaskTimelineEntry.withEvent(
         kind: TaskEventKind,

@@ -72,6 +72,35 @@ review both published checksums during any wrapper upgrade.
   header, and kept in memory only. It is not placed in the URL, saved state, or
   stringified config output.
 
+## Android audit trail
+
+Android persists terminal task history in the same visible timeline.
+
+- Storage is app-private SQLite only. Android backup and device transfer are
+  disabled for the app, and uninstall removes the records.
+- Retention is bounded to the newest 50 terminal records.
+- Each record stores only closed metadata: audit schema/protocol versions, task
+  UUID and time, source, PHONE/MAC target, allowlisted tool or `null`,
+  SAFE/CONFIRM permission or `null`, terminal phase, approval outcome, and
+  bounded event kinds.
+- The audit never stores raw command text, typed arguments, note text, row IDs,
+  tool results, device info, approval text, event messages, endpoint or token
+  values, free-form summaries, or verification checks.
+- Restore is display-only. Relaunch may show terminal cards, but never a
+  structured result, pending approval, active task, or execution authority.
+- Writes happen only after `VERIFIED`, `UNVERIFIED`, `FAILED`, or `CANCELLED`.
+  Killing the process mid-task creates no synthetic success row.
+- Read or write failure flips the badge to `AUDIT / DEGRADED ...` and may leave
+  affected history in memory only. Corrupt rows are discarded while valid rows
+  are still restored and the badge shows the discarded-row count. GOFFY does
+  not rewrite the original execution verdict and schedules no background retry.
+
+Performance assessment: the audit path is a tiny bounded SQLite read at startup
+and one write per terminal task on the existing IO dispatcher. There is no
+polling or WorkManager, so this slice stays within GOFFY LITE expectations for
+4 GB devices. Explicit clear controls and cryptographic tamper evidence remain
+future work.
+
 ## USB localhost debug flow
 
 1. Start the Hub on the Mac with a development token:
@@ -146,3 +175,12 @@ Submit `Turn off the torch`, approve it, and confirm a second `VERIFIED` result.
 No camera permission dialog, camera privacy indicator, or image preview should
 appear. Record failures when another camera app is active. Physical Moto G
 verification remains open.
+
+For the audit trail, complete one restart pass on a real device:
+
+1. Produce at least one terminal PHONE record and, if a Hub is configured, one terminal MAC record.
+2. Confirm the badge shows `AUDIT / READY / 50 MAX`.
+3. Force-stop the app or reboot the phone, relaunch GOFFY, and confirm the newest terminal cards reappear as redacted history entries with target/tool/permission/phase and the audit timestamp.
+4. Confirm restored cards are display-only: no structured result body, no pending approval controls, no active task, and no way to resume or replay authority from history.
+5. Start a new approval-gated task, kill the app before it reaches a terminal phase, relaunch, and confirm there is no synthetic success row and no resumed approval.
+6. If the badge reports `AUDIT / DEGRADED ...`, treat the stored history as partial and confirm GOFFY still does not alter the already shown execution verdict or schedule background retry work.

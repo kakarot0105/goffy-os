@@ -26,6 +26,9 @@
 | Host information leakage | `mac.system_info` returns status, OS family, and architecture only | User-visible field policy for future tools |
 | Unnecessary phone-state collection | Battery state is read once only after an explicit command; no receiver, polling, or permission | Field policy for future phone tools |
 | Device fingerprinting | Device info is local-only and limited to manufacturer, model, Android release, and SDK; stable identifiers and build fingerprint are excluded | Reassess before persistence or remote transmission |
+| Audit over-collection or disclosure | Android stores only redacted terminal-task metadata in app-private SQLite, disables backup/device transfer, bounds retention to the newest 50 rows, and removes records on uninstall | Explicit clear UI, tamper evidence, and user-directed export/deletion |
+| Synthetic audit success after restart or process death | Audit rows are written only after terminal phase; restored audit is display-only, result-free, and never revives pending approval or active execution | Real-device restart matrix and future paired identity |
+| Audit corruption or persistence failure | Read/write/corrupt-row failure shows `DEGRADED` or a discarded-row count, keeps the shown execution verdict unchanged, and performs no background retry | Repair tooling, tamper evidence, and operator-visible diagnostics |
 | Invalid local tool output | Tool-specific type, range, field-length, and control-character checks run before result and verification events | Tool-specific state re-read where meaningful |
 | Note approval replay or substitution | Gateway binds a one-time grant to task, tool, exact arguments, and expiry; consumed task IDs cannot be approved twice in one process | Persisted approval audit and process-death recovery policy |
 | Note SQL injection or cross-app disclosure | `ContentValues` and selection arguments bind note data; SQLite is app-private and backup is disabled | User-facing note viewer, deletion, and retention controls |
@@ -39,10 +42,13 @@
 | Android capability creep | Security scan rejects unexpected source-manifest structure and checks exact permissions and queries in freshly merged debug and release manifests | Review allowlist changes as security decisions |
 | Misleading success | Output validation plus separate `VerificationResult` event | Tool-specific state re-read |
 | False cancel expectations | UI states that cancel is local-only and Hub completion is not guaranteed | End-to-end cancellation protocol |
+| Missing direct Hub/MCP operator audit | Deferred until stable paired identity and user-visible Android retrieval exist; the persistent slice is Android-local only for now | Design and ship bounded Hub/MCP operator audit |
 
 ## Current non-goals
 
 The development token is not a pairing or MCP OAuth system. Neither transport is
 approved for LAN use. There is no trusted certificate provisioning, secure mobile
 token storage, token rotation or revocation, device-aware rate limiting,
-server-side cancellation, MCP server push, or persistent audit log yet.
+server-side cancellation, MCP server push, or direct Hub/MCP operator audit yet.
+The Android audit trail is local-only, redacted, bounded, display-only on
+restore, and still lacks explicit clear controls and cryptographic tamper evidence.
