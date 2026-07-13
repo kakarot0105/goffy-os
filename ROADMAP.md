@@ -28,7 +28,7 @@
 - [x] Offline deterministic battery-status routing
 - [x] Typed PHONE and MAC execution result boundary
 - [x] PHONE, MAC, and CLOUD target state
-- [ ] `phone.device.info`
+- [x] Privacy-minimized `phone.device.info`
 - [ ] Approval-gated flashlight, note, and timer tools
 - [ ] Physical Moto G battery-status verification
 

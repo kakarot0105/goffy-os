@@ -17,6 +17,8 @@ progress, verification, and error behavior.
 - Put phone capabilities behind a fixed `PhoneToolGateway`; do not expose a
   generic Android command or reflection interface.
 - Implement `phone.battery.status` with one on-demand `BatteryManager` read.
+- Implement `phone.device.info` with only manufacturer, user-visible model,
+  Android release, and SDK level from `Build`; collect no stable identifier.
 - Require the plan to declare PHONE, the exact allowlisted tool name, and SAFE
   permission before reading device state.
 - Validate battery percentage before emitting a result, then emit a separate
@@ -26,7 +28,15 @@ progress, verification, and error behavior.
 
 ## Consequences
 
-The first PHONE command works without a Hub or network and reuses the same
-observable timeline as MAC execution. Android framework access remains behind a
-small injectable source for JVM tests. Real battery values, responsiveness, and
-OEM behavior still require Moto G verification.
+The first PHONE commands work without a Hub or network and reuse the same
+observable timeline as MAC execution. Android framework access remains behind
+small injectable sources for JVM tests. Device model is treated as local display
+data, not an identity key; any future persistence or remote transmission requires
+a separate data-policy decision. Real values, responsiveness, and OEM behavior
+still require Moto G verification.
+
+## References
+
+- [Android `Build` API](https://developer.android.com/reference/android/os/Build)
+- [Android `Build.VERSION` API](https://developer.android.com/reference/android/os/Build.VERSION)
+- [Android identifier best practices](https://developer.android.com/identity/user-data-ids)

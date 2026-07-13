@@ -10,6 +10,7 @@ import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
+import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.ToolInvocationRequest
 import dev.goffy.os.protocol.ToolProgress
 import java.time.Instant
@@ -88,6 +89,7 @@ class GoffyViewModelTest {
             batteryStatusSource = {
                 PhoneBatteryStatus(levelPercent = 64, charging = false)
             },
+            deviceInfoSource = { validDeviceInfo() },
             readDispatcher = dispatcher,
         )
         val viewModel = createViewModel(hubGateway, phoneGateway)
@@ -100,6 +102,27 @@ class GoffyViewModelTest {
         assertEquals(ExecutionTarget.PHONE, entry.executionTarget)
         assertEquals(TaskPhase.VERIFIED, entry.phase)
         assertEquals(PhoneBatteryStatus(64, false), entry.result)
+        assertFalse(viewModel.uiState.value.hubConfigured)
+    }
+
+    @Test
+    fun deviceInfoRunsAndVerifiesLocallyWithoutHubConfiguration() = runTest(dispatcher) {
+        val hubGateway = FakeHubGateway { flowOf() }
+        val phoneGateway = DefaultPhoneToolGateway(
+            batteryStatusSource = { PhoneBatteryStatus(50, false) },
+            deviceInfoSource = { validDeviceInfo() },
+            readDispatcher = dispatcher,
+        )
+        val viewModel = createViewModel(hubGateway, phoneGateway)
+
+        viewModel.submitCommand("Show my phone info")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertTrue(hubGateway.requests.isEmpty())
+        assertEquals(ExecutionTarget.PHONE, entry.executionTarget)
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals(validDeviceInfo(), entry.result)
         assertFalse(viewModel.uiState.value.hubConfigured)
     }
 
@@ -180,6 +203,7 @@ class GoffyViewModelTest {
             batteryStatusSource = {
                 PhoneBatteryStatus(levelPercent = 50, charging = false)
             },
+            deviceInfoSource = { validDeviceInfo() },
             readDispatcher = dispatcher,
         ),
     ): GoffyViewModel = GoffyViewModel(
@@ -214,6 +238,13 @@ class GoffyViewModelTest {
             summary = "Verified",
             checks = listOf("output schema"),
         ),
+    )
+
+    private fun validDeviceInfo(): PhoneDeviceInfo = PhoneDeviceInfo(
+        manufacturer = "motorola",
+        model = "moto g",
+        androidRelease = "15",
+        sdkInt = 35,
     )
 
     private class FakeHubGateway(

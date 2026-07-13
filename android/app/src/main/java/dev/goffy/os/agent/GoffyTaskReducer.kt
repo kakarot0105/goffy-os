@@ -6,7 +6,10 @@ import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
+import dev.goffy.os.protocol.PhoneDeviceInfo
+import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.ToolResultContent
+import dev.goffy.os.protocol.matchesToolContract
 import java.util.UUID
 
 enum class TaskPhase {
@@ -253,7 +256,10 @@ data class TaskTimelineState(
         MAC_SYSTEM_INFO_TOOL -> executionTarget == ExecutionTarget.MAC && content is MacSystemInfo
         PHONE_BATTERY_STATUS_TOOL -> executionTarget == ExecutionTarget.PHONE &&
             content is PhoneBatteryStatus &&
-            content.levelPercent in 0..100
+            content.matchesToolContract()
+        PHONE_DEVICE_INFO_TOOL -> executionTarget == ExecutionTarget.PHONE &&
+            content is PhoneDeviceInfo &&
+            content.matchesToolContract()
         else -> false
     }
 
@@ -310,4 +316,5 @@ private fun String.safeText(): String = trim().take(256).ifEmpty { "No details a
 private fun ToolResultContent.summaryText(): String = when (this) {
     is MacSystemInfo -> "$operatingSystem $architecture: $status"
     is PhoneBatteryStatus -> "Battery $levelPercent%: ${if (charging) "charging" else "not charging"}"
+    is PhoneDeviceInfo -> "$manufacturer $model / Android $androidRelease (API $sdkInt)"
 }

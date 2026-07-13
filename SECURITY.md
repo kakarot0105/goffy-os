@@ -32,6 +32,8 @@ include real credentials or unrelated personal data.
 - Tool names are resolved only from an in-process allowlist.
 - `phone.battery.status` performs one foreground-requested BatteryManager read,
   validates its typed output, and requires no Android permission or background receiver.
+- `phone.device.info` returns only manufacturer, user-visible model, Android release,
+  and SDK level. It excludes hardware, advertising, account, network, and build identifiers.
 - `mac.system_info` uses Python standard-library APIs and never invokes a shell.
 - Protocol inputs reject unknown fields and unsupported versions.
 - Errors returned to clients are stable codes without stack traces or secrets.

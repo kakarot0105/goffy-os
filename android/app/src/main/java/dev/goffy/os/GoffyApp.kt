@@ -63,6 +63,7 @@ import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
+import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.ToolResultContent
 
 private val Void = Color(0xFF05090C)
@@ -599,6 +600,25 @@ private fun TaskResult(result: ToolResultContent) {
             Text(
                 text = stringResource(
                     if (result.charging) R.string.battery_charging else R.string.battery_on_battery,
+                ),
+                color = Signal,
+                fontSize = 11.sp,
+            )
+        }
+        is PhoneDeviceInfo -> {
+            Text(
+                text = result.model,
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(
+                    R.string.device_info_details,
+                    result.manufacturer,
+                    result.androidRelease,
+                    result.sdkInt,
                 ),
                 color = Signal,
                 fontSize = 11.sp,

@@ -12,6 +12,7 @@ import dev.goffy.os.hub.HubConfigurationException
 import dev.goffy.os.hub.HubGateway
 import dev.goffy.os.hub.OkHttpHubGateway
 import dev.goffy.os.phone.AndroidBatteryStatusSource
+import dev.goffy.os.phone.AndroidDeviceInfoSource
 import dev.goffy.os.phone.DefaultPhoneToolGateway
 import dev.goffy.os.phone.PhoneToolGateway
 import dev.goffy.os.protocol.ExecutionEvent
@@ -40,6 +41,7 @@ class GoffyViewModel internal constructor(
         gateway = OkHttpHubGateway(),
         phoneGateway = DefaultPhoneToolGateway(
             batteryStatusSource = AndroidBatteryStatusSource(context),
+            deviceInfoSource = AndroidDeviceInfoSource(),
         ),
         codec = GoffyProtocolCodec(),
         allowInsecureLoopback = BuildConfig.DEBUG,

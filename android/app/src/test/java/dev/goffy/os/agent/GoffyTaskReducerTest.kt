@@ -5,6 +5,8 @@ import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
+import dev.goffy.os.protocol.PhoneDeviceInfo
+import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.ToolProgress
 import java.util.UUID
 import org.junit.Assert.assertEquals
@@ -199,6 +201,98 @@ class GoffyTaskReducerTest {
             ),
         )
         assertEquals(TaskPhase.FAILED, invalidBattery.entries.single().phase)
+    }
+
+    @Test
+    fun deviceInfoResultRequiresTheExactTypedContract() {
+        val devicePlan = GoffyExecutionPlan(
+            command = "Show my phone info",
+            executionTarget = ExecutionTarget.PHONE,
+            toolName = PHONE_DEVICE_INFO_TOOL,
+            permission = PermissionLevel.SAFE,
+            successCriteria = listOf("Device info matches the local contract"),
+        )
+        var state = TaskTimelineState().start(phoneTaskId, devicePlan)
+        state = state.apply(phoneTaskId, ExecutionEvent.Starting(1))
+        state = state.apply(phoneTaskId, ExecutionEvent.Ready)
+        state = state.apply(
+            phoneTaskId,
+            progress(devicePlan.toolName, ExecutionTarget.PHONE, "accepted", 0),
+        )
+        state = state.apply(
+            phoneTaskId,
+            progress(devicePlan.toolName, ExecutionTarget.PHONE, "completed", 1),
+        )
+        state = state.apply(
+            phoneTaskId,
+            ExecutionEvent.Result(
+                devicePlan.toolName,
+                ExecutionTarget.PHONE,
+                PhoneDeviceInfo("motorola", "moto g", "15", 35),
+            ),
+        )
+
+        assertEquals(TaskPhase.COMPLETED_UNVERIFIED, state.entries.single().phase)
+        assertEquals("motorola moto g / Android 15 (API 35)", state.entries.single().summary)
+        assertTrue(state.entries.single().result is PhoneDeviceInfo)
+    }
+
+    @Test
+    fun malformedOrMismatchedDeviceInfoFailsClosed() {
+        val devicePlan = GoffyExecutionPlan(
+            command = "Show my phone info",
+            executionTarget = ExecutionTarget.PHONE,
+            toolName = PHONE_DEVICE_INFO_TOOL,
+            permission = PermissionLevel.SAFE,
+            successCriteria = emptyList(),
+        )
+        val invalidValues = listOf(
+            PhoneDeviceInfo("", "moto g", "15", 35),
+            PhoneDeviceInfo("motorola", "moto\ng", "15", 35),
+            PhoneDeviceInfo("motorola", "moto\u202Eg", "15", 35),
+            PhoneDeviceInfo("motorola", "moto g", "15", 25),
+            PhoneDeviceInfo("motorola", "moto g", "15", Int.MAX_VALUE),
+        )
+
+        invalidValues.forEach { invalid ->
+            var state = TaskTimelineState().start(phoneTaskId, devicePlan)
+            state = state.apply(phoneTaskId, ExecutionEvent.Starting(1))
+            state = state.apply(phoneTaskId, ExecutionEvent.Ready)
+            state = state.apply(
+                phoneTaskId,
+                progress(devicePlan.toolName, ExecutionTarget.PHONE, "accepted", 0),
+            )
+            state = state.apply(
+                phoneTaskId,
+                progress(devicePlan.toolName, ExecutionTarget.PHONE, "completed", 1),
+            )
+            state = state.apply(
+                phoneTaskId,
+                ExecutionEvent.Result(devicePlan.toolName, ExecutionTarget.PHONE, invalid),
+            )
+            assertEquals(TaskPhase.FAILED, state.entries.single().phase)
+        }
+
+        var wrongContent = TaskTimelineState().start(phoneTaskId, devicePlan)
+        wrongContent = wrongContent.apply(phoneTaskId, ExecutionEvent.Starting(1))
+        wrongContent = wrongContent.apply(phoneTaskId, ExecutionEvent.Ready)
+        wrongContent = wrongContent.apply(
+            phoneTaskId,
+            progress(devicePlan.toolName, ExecutionTarget.PHONE, "accepted", 0),
+        )
+        wrongContent = wrongContent.apply(
+            phoneTaskId,
+            progress(devicePlan.toolName, ExecutionTarget.PHONE, "completed", 1),
+        )
+        wrongContent = wrongContent.apply(
+            phoneTaskId,
+            ExecutionEvent.Result(
+                devicePlan.toolName,
+                ExecutionTarget.PHONE,
+                PhoneBatteryStatus(50, false),
+            ),
+        )
+        assertEquals(TaskPhase.FAILED, wrongContent.entries.single().phase)
     }
 
     @Test

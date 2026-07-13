@@ -18,7 +18,8 @@
 | Protocol confusion | Explicit version plus strict Python and Kotlin codecs | Compatibility test matrix as message types expand |
 | Host information leakage | `mac.system_info` returns status, OS family, and architecture only | User-visible field policy for future tools |
 | Unnecessary phone-state collection | Battery state is read once only after an explicit command; no receiver, polling, or permission | Field policy for future phone tools |
-| Invalid local tool output | Battery percentage is range-checked before result and verification events | Tool-specific state re-read where meaningful |
+| Device fingerprinting | Device info is local-only and limited to manufacturer, model, Android release, and SDK; stable identifiers and build fingerprint are excluded | Reassess before persistence or remote transmission |
+| Invalid local tool output | Tool-specific type, range, field-length, and control-character checks run before result and verification events | Tool-specific state re-read where meaningful |
 | Misleading success | Output validation plus separate `VerificationResult` event | Tool-specific state re-read |
 | False cancel expectations | UI states that cancel is local-only and Hub completion is not guaranteed | End-to-end cancellation protocol |
 

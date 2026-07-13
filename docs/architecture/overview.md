@@ -10,16 +10,17 @@ Android command surface
         | anchored deterministic route
         v
 deterministic router
-        +--> PHONE -> fixed local gateway -> BatteryManager
-        |                              `-> SAFE phone.battery.status
+        +--> PHONE -> fixed local gateway -> BatteryManager / Build
+        |                              |-> SAFE phone.battery.status
+        |                              `-> SAFE phone.device.info
         |
         `--> MAC -> strict codec -> authenticated per-invocation WebSocket
                                       `-> FastAPI Hub -> SAFE mac.system_info
 ```
 
-Both routes emit the same typed preparation, progress, result, error, and
-verification states. `phone.battery.status` requires no Hub configuration and
-never opens a network connection. Android opens a fresh
+All routes emit the same typed preparation, progress, result, error, and
+verification states. PHONE tools require no Hub configuration and never open a
+network connection. Android opens a fresh
 WebSocket for each invocation, sends one tool request, and succeeds only after
 it receives a structured result followed by a separate verification event.
 Retries are limited to connection failures before send. Once the invocation
@@ -31,16 +32,17 @@ bytes are sent, disconnects fail closed and are not replayed.
 2. Hub configuration requires an absolute `/ws/v1` endpoint. Release mode expects `wss`; debug cleartext is loopback-only.
 3. Every wire message is versioned and strictly validated by both Python and Kotlin models.
 4. Authentication is invocation-scoped through the `Authorization` header; the token stays out of URLs and saved state.
-5. Fixed gateways allow only `mac.system_info` or `phone.battery.status`; both are SAFE and read-only.
+5. Fixed gateways allow only `mac.system_info`, `phone.battery.status`, or `phone.device.info`; all are SAFE and read-only.
 6. The battery source is read once, requires no permission, and must return a percentage from 0 through 100.
-7. A typed result carries data; a separate verification event is the success boundary.
-8. Local cancel stops the active coroutine; MAC cancellation does not guarantee Hub-side termination.
+7. Device info contains four display fields and excludes stable device, network, account, and build identifiers.
+8. A typed result carries data; a separate verification event is the success boundary.
+9. Local cancel stops the active coroutine; MAC cancellation does not guarantee Hub-side termination.
 
 ## Performance posture
 
 The Android shell defaults to GOFFY LITE: static background, static orb, no
-camera/microphone initialization, no polling, and no local model. Battery status
-is read only after a user command. Hub operations
+camera/microphone initialization, no polling, and no local model. Phone state is
+read only after a matching user command. Hub operations
 are asynchronous and timeout-bounded. Histories and audit retention will be
 bounded when persistence is introduced.
 

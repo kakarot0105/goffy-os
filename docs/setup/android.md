@@ -26,12 +26,16 @@ review both published checksums during any wrapper upgrade.
   normalized whitespace and optional trailing `.`, `!`, or `?`.
 - Battery commands such as `Show my battery status` and `What's my phone battery
   level?` run entirely on PHONE without a Hub link.
+- Device commands such as `Show my phone info` and `What phone is this?` return
+  only manufacturer, model, Android release, and SDK level on PHONE.
 - Any extra instruction, unrelated command, or appended authority is rejected on
   the phone before a Hub connection opens.
 - Android treats `ToolResult` as data only. The task becomes successful only
   after a matching `VerificationResult`.
 - Battery status reads `BatteryManager` once per command, validates `0..100`,
   requests no permission, and performs no polling or background work.
+- Device info reads static `Build` display fields once, requests no permission,
+  and excludes identifiers such as serial, IMEI, Android ID, MAC, and fingerprint.
 - Automatic reconnect is bounded to connection failures before the invocation is
   sent: at most 2 retries and 3 total attempts. After send, the client does not
   replay the request.
@@ -79,3 +83,7 @@ The battery slice is also software-verified only. On a device, run the app
 without configuring a Hub, submit `Show my battery status`, and confirm the
 timeline shows `PHONE / phone.battery.status / SAFE`, the percentage and charging
 state, and a final `VERIFIED` phase without any permission prompt.
+
+Then submit `Show my phone info` and confirm the timeline shows
+`PHONE / phone.device.info / SAFE`, only the four documented fields, and a final
+`VERIFIED` phase without a Hub connection or permission prompt.

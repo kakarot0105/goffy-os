@@ -64,6 +64,13 @@ data class PhoneBatteryStatus(
     val charging: Boolean,
 ) : ToolResultContent
 
+data class PhoneDeviceInfo(
+    val manufacturer: String,
+    val model: String,
+    val androidRelease: String,
+    val sdkInt: Int,
+) : ToolResultContent
+
 sealed interface ExecutionEvent {
     data class Starting(val attempt: Int) : ExecutionEvent
 

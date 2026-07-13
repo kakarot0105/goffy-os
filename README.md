@@ -5,8 +5,8 @@ Android phone provides the command surface and small local engine; a macOS Hub
 provides controlled access to heavier local capabilities. MCP-compatible typed
 tools are the capability boundary.
 
-> Status: Milestone 2 phone engine in progress. The current repo implements one
-> offline PHONE action and the software path for one SAFE Mac action, but physical
+> Status: Milestone 2 phone engine in progress. The current repo implements two
+> offline PHONE actions and the software path for one SAFE Mac action, but physical
 > Moto G verification, pairing, and trusted LAN transport remain open.
 
 ## Current vertical slice
@@ -15,6 +15,7 @@ tools are the capability boundary.
 - Deterministic route for exact `Show/Check [me] my Mac status`
 - Offline deterministic route for battery status commands
 - Permission-free, allowlisted `SAFE phone.battery.status` execution
+- Privacy-minimized, offline `SAFE phone.device.info` execution
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
 - FastAPI Hub bound to `127.0.0.1` by default
 - Versioned, typed phone-to-Hub protocol models

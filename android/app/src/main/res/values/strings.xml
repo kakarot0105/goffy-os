@@ -28,6 +28,7 @@
     <string name="cancel_task">Cancel</string>
     <string name="battery_charging">CHARGING</string>
     <string name="battery_on_battery">ON BATTERY</string>
+    <string name="device_info_details">%1$s / Android %2$s / API %3$d</string>
     <string name="microphone_placeholder">Voice input is coming in Milestone 4</string>
     <string name="camera_placeholder">Camera input is coming in Milestone 4</string>
     <string name="microphone_short">MIC</string>

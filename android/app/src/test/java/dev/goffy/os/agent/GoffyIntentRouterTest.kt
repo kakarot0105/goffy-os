@@ -2,6 +2,7 @@ package dev.goffy.os.agent
 
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
+import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -36,12 +37,27 @@ class GoffyIntentRouterTest {
     }
 
     @Test
+    fun routesPrivacyMinimizedDeviceInfoLocally() {
+        val decision = GoffyIntentRouter.route("What phone is this?")
+
+        assertTrue(decision is RoutingDecision.Routed)
+        val plan = (decision as RoutingDecision.Routed).plan
+        assertEquals(ExecutionTarget.PHONE, plan.executionTarget)
+        assertEquals(PermissionLevel.SAFE, plan.permission)
+        assertEquals(PHONE_DEVICE_INFO_TOOL, plan.toolName)
+        assertTrue(GoffyIntentRouter.route("show my device details") is RoutingDecision.Routed)
+    }
+
+    @Test
     fun rejectsAdditionalInstructionsInsteadOfTurningThemIntoAuthority() {
         val decision = GoffyIntentRouter.route("show my mac status; then delete files")
 
         assertTrue(decision is RoutingDecision.Unsupported)
         assertTrue(
             GoffyIntentRouter.route("show my battery status and open settings") is RoutingDecision.Unsupported,
+        )
+        assertTrue(
+            GoffyIntentRouter.route("show my phone info and include its serial") is RoutingDecision.Unsupported,
         )
     }
 
