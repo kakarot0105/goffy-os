@@ -23,14 +23,17 @@ include real credentials or unrelated personal data.
 - Tool authentication is disabled unless a token is explicitly configured;
   disabled means all tool requests are rejected.
 - The exact `/mcp` endpoint uses the official MCP SDK's stateful Streamable HTTP
-  transport. It accepts `POST` plus authenticated session `DELETE`, while `GET`
-  server-push streams remain disabled. It is separate from GOFFY `/ws/v1`.
+  transport. It accepts `POST`, authenticated session `GET` for server events,
+  and authenticated session `DELETE`. It is separate from GOFFY `/ws/v1`.
 - MCP operations require initialization and the issued session ID. Sessions are
   credential-bound by the SDK, explicitly terminable, limited to eight active
-  sessions by default, and idle-reaped after 60 seconds.
+  sessions by default, and idle-reaped after 60 seconds. A connected event stream
+  remains counted and is server-rotated after 45 seconds before bounded reconnect.
 - MCP requests require the fail-closed bearer token and pass exact Host and Origin
   allowlists before JSON-RPC parsing. Local defaults include only loopback names.
-- MCP request and response bodies share the configured Hub byte limit. The
+- MCP JSON request and response bodies share the configured Hub byte limit. SSE
+  only carries fixed tool-list change notifications. Replay is isolated per
+  session and capped at 64 events and 16 KiB; tool results are never retained. The
   registry is capped at 32 tools, 24 KiB aggregate metadata, 8 KiB per capability,
   and 8 KiB per structured output.
 - MCP execution defaults to two concurrent calls with a bounded one-second queue.
@@ -72,7 +75,12 @@ include real credentials or unrelated personal data.
 - Health checks run once before startup completes and every 30 seconds by default.
   The unauthenticated health endpoint exposes aggregate readiness, counts, and a
   revision only, not names or probe failures. Android discovers before every Mac
-  invocation; MCP clients must explicitly re-list tools because push is disabled.
+  invocation. Initialized MCP clients that have listed tools receive an empty
+  `notifications/tools/list_changed` signal and must explicitly re-list to read
+  current state. Opaque replay cursors work only for the same authenticated live
+  session. Unknown or evicted cursors receive only a fresh re-list signal, never
+  another session's history. Session termination, idle expiry, and Hub restart
+  discard replay state.
 - Android's immutable PHONE registry is bounded to 16 entries and 32 KiB. Every
   descriptor targets PHONE, uses a closed object schema, has a 30-second maximum
   timeout, and is limited to SAFE or CONFIRM permission.

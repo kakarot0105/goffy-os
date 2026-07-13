@@ -75,6 +75,7 @@ def create_app(
     tool_health_monitor = ToolHealthMonitor(
         registry,
         interval_seconds=resolved_settings.tool_health_interval_seconds,
+        on_change=mcp_runtime.notify_tool_list_changed,
     )
 
     @asynccontextmanager

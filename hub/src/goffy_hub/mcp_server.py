@@ -2,18 +2,34 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
+from collections import deque
+from collections.abc import Awaitable, Callable, Collection
+from contextlib import suppress
 from dataclasses import dataclass
+from secrets import token_urlsafe
 from typing import Any, cast
+from weakref import WeakValueDictionary
 
+import anyio
 from mcp import types
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import (
+    AuthenticatedUser,
     BearerAuthBackend,
     RequireAuthMiddleware,
+    authorization_context,
 )
 from mcp.server.auth.provider import AccessToken
-from mcp.server.lowlevel import Server
+from mcp.server.lowlevel import NotificationOptions, Server
+from mcp.server.models import InitializationOptions
+from mcp.server.session import ServerSession
+from mcp.server.streamable_http import (
+    GET_STREAM_KEY,
+    EventCallback,
+    EventMessage,
+    EventStore,
+    StreamableHTTPServerTransport,
+)
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
 from mcp.server.transport_security import (
     TransportSecurityMiddleware,
@@ -39,6 +55,11 @@ MCP_SERVER_VERSION = "0.2.0"
 MCP_SAFE_TOOL_SCOPE = "goffy.tools.safe"
 MCP_CALL_QUEUE_TIMEOUT_SECONDS = 1.0
 MCP_SESSION_IDLE_TIMEOUT_SECONDS = 60.0
+MCP_NOTIFICATION_TIMEOUT_SECONDS = 1.0
+MCP_SSE_MAX_LIFETIME_SECONDS = 45.0
+MCP_SSE_CLOSE_GRACE_SECONDS = 1.0
+MCP_REPLAY_MAX_EVENTS = 64
+MCP_REPLAY_MAX_BYTES = 16_384
 
 
 class HubTokenVerifier:
@@ -100,18 +121,311 @@ class RegistryMcpAdapter:
             self._call_slots.release()
 
 
+class GoffyMcpServer(Server[Any, Any]):
+    def create_initialization_options(
+        self,
+        notification_options: NotificationOptions | None = None,
+        experimental_capabilities: dict[str, dict[str, Any]] | None = None,
+    ) -> InitializationOptions:
+        requested = notification_options or NotificationOptions()
+        return super().create_initialization_options(
+            NotificationOptions(
+                prompts_changed=requested.prompts_changed,
+                resources_changed=requested.resources_changed,
+                tools_changed=True,
+            ),
+            experimental_capabilities,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _StoredMcpEvent:
+    event_id: str
+    stream_id: str
+    message: types.JSONRPCMessage | None
+    size_bytes: int
+
+
+class BoundedMcpEventStore(EventStore):
+    """Session-local replay storage for non-sensitive tool-list changes only."""
+
+    def __init__(
+        self,
+        *,
+        max_events: int = MCP_REPLAY_MAX_EVENTS,
+        max_bytes: int = MCP_REPLAY_MAX_BYTES,
+    ) -> None:
+        if max_events <= 0:
+            raise ValueError("max_events must be positive")
+        if max_bytes <= 0:
+            raise ValueError("max_bytes must be positive")
+        self._max_events = max_events
+        self._max_bytes = max_bytes
+        self._event_prefix = token_urlsafe(18)
+        self._next_sequence = 0
+        self._events: deque[_StoredMcpEvent] = deque()
+        self._stored_bytes = 0
+        self._lock = asyncio.Lock()
+
+    async def store_event(
+        self,
+        stream_id: str,
+        message: types.JSONRPCMessage | None,
+    ) -> str:
+        async with self._lock:
+            event_id = self._next_event_id()
+            if not _is_replayable_tool_list_event(stream_id, message):
+                return event_id
+            self._retain_event(event_id, stream_id, message)
+            return event_id
+
+    async def replay_events_after(
+        self,
+        last_event_id: str,
+        send_callback: EventCallback,
+    ) -> str | None:
+        async with self._lock:
+            cursor_index = next(
+                (
+                    index
+                    for index, event in enumerate(self._events)
+                    if event.event_id == last_event_id
+                ),
+                None,
+            )
+            retained = tuple(self._events)
+            if cursor_index is None:
+                stream_id = GET_STREAM_KEY
+                replay: tuple[_StoredMcpEvent, ...] = ()
+                requires_resync = True
+            else:
+                cursor = retained[cursor_index]
+                stream_id = cursor.stream_id
+                replay = retained[cursor_index + 1 :]
+                requires_resync = cursor.message is not None or bool(replay)
+
+            if requires_resync:
+                # Reconnects get a fresh invalidation signal. This is also the
+                # safe recovery path for foreign or evicted opaque cursors.
+                resync_message = _tool_list_changed_message()
+                resync_event_id = self._next_event_id()
+                resync_event = self._retain_event(
+                    resync_event_id,
+                    GET_STREAM_KEY,
+                    resync_message,
+                )
+                if resync_event is None:
+                    resync_event = _StoredMcpEvent(
+                        event_id=resync_event_id,
+                        stream_id=GET_STREAM_KEY,
+                        message=resync_message,
+                        size_bytes=0,
+                    )
+                replay = (*replay, resync_event)
+
+        for event in replay:
+            if event.message is not None and event.stream_id == stream_id:
+                await send_callback(EventMessage(event.message, event.event_id))
+        return stream_id
+
+    def _next_event_id(self) -> str:
+        self._next_sequence += 1
+        return f"{self._event_prefix}.{self._next_sequence}"
+
+    def _retain_event(
+        self,
+        event_id: str,
+        stream_id: str,
+        message: types.JSONRPCMessage | None,
+    ) -> _StoredMcpEvent | None:
+        size_bytes = _event_size_bytes(event_id, stream_id, message)
+        if size_bytes > self._max_bytes:
+            return None
+        event = _StoredMcpEvent(
+            event_id=event_id,
+            stream_id=stream_id,
+            message=message,
+            size_bytes=size_bytes,
+        )
+        self._events.append(event)
+        self._stored_bytes += size_bytes
+        while len(self._events) > self._max_events or self._stored_bytes > self._max_bytes:
+            removed = self._events.popleft()
+            self._stored_bytes -= removed.size_bytes
+        return event
+
+
+class McpToolListNotifier:
+    def __init__(self) -> None:
+        self._sessions: WeakValueDictionary[str, ServerSession] = WeakValueDictionary()
+        self._lock = asyncio.Lock()
+
+    async def register(self, session_id: str, session: ServerSession) -> None:
+        async with self._lock:
+            self._sessions[session_id] = session
+
+    async def unregister(self, session_id: str) -> None:
+        async with self._lock:
+            self._sessions.pop(session_id, None)
+
+    async def notify(self, active_session_ids: Collection[str]) -> None:
+        active = frozenset(active_session_ids)
+        async with self._lock:
+            for session_id in tuple(self._sessions):
+                if session_id not in active:
+                    self._sessions.pop(session_id, None)
+            sessions = tuple(self._sessions.items())
+
+        async def send(session_id: str, session: ServerSession) -> None:
+            try:
+                await asyncio.wait_for(
+                    session.send_tool_list_changed(),
+                    timeout=MCP_NOTIFICATION_TIMEOUT_SECONDS,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                await self.unregister(session_id)
+
+        await asyncio.gather(*(send(session_id, session) for session_id, session in sessions))
+
+
 @dataclass(frozen=True, slots=True)
 class McpRuntime:
-    server: Server[Any, Any]
+    server: GoffyMcpServer
     session_manager: GoffyStreamableHTTPSessionManager
     application: ASGIApp
     adapter: RegistryMcpAdapter
+    notifier: McpToolListNotifier
+
+    async def notify_tool_list_changed(self) -> None:
+        await self.notifier.notify(self.session_manager.active_session_ids)
 
 
 class GoffyStreamableHTTPSessionManager(StreamableHTTPSessionManager):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        notifier = kwargs.pop("notifier", None)
+        if not isinstance(notifier, McpToolListNotifier):
+            raise ValueError("GOFFY MCP session manager requires a tool-list notifier")
+        self._notifier = notifier
+        super().__init__(*args, **kwargs)
+        if self.event_store is not None:
+            raise ValueError("GOFFY requires a distinct replay store per MCP session")
+        self._event_store_creation_lock = asyncio.Lock()
+        self._get_request_lock = asyncio.Lock()
+        self._get_request_counts: dict[str, int] = {}
+
     @property
     def active_session_count(self) -> int:
         return len(self._server_instances)
+
+    @property
+    def active_session_ids(self) -> frozenset[str]:
+        return frozenset(self._server_instances)
+
+    async def handle_request(self, scope: Scope, receive: Receive, send: Send) -> None:
+        connection = HTTPConnection(scope)
+        session_id = connection.headers.get("mcp-session-id")
+        if session_id is None:
+            async with self._event_store_creation_lock:
+                self.event_store = BoundedMcpEventStore()
+                try:
+                    await super().handle_request(scope, receive, send)
+                finally:
+                    self.event_store = None
+            return
+
+        transport = self._server_instances.get(session_id)
+        user = scope.get("user")
+        requestor = authorization_context(user) if isinstance(user, AuthenticatedUser) else None
+        owns_session = requestor is not None and requestor == self._session_owners.get(session_id)
+        if transport is None or not owns_session:
+            await super().handle_request(scope, receive, send)
+            return
+
+        if scope.get("method") != "GET":
+            await self._extend_idle_deadline_if_not_streaming(session_id, transport)
+            await transport.handle_request(scope, receive, send)
+            return
+
+        if not await self._begin_get_request(session_id, transport):
+            await JSONResponse(
+                {"error": "mcp_stream_already_active"},
+                status_code=409,
+            )(scope, receive, send)
+            return
+
+        request_task = asyncio.current_task()
+        if request_task is None:  # pragma: no cover - ASGI always runs in a task
+            await self._finish_get_request(session_id, transport)
+            raise RuntimeError("MCP GET requires an active asyncio task")
+
+        async def enforce_stream_lifetime() -> None:
+            await asyncio.sleep(MCP_SSE_MAX_LIFETIME_SECONDS)
+            transport.close_standalone_sse_stream()
+            await asyncio.sleep(MCP_SSE_CLOSE_GRACE_SECONDS)
+            request_task.cancel()
+
+        stream_lifetime_task = asyncio.create_task(enforce_stream_lifetime())
+        try:
+            request_scope = scope
+            if connection.headers.get("last-event-id") is None:
+                event_store = transport._event_store
+                if isinstance(event_store, BoundedMcpEventStore):
+                    priming_cursor = await event_store.store_event(GET_STREAM_KEY, None)
+                    request_scope = dict(scope)
+                    request_scope["headers"] = [
+                        *scope.get("headers", []),
+                        (b"last-event-id", priming_cursor.encode("ascii")),
+                    ]
+
+            await transport.handle_request(request_scope, receive, send)
+        finally:
+            stream_lifetime_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await stream_lifetime_task
+            await self._finish_get_request(session_id, transport)
+
+    async def _begin_get_request(
+        self,
+        session_id: str,
+        transport: StreamableHTTPServerTransport,
+    ) -> bool:
+        async with self._get_request_lock:
+            if self._get_request_counts.get(session_id, 0) > 0:
+                return False
+            self._get_request_counts[session_id] = 1
+            if transport.idle_scope is not None:
+                transport.idle_scope.deadline = float("inf")
+            return True
+
+    async def _finish_get_request(
+        self,
+        session_id: str,
+        transport: StreamableHTTPServerTransport,
+    ) -> None:
+        async with self._get_request_lock:
+            self._get_request_counts.pop(session_id, None)
+            if (
+                self._server_instances.get(session_id) is transport
+                and not transport.is_terminated
+                and transport.idle_scope is not None
+                and self.session_idle_timeout is not None
+            ):
+                transport.idle_scope.deadline = anyio.current_time() + self.session_idle_timeout
+
+    async def _extend_idle_deadline_if_not_streaming(
+        self,
+        session_id: str,
+        transport: StreamableHTTPServerTransport,
+    ) -> None:
+        async with self._get_request_lock:
+            if transport.idle_scope is None or self.session_idle_timeout is None:
+                return
+            if self._get_request_counts.get(session_id, 0) > 0:
+                transport.idle_scope.deadline = float("inf")
+            else:
+                transport.idle_scope.deadline = anyio.current_time() + self.session_idle_timeout
 
     async def remove_terminated_session(self, session_id: str) -> bool:
         async with self._session_creation_lock:
@@ -120,6 +434,9 @@ class GoffyStreamableHTTPSessionManager(StreamableHTTPSessionManager):
                 return False
             self._server_instances.pop(session_id, None)
             self._session_owners.pop(session_id, None)
+            async with self._get_request_lock:
+                self._get_request_counts.pop(session_id, None)
+            await self._notifier.unregister(session_id)
             return True
 
 
@@ -128,7 +445,8 @@ def build_mcp_runtime(settings: HubSettings, registry: ToolRegistry) -> McpRunti
         registry,
         max_concurrent_calls=settings.mcp_max_concurrent_calls,
     )
-    server: Server[Any, Any] = Server(
+    notifier = McpToolListNotifier()
+    server = GoffyMcpServer(
         "goffy-hub",
         version=MCP_SERVER_VERSION,
         instructions=(
@@ -139,6 +457,11 @@ def build_mcp_runtime(settings: HubSettings, registry: ToolRegistry) -> McpRunti
 
     @server.list_tools()  # type: ignore[no-untyped-call,untyped-decorator]
     async def list_tools() -> list[types.Tool]:
+        request = server.request_context.request
+        if isinstance(request, HTTPConnection):
+            session_id = request.headers.get("mcp-session-id")
+            if session_id is not None:
+                await notifier.register(session_id, server.request_context.session)
         return await adapter.list_tools()
 
     async def call_tool(request: types.CallToolRequest) -> types.ServerResult:
@@ -169,6 +492,7 @@ def build_mcp_runtime(settings: HubSettings, registry: ToolRegistry) -> McpRunti
         stateless=False,
         security_settings=security_settings,
         session_idle_timeout=MCP_SESSION_IDLE_TIMEOUT_SECONDS,
+        notifier=notifier,
     )
 
     manager_application = _BoundedHttpMessageMiddleware(
@@ -196,7 +520,45 @@ def build_mcp_runtime(settings: HubSettings, registry: ToolRegistry) -> McpRunti
         session_manager=session_manager,
         application=application,
         adapter=adapter,
+        notifier=notifier,
     )
+
+
+def _is_replayable_tool_list_event(
+    stream_id: str,
+    message: types.JSONRPCMessage | None,
+) -> bool:
+    if stream_id != GET_STREAM_KEY:
+        return False
+    if message is None:
+        return True
+    root = message.root
+    return (
+        isinstance(root, types.JSONRPCNotification)
+        and root.method == "notifications/tools/list_changed"
+    )
+
+
+def _tool_list_changed_message() -> types.JSONRPCMessage:
+    return types.JSONRPCMessage(
+        types.JSONRPCNotification(
+            jsonrpc="2.0",
+            method="notifications/tools/list_changed",
+        )
+    )
+
+
+def _event_size_bytes(
+    event_id: str,
+    stream_id: str,
+    message: types.JSONRPCMessage | None,
+) -> int:
+    message_bytes = 0
+    if message is not None:
+        message_bytes = len(
+            message.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8")
+        )
+    return len(event_id.encode("ascii")) + len(stream_id.encode("utf-8")) + message_bytes
 
 
 def _to_mcp_tool(capability: ToolCapability) -> types.Tool:
@@ -252,11 +614,11 @@ class _ExactMcpEndpoint:
         if security_error is not None:
             await security_error(scope, receive, send)
             return
-        if scope.get("method") not in {"POST", "DELETE"}:
+        if scope.get("method") not in {"GET", "POST", "DELETE"}:
             await PlainTextResponse(
                 "Method not allowed",
                 status_code=405,
-                headers={"Allow": "POST, DELETE"},
+                headers={"Allow": "GET, POST, DELETE"},
             )(scope, receive, send)
             return
         await self._application(scope, receive, send)
@@ -285,6 +647,7 @@ class _BoundedHttpMessageMiddleware:
         self._terminated_session_cleanup = terminated_session_cleanup
         self._session_lock = asyncio.Lock()
         self._active_sessions: dict[str, float] = {}
+        self._streaming_session_counts: dict[str, int] = {}
         self._pending_sessions = 0
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -293,7 +656,11 @@ class _BoundedHttpMessageMiddleware:
         session_id = connection.headers.get("mcp-session-id")
         request_method: str | None = None
         session_slot_reserved = False
-        if scope["type"] == "http" and scope.get("method") == "DELETE" and session_id is None:
+        if (
+            scope["type"] == "http"
+            and scope.get("method") in {"GET", "DELETE"}
+            and session_id is None
+        ):
             await JSONResponse(
                 {"error": "mcp_session_required"},
                 status_code=400,
@@ -329,6 +696,31 @@ class _BoundedHttpMessageMiddleware:
         if session_id is not None:
             await self._touch_session(session_id)
 
+        if scope.get("method") == "GET":
+            response_status: int | None = None
+
+            async def stream_send(message: Message) -> None:
+                nonlocal response_status
+                if message["type"] == "http.response.start":
+                    response_status = cast(int, message["status"])
+                await send(message)
+
+            if session_id is not None:
+                await self._mark_session_streaming(session_id, increment=1)
+            try:
+                await self._application(scope, bounded_receive, stream_send)
+            finally:
+                if session_id is not None:
+                    await self._mark_session_streaming(session_id, increment=-1)
+                    await self._touch_session(session_id)
+            if (
+                response_status == 404
+                and session_id
+                and await self._terminated_session_cleanup(session_id)
+            ):
+                await self._remove_session(session_id)
+            return
+
         response_messages: list[Message] = []
         response_bytes = 0
 
@@ -357,7 +749,11 @@ class _BoundedHttpMessageMiddleware:
             and await self._terminated_session_cleanup(session_id)
         ):
             await self._remove_session(session_id)
-        if response_status == 404 and session_id:
+        if (
+            response_status == 404
+            and session_id
+            and await self._terminated_session_cleanup(session_id)
+        ):
             await self._remove_session(session_id)
 
         if response_bytes > self._max_message_bytes:
@@ -395,13 +791,22 @@ class _BoundedHttpMessageMiddleware:
     async def _remove_session(self, session_id: str) -> None:
         async with self._session_lock:
             self._active_sessions.pop(session_id, None)
+            self._streaming_session_counts.pop(session_id, None)
+
+    async def _mark_session_streaming(self, session_id: str, *, increment: int) -> None:
+        async with self._session_lock:
+            count = self._streaming_session_counts.get(session_id, 0) + increment
+            if count > 0:
+                self._streaming_session_counts[session_id] = count
+            else:
+                self._streaming_session_counts.pop(session_id, None)
 
     def _prune_idle_sessions(self) -> None:
         cutoff = asyncio.get_running_loop().time() - self._session_idle_timeout_seconds
         expired = [
             session_id
             for session_id, last_activity in self._active_sessions.items()
-            if last_activity <= cutoff
+            if last_activity <= cutoff and session_id not in self._streaming_session_counts
         ]
         for session_id in expired:
             del self._active_sessions[session_id]

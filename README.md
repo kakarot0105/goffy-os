@@ -8,7 +8,8 @@ tools are the capability boundary.
 > Status: Milestone 3 MCP core in progress. The current repo implements five
 > offline PHONE actions, a discovery-gated SAFE Mac action, an official MCP
 > Streamable HTTP boundary, and a persistent user-visible Android audit trail
-> for the newest 50 terminal tasks. Physical Moto G verification, pairing,
+> for the newest 50 terminal tasks. MCP tool-list changes now stream with
+> bounded, session-local reconnect replay. Physical Moto G verification, pairing,
 > direct Hub/MCP operator audit, and trusted LAN operation remain open.
 
 ## Current vertical slice
@@ -32,6 +33,7 @@ tools are the capability boundary.
 - Official, authenticated MCP Streamable HTTP endpoint at exact `/mcp`
 - MCP initialization, `tools/list`, and registry-backed `tools/call`
 - Bounded, fail-closed Hub tool-health checks
+- Authenticated MCP tool-list change notifications with bounded reconnect replay
 - Allowlisted, read-only `SAFE mac.system_info` tool
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
@@ -87,7 +89,8 @@ shell execution.
 The Hub seals its registry before serving, checks registered tools locally at
 startup and every 30 seconds by default, and removes an unhealthy tool from both
 Android discovery and MCP execution. Android discovers before each invocation;
-MCP clients must re-run `tools/list` because server push remains disabled. `/health`
+MCP clients receive `notifications/tools/list_changed` and then re-run `tools/list`.
+Missed notifications can be replayed within the same live MCP session. `/health`
 reports aggregate readiness, bounded tool counts, and registry revision without
 exposing probe errors or tool names.
 

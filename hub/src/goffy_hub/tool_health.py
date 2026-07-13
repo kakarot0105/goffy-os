@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 
 from goffy_hub.registry import ToolHealthReport, ToolRegistry
 
@@ -14,11 +15,13 @@ class ToolHealthMonitor:
         registry: ToolRegistry,
         *,
         interval_seconds: float,
+        on_change: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         if interval_seconds <= 0:
             raise ValueError("health interval must be positive")
         self._registry = registry
         self._interval_seconds = interval_seconds
+        self._on_change = on_change
         self._check_lock = asyncio.Lock()
         self._initialized = False
 
@@ -33,12 +36,14 @@ class ToolHealthMonitor:
             return await self.initialize()
         async with self._check_lock:
             try:
-                return await self._registry.refresh_health()
+                report = await self._registry.refresh_health()
             except asyncio.CancelledError:
                 raise
             except Exception:
                 LOGGER.error("Tool health monitor failed; all tools are unavailable")
-                return await self._registry.mark_all_unavailable()
+                report = await self._registry.mark_all_unavailable()
+            await self._publish_change(report)
+            return report
 
     async def run(self) -> None:
         if not self._initialized:
@@ -46,3 +51,13 @@ class ToolHealthMonitor:
         while True:
             await asyncio.sleep(self._interval_seconds)
             await self.check_now()
+
+    async def _publish_change(self, report: ToolHealthReport) -> None:
+        if not report.changed or self._on_change is None:
+            return
+        try:
+            await self._on_change()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            LOGGER.error("Tool-list change notification failed")

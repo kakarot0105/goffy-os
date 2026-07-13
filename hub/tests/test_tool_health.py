@@ -71,7 +71,17 @@ async def test_unexpected_monitor_failure_marks_all_tools_unavailable(
     registry = ToolRegistry()
     registry.register(build_mac_system_tool(1, 0.1))
     registry.seal()
-    monitor = ToolHealthMonitor(registry, interval_seconds=30)
+    published_changes = 0
+
+    async def publish_change() -> None:
+        nonlocal published_changes
+        published_changes += 1
+
+    monitor = ToolHealthMonitor(
+        registry,
+        interval_seconds=30,
+        on_change=publish_change,
+    )
     await monitor.initialize()
 
     async def fail_refresh() -> None:
@@ -83,3 +93,36 @@ async def test_unexpected_monitor_failure_marks_all_tools_unavailable(
     assert report.changed is True
     assert report.tools[0].status is ToolHealthStatus.UNAVAILABLE
     assert registry.describe() == []
+    assert published_changes == 1
+
+
+@pytest.mark.asyncio
+async def test_monitor_publishes_only_changes_and_keeps_health_when_publish_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(platform, "machine", lambda: "arm64")
+    registry = ToolRegistry()
+    registry.register(build_mac_system_tool(1, 0.1))
+    registry.seal()
+    publish_calls = 0
+
+    async def fail_publish() -> None:
+        nonlocal publish_calls
+        publish_calls += 1
+        raise RuntimeError("notification transport failed")
+
+    monitor = ToolHealthMonitor(
+        registry,
+        interval_seconds=30,
+        on_change=fail_publish,
+    )
+    await monitor.initialize()
+    unchanged = await monitor.check_now()
+    monkeypatch.setattr(platform, "system", lambda: "")
+    unavailable = await monitor.check_now()
+
+    assert unchanged.changed is False
+    assert unavailable.changed is True
+    assert unavailable.tools[0].status is ToolHealthStatus.UNAVAILABLE
+    assert publish_calls == 1

@@ -100,7 +100,8 @@ Hub health checks are Mac-side only: one startup pass, then a 30-second default
 sleep between passes, at most four concurrent probes, and a five-second maximum
 per probe. The current probe uses local platform APIs and performs no network I/O.
 Android re-discovers before every Mac invocation. MCP clients re-run `tools/list`;
-server push remains disabled until reconnect-safe delivery is designed.
+the Hub signals changed availability over authenticated MCP GET/SSE without
+introducing Android polling.
 
 The seven-envelope discovery-first MAC fixture lives at
 `protocol/fixtures/mac-system-info-flow.jsonl` and is validated by both Android
@@ -114,7 +115,9 @@ JSON Schemas. It is a compatibility artifact, not an execution allowlist.
 `/ws/v1` remains GOFFY's Android application protocol. Exact `/mcp` is a separate,
 session-aware MCP `2025-11-25` Streamable HTTP endpoint implemented by the official
 Python SDK. Sessions are credential-bound, explicitly terminable, and idle-reaped.
-The server advertises `tools.listChanged=false`; `GET` server push, event replay,
-and resumption remain disabled.
+The server advertises `tools.listChanged=true`. Health transitions publish the
+standard empty list-change notification through registered SDK sessions. Each
+session has a random, bounded in-memory replay store, and reconnecting GET/SSE
+streams resume with `Last-Event-ID`; no result payload is retained or shared.
 Both transports adapt the same bounded `ToolRegistry`; neither transport defines
 or executes tools independently.

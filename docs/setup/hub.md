@@ -29,9 +29,11 @@ JSON-RPC endpoint. Do not connect a generic MCP client to this path.
 Exact `/mcp` supports MCP `2025-11-25` initialization, `tools/list`, and
 `tools/call` through the official Python SDK. It returns JSON and requires the
 session ID issued during initialization for subsequent operations. Authenticated
-`DELETE` terminates a session, and idle sessions are reaped after 60 seconds.
-`GET` is disabled because this slice has no reconnect-safe server push or
-resumption. Run the Hub, then use the repository's official-client demo:
+`GET` opens the session's MCP event stream, and `DELETE` terminates the session.
+Disconnected event streams resume with `Last-Event-ID`; an active stream pauses
+the 60-second idle timer while remaining inside the active-session cap. The Hub
+rotates each stream after 45 seconds so clients reconnect through the bounded
+replay path. Run the Hub, then use the repository's official-client demo:
 
 ```bash
 GOFFY_HUB_TOKEN='replace-with-the-same-development-token' \
@@ -66,8 +68,13 @@ five-second hard configuration maximum and four-probe concurrency cap. Unhealthy
 tools disappear from `/ws/v1` discovery and MCP `tools/list`; calls fail with the
 same generic unknown-or-unauthorized error. Recovery restores the original typed
 definition. Android discovers before every Mac invocation, while MCP clients must
-explicitly re-run `tools/list`. No network health probe or busy polling is used by
-the current `mac.system_info` tool.
+explicitly re-run `tools/list` after `notifications/tools/list_changed`. The Hub
+keeps only those empty notifications in a random, per-session in-memory replay
+store capped at 64 events and 16 KiB. It does not retain tool results, share
+cursors between sessions, or replay across termination, idle expiry, or Hub
+restart. Unknown, foreign, and evicted cursors replay no retained history; they
+receive a fresh re-list signal and attach to the current session's live tail. No
+network health probe or busy polling is used by the current `mac.system_info` tool.
 
 Non-local binding requires `GOFFY_HUB_ALLOW_LAN=true` plus existing
 `GOFFY_HUB_TLS_CERT_FILE` and `GOFFY_HUB_TLS_KEY_FILE` paths. This is a transport

@@ -4,19 +4,25 @@ import asyncio
 import json
 import platform
 from dataclasses import replace
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pytest
 from mcp import ClientSession, types
 from mcp.client.streamable_http import streamable_http_client
+from mcp.server.streamable_http import GET_STREAM_KEY, EventMessage
 from mcp.shared.exceptions import McpError
 from pydantic import SecretStr
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+import goffy_hub.mcp_server as mcp_server_module
 from goffy_hub.app import build_registry, create_app
-from goffy_hub.mcp_server import RegistryMcpAdapter
+from goffy_hub.mcp_server import (
+    BoundedMcpEventStore,
+    McpToolListNotifier,
+    RegistryMcpAdapter,
+)
 from goffy_hub.registry import ToolInvocationResult
 from goffy_hub.settings import HubSettings
 from goffy_hub.tools import build_mac_system_tool
@@ -49,6 +55,12 @@ def initialize_http_session(client: TestClient) -> str:
     return response.headers["mcp-session-id"]
 
 
+def tool_list_changed_message() -> types.JSONRPCMessage:
+    return types.JSONRPCMessage.model_validate(
+        {"jsonrpc": "2.0", "method": "notifications/tools/list_changed"}
+    )
+
+
 @pytest.mark.asyncio
 async def test_official_client_initializes_lists_and_calls_registry_tool() -> None:
     settings = HubSettings(auth_token=SecretStr("test-token-that-is-long-enough"))
@@ -77,7 +89,7 @@ async def test_official_client_initializes_lists_and_calls_registry_tool() -> No
 
     assert initialization.protocolVersion == MCP_PROTOCOL_VERSION
     assert initialization.capabilities.tools is not None
-    assert initialization.capabilities.tools.listChanged is False
+    assert initialization.capabilities.tools.listChanged is True
     assert get_session_id() is not None
     assert len(listed.tools) == 1
     tool = listed.tools[0]
@@ -112,6 +124,14 @@ async def test_official_client_relists_after_tool_health_changes(
 
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)
+        notifications: asyncio.Queue[types.ServerNotification] = asyncio.Queue()
+
+        async def capture_notification(
+            message: object,
+        ) -> None:
+            if isinstance(message, types.ServerNotification):
+                await notifications.put(message)
+
         async with (
             httpx.AsyncClient(
                 transport=transport,
@@ -123,23 +143,56 @@ async def test_official_client_relists_after_tool_health_changes(
                 "http://127.0.0.1:8787/mcp",
                 http_client=http_client,
             ) as (read_stream, write_stream, _get_session_id),
-            ClientSession(read_stream, write_stream) as session,
+            ClientSession(
+                read_stream,
+                write_stream,
+                message_handler=capture_notification,
+            ) as session,
         ):
             initialization = await session.initialize()
             initial_tools = await session.list_tools()
+            session_id = _get_session_id()
+            assert session_id is not None
+            server_transport = app.state.mcp_runtime.session_manager._server_instances[session_id]
+            for _ in range(500):
+                if GET_STREAM_KEY in server_transport._request_streams:
+                    break
+                await asyncio.sleep(0.01)
+            assert GET_STREAM_KEY in server_transport._request_streams
             monkeypatch.setattr(platform, "system", lambda: "")
 
             unavailable = await app.state.tool_health_monitor.check_now()
+            event_store = server_transport._event_store
+            assert isinstance(event_store, BoundedMcpEventStore)
+            for _ in range(500):
+                if event_store._events:
+                    break
+                await asyncio.sleep(0.01)
             unavailable_tools = await session.list_tools()
             with pytest.raises(McpError) as unavailable_call:
                 await session.call_tool("mac.system_info", {})
+            server_transport.close_standalone_sse_stream()
+            unavailable_notification = await asyncio.wait_for(notifications.get(), timeout=5)
+            assert notifications.empty()
             monkeypatch.setattr(platform, "system", lambda: "Darwin")
 
             restored = await app.state.tool_health_monitor.check_now()
+            for _ in range(500):
+                if GET_STREAM_KEY in server_transport._request_streams:
+                    break
+                await asyncio.sleep(0.01)
+            assert GET_STREAM_KEY in server_transport._request_streams
+            server_transport.close_standalone_sse_stream()
+            restored_notification = await asyncio.wait_for(notifications.get(), timeout=5)
+            reconnect_resync = await asyncio.wait_for(notifications.get(), timeout=5)
+            assert notifications.empty()
             restored_tools = await session.list_tools()
 
     assert initialization.capabilities.tools is not None
-    assert initialization.capabilities.tools.listChanged is False
+    assert initialization.capabilities.tools.listChanged is True
+    assert isinstance(unavailable_notification.root, types.ToolListChangedNotification)
+    assert isinstance(restored_notification.root, types.ToolListChangedNotification)
+    assert isinstance(reconnect_resync.root, types.ToolListChangedNotification)
     assert [tool.name for tool in initial_tools.tools] == ["mac.system_info"]
     assert unavailable.changed is True
     assert unavailable_tools.tools == []
@@ -195,7 +248,7 @@ def test_mcp_uses_exact_non_redirecting_endpoint(client: TestClient) -> None:
     payload = response.json()
     assert payload["id"] == 1
     assert payload["result"]["protocolVersion"] == MCP_PROTOCOL_VERSION
-    assert payload["result"]["capabilities"]["tools"] == {"listChanged": False}
+    assert payload["result"]["capabilities"]["tools"] == {"listChanged": True}
     assert trailing_slash.status_code == 404
 
 
@@ -449,7 +502,7 @@ async def test_mcp_adapter_bounds_concurrent_call_queue(monkeypatch: pytest.Monk
     assert completed["status"] == "available"
 
 
-def test_stateful_mcp_declines_get_and_terminates_session(client: TestClient) -> None:
+def test_stateful_mcp_validates_get_and_terminates_session(client: TestClient) -> None:
     session_id = initialize_http_session(client)
     session_headers = {
         "Authorization": AUTHORIZATION,
@@ -457,7 +510,10 @@ def test_stateful_mcp_declines_get_and_terminates_session(client: TestClient) ->
         "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
         "MCP-Session-Id": session_id,
     }
-    get_response = client.get("/mcp", headers=session_headers)
+    get_response = client.get(
+        "/mcp",
+        headers={**session_headers, "Accept": "application/json"},
+    )
     delete_response = client.delete(
         "/mcp",
         headers=session_headers,
@@ -468,10 +524,259 @@ def test_stateful_mcp_declines_get_and_terminates_session(client: TestClient) ->
         headers={**MCP_HTTP_HEADERS, **session_headers},
     )
 
-    assert get_response.status_code == 405
-    assert get_response.headers["allow"] == "POST, DELETE"
+    assert get_response.status_code == 406
     assert delete_response.status_code == 200
     assert expired_response.status_code == 404
+
+
+def test_mcp_get_requires_authentication_and_session(client: TestClient) -> None:
+    session_id = initialize_http_session(client)
+    no_token = client.get(
+        "/mcp",
+        headers={
+            "Accept": "text/event-stream",
+            "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+            "MCP-Session-Id": session_id,
+        },
+    )
+    no_session = client.get(
+        "/mcp",
+        headers={
+            "Authorization": AUTHORIZATION,
+            "Accept": "text/event-stream",
+            "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+        },
+    )
+
+    assert no_token.status_code == 401
+    assert no_token.json()["error"] == "invalid_token"
+    assert no_session.status_code == 400
+    assert no_session.json() == {"error": "mcp_session_required"}
+
+
+def test_mcp_assigns_a_distinct_replay_store_to_each_session(client: TestClient) -> None:
+    first_session_id = initialize_http_session(client)
+    second_session_id = initialize_http_session(client)
+    manager = cast(Any, client.app).state.mcp_runtime.session_manager
+    first_store = manager._server_instances[first_session_id]._event_store
+    second_store = manager._server_instances[second_session_id]._event_store
+
+    assert isinstance(first_store, BoundedMcpEventStore)
+    assert isinstance(second_store, BoundedMcpEventStore)
+    assert first_store is not second_store
+
+
+@pytest.mark.asyncio
+async def test_mcp_get_recovers_unknown_cursor_and_rejects_second_stream() -> None:
+    app = create_app(HubSettings(auth_token=SecretStr("test-token-that-is-long-enough")))
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://127.0.0.1:8787",
+            headers={"Authorization": AUTHORIZATION},
+            timeout=5,
+        ) as http_client:
+            initialized = await http_client.post(
+                "/mcp",
+                json=initialize_request(),
+                headers=MCP_HTTP_HEADERS,
+            )
+            session_id = initialized.headers["mcp-session-id"]
+            session_headers = {
+                "Authorization": AUTHORIZATION,
+                "Accept": "text/event-stream",
+                "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+                "MCP-Session-Id": session_id,
+            }
+            await http_client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+                headers={**session_headers, **MCP_HTTP_HEADERS},
+            )
+            server_transport = app.state.mcp_runtime.session_manager._server_instances[session_id]
+            initial_get_task = asyncio.create_task(http_client.get("/mcp", headers=session_headers))
+            for _ in range(500):
+                if GET_STREAM_KEY in server_transport._request_streams:
+                    break
+                await asyncio.sleep(0.01)
+            assert GET_STREAM_KEY in server_transport._request_streams
+            server_transport.close_standalone_sse_stream()
+            initial_get = await asyncio.wait_for(initial_get_task, timeout=5)
+
+            first_get_task = asyncio.create_task(
+                http_client.get(
+                    "/mcp",
+                    headers={**session_headers, "Last-Event-ID": "unknown-cursor"},
+                )
+            )
+            for _ in range(500):
+                if GET_STREAM_KEY in server_transport._request_streams:
+                    break
+                await asyncio.sleep(0.01)
+            assert GET_STREAM_KEY in server_transport._request_streams
+
+            second_get = await http_client.get("/mcp", headers=session_headers)
+            assert GET_STREAM_KEY in server_transport._request_streams
+            server_transport.close_standalone_sse_stream()
+            first_get = await asyncio.wait_for(first_get_task, timeout=5)
+
+    assert initial_get.status_code == 200
+    assert "id:" in initial_get.text
+    assert "notifications/tools/list_changed" not in initial_get.text
+    assert first_get.status_code == 200
+    assert "notifications/tools/list_changed" in first_get.text
+    assert "unknown-cursor" not in first_get.text
+    assert second_get.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_active_mcp_get_keeps_session_alive_past_idle_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mcp_server_module, "MCP_SESSION_IDLE_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(mcp_server_module, "MCP_SSE_MAX_LIFETIME_SECONDS", 0.2)
+    app = create_app(HubSettings(auth_token=SecretStr("test-token-that-is-long-enough")))
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with (
+            httpx.AsyncClient(
+                transport=transport,
+                base_url="http://127.0.0.1:8787",
+                headers={"Authorization": AUTHORIZATION},
+                timeout=5,
+            ) as http_client,
+            streamable_http_client(
+                "http://127.0.0.1:8787/mcp",
+                http_client=http_client,
+            ) as (read_stream, write_stream, get_session_id),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            await session.initialize()
+            initial = await session.list_tools()
+            session_id = get_session_id()
+            assert session_id is not None
+            server_transport = app.state.mcp_runtime.session_manager._server_instances[session_id]
+            for _ in range(500):
+                if GET_STREAM_KEY in server_transport._request_streams:
+                    break
+                await asyncio.sleep(0.01)
+            assert GET_STREAM_KEY in server_transport._request_streams
+
+            await asyncio.sleep(0.1)
+            after_idle_deadline = await session.list_tools()
+
+    assert [tool.name for tool in initial.tools] == ["mac.system_info"]
+    assert [tool.name for tool in after_idle_deadline.tools] == ["mac.system_info"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_get_rotates_at_bounded_lifetime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mcp_server_module, "MCP_SSE_MAX_LIFETIME_SECONDS", 0.05)
+    app = create_app(HubSettings(auth_token=SecretStr("test-token-that-is-long-enough")))
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://127.0.0.1:8787",
+            headers={"Authorization": AUTHORIZATION},
+            timeout=5,
+        ) as http_client:
+            initialized = await http_client.post(
+                "/mcp",
+                json=initialize_request(),
+                headers=MCP_HTTP_HEADERS,
+            )
+            session_id = initialized.headers["mcp-session-id"]
+            session_headers = {
+                "Authorization": AUTHORIZATION,
+                "Accept": "text/event-stream",
+                "MCP-Protocol-Version": MCP_PROTOCOL_VERSION,
+                "MCP-Session-Id": session_id,
+            }
+            await http_client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+                headers={**session_headers, **MCP_HTTP_HEADERS},
+            )
+            rotated = await asyncio.wait_for(
+                http_client.get("/mcp", headers=session_headers),
+                timeout=1,
+            )
+            listed = await http_client.post(
+                "/mcp",
+                json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+                headers={**session_headers, **MCP_HTTP_HEADERS},
+            )
+
+    assert rotated.status_code == 200
+    assert "id:" in rotated.text
+    assert listed.status_code == 200
+    assert listed.json()["result"]["tools"][0]["name"] == "mac.system_info"
+
+
+@pytest.mark.asyncio
+async def test_mcp_replay_store_replays_only_bounded_session_local_list_changes() -> None:
+    first_store = BoundedMcpEventStore(max_events=2, max_bytes=1_024)
+    second_store = BoundedMcpEventStore(max_events=2, max_bytes=1_024)
+    notification = tool_list_changed_message()
+    priming_id = await first_store.store_event(GET_STREAM_KEY, None)
+    first_notification_id = await first_store.store_event(GET_STREAM_KEY, notification)
+    await first_store.store_event("request-7", notification)
+    replayed: list[EventMessage] = []
+
+    async def capture_replay(event: EventMessage) -> None:
+        replayed.append(event)
+
+    stream_id = await first_store.replay_events_after(priming_id, capture_replay)
+    isolated = await second_store.replay_events_after(first_notification_id, capture_replay)
+    await first_store.store_event(GET_STREAM_KEY, notification)
+    evicted = await first_store.replay_events_after(priming_id, capture_replay)
+
+    assert stream_id == GET_STREAM_KEY
+    assert isolated == GET_STREAM_KEY
+    assert evicted == GET_STREAM_KEY
+    assert len(replayed) == 4
+    assert replayed[0].event_id == first_notification_id
+    assert all(
+        isinstance(event.message.root, types.JSONRPCNotification)
+        and event.message.root.method == "notifications/tools/list_changed"
+        for event in replayed
+    )
+
+
+@pytest.mark.asyncio
+async def test_mcp_notifier_quarantines_stalled_session_without_blocking_others(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mcp_server_module, "MCP_NOTIFICATION_TIMEOUT_SECONDS", 0.01)
+    notifier = McpToolListNotifier()
+
+    class StubSession:
+        def __init__(self, *, stalls: bool) -> None:
+            self.calls = 0
+            self.stalls = stalls
+
+        async def send_tool_list_changed(self) -> None:
+            self.calls += 1
+            if self.stalls:
+                await asyncio.Event().wait()
+
+    healthy = StubSession(stalls=False)
+    stalled = StubSession(stalls=True)
+    await notifier.register("healthy", cast(Any, healthy))
+    await notifier.register("stalled", cast(Any, stalled))
+
+    await notifier.notify({"healthy", "stalled"})
+    await notifier.notify({"healthy", "stalled"})
+
+    assert healthy.calls == 2
+    assert stalled.calls == 1
 
 
 def test_terminal_mcp_mount_closes_unmatched_websocket(client: TestClient) -> None:
