@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -204,6 +203,11 @@ private fun StatusRail(state: GoffyUiState) {
         MacConnectionState.CONNECTED -> stringResource(R.string.connection_connected)
     }
     val connectionAccent = if (state.macConnection == MacConnectionState.CONNECTED) Signal else Warning
+    val targetValue = when (state.executionTarget) {
+        ExecutionTarget.PHONE -> stringResource(R.string.target_phone)
+        ExecutionTarget.MAC -> stringResource(R.string.target_mac)
+        ExecutionTarget.CLOUD -> stringResource(R.string.target_cloud)
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -217,7 +221,7 @@ private fun StatusRail(state: GoffyUiState) {
         )
         StatusCard(
             label = stringResource(R.string.target_label),
-            value = state.executionTarget.name,
+            value = targetValue,
             accent = Signal,
             modifier = Modifier.weight(1f),
         )

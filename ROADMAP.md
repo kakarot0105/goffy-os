@@ -10,7 +10,7 @@
 - [x] Typed `mac.system_info` registry tool
 - [x] Python unit and integration tests
 - [x] CI, lint, type, and security configuration
-- [ ] Android build verified on a configured JDK 17 / SDK 36 toolchain
+- [x] Android build verified on a configured JDK 17 / SDK 36 toolchain
 - [ ] GOFFY home shell verified on the Moto G physical device
 
 ## Milestone 1: First end-to-end action

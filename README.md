@@ -58,7 +58,7 @@ Install Android Studio with JDK 17 and Android SDK 36, then open `android/` as a
 project. The minimum SDK is 26. Command-line verification is:
 
 ```bash
-gradle -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --no-daemon
+./android/gradlew -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --no-daemon
 ```
 
 See [Android setup](docs/setup/android.md) for emulator and Moto G real-device

@@ -10,7 +10,9 @@
     <string name="connection_connecting">CONNECTING</string>
     <string name="connection_connected">CONNECTED</string>
     <string name="target_label">EXECUTION TARGET</string>
+    <string name="target_phone">PHONE</string>
     <string name="target_mac">MAC</string>
+    <string name="target_cloud">CLOUD</string>
     <string name="performance_lite">GOFFY LITE</string>
     <string name="command_hint">Ask GOFFY to do something</string>
     <string name="send_command">Send</string>
