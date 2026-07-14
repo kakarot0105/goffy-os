@@ -241,6 +241,8 @@ Before a Moto G physical validation pass, run the readiness verifier:
 .venv/bin/python scripts/guide_moto_g_validation.py --json
 .venv/bin/python scripts/collect_moto_g_validation_bundle.py
 .venv/bin/python scripts/collect_moto_g_validation_bundle.py --json
+.venv/bin/python scripts/verify_moto_g_validation_bundle.py .goffy-validation/<bundle>
+.venv/bin/python scripts/verify_moto_g_validation_bundle.py .goffy-validation/<bundle> --json
 ```
 
 It reuses the Android/device setup checks, probes only the fixed localhost Hub
@@ -252,7 +254,11 @@ command or control the phone UI. The bundle collector writes local
 `.goffy-validation/moto-g-...` artifacts with guide, smoke, and manifest JSON/text
 plus SHA-256 hashes for evidence artifacts. It is read-only for the phone and
 refuses to overwrite a timestamped bundle unless `--force` is passed against a
-previously marked GOFFY validation bundle directory.
+previously marked GOFFY validation bundle directory. The bundle verifier checks
+manifest schema, safe relative paths, artifact hashes, metadata marker presence,
+and guide/smoke consistency without touching the phone. Verifier exit codes are:
+`0` for integrity-valid passed physical smoke evidence, `1` for integrity-valid
+but incomplete physical smoke evidence, and `2` for schema or integrity failure.
 
 To prepare the USB path when the only remaining readiness blocker is Hub USB
 reverse, use the Moto G USB setup runner. It is plan-only by default:
@@ -299,6 +305,7 @@ To package the final evidence after the manual phone pass:
   --mac-status-displayed pass \
   --timeline-recorded pass \
   --restart-restored pass
+.venv/bin/python scripts/verify_moto_g_validation_bundle.py .goffy-validation/<bundle>
 ```
 
 Read [SECURITY.md](SECURITY.md) before exposing the Hub beyond localhost.
