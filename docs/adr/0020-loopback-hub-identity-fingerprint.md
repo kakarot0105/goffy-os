@@ -33,8 +33,12 @@ can pin that fingerprint before allowing higher-authority Mac workflows. This
 also gives future Hub/MCP audit records a stable local Hub identifier without
 using hostnames, serial numbers, MAC addresses, or account data.
 
+ADR 0021 implements the first USB-loopback Android pinning use of this public
+fingerprint. Certificate/public-key proof and trusted LAN onboarding remain
+separate future work.
+
 This does not implement trusted LAN pairing, certificate pinning, public-key
-signature proof, Android display/pinning UX, or a direct Hub/MCP audit store.
+signature proof, or a direct Hub/MCP audit store.
 
 ## Rejected Alternatives
 

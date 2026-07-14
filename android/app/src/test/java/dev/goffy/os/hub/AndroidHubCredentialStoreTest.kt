@@ -28,10 +28,25 @@ class AndroidHubCredentialStoreTest {
         val reopened = AndroidHubCredentialStore(context, true, cipher).load()
 
         assertFalse(diskBytes.toString(Charsets.UTF_8).contains(ACCESS_TOKEN))
+        assertFalse(diskBytes.toString(Charsets.UTF_8).contains(HUB_FINGERPRINT))
         assertFalse(diskBytes.toString(Charsets.UTF_8).contains(credential.endpoint))
         assertTrue(reopened is HubCredentialLoadResult.Loaded)
         assertTrue((reopened as HubCredentialLoadResult.Loaded).credential.sameAuthority(credential))
         assertFalse(reopened.toString().contains(ACCESS_TOKEN))
+    }
+
+    @Test
+    fun legacyRecordWithoutPinnedHubIdentityFailsClosedAndIsDeleted() {
+        val context = RuntimeEnvironment.getApplication()
+        credentialFile().delete()
+        val cipher = XorCredentialCipher()
+        credentialFile().writeBytes(cipher.seal(LEGACY_SCHEMA_ONE_RECORD.toByteArray()))
+
+        val result = AndroidHubCredentialStore(context, true, cipher).load()
+
+        assertEquals(HubCredentialLoadResult.Corrupt, result)
+        assertFalse(credentialFile().exists())
+        assertTrue(cipher.keyDeleted)
     }
 
     @Test
@@ -72,7 +87,14 @@ class AndroidHubCredentialStoreTest {
         deviceId = "goffy-android-test",
         accessToken = ACCESS_TOKEN,
         createdAt = Instant.parse("2026-07-13T16:00:00Z"),
+        hubIdentity = hubIdentityPin(),
         allowInsecureLoopback = true,
+    )
+
+    private fun hubIdentityPin(): HubIdentityPin = HubIdentityPin.create(
+        hubId = UUID.fromString("33333333-3333-4333-8333-333333333333"),
+        fingerprint = HUB_FINGERPRINT,
+        createdAt = Instant.parse("2026-07-13T15:59:00Z"),
     )
 
     private fun credentialFile(): File = File(
@@ -105,5 +127,14 @@ class AndroidHubCredentialStoreTest {
 
     private companion object {
         const val ACCESS_TOKEN = "paired-access-token-abcdefghijklmnopqrstuvwxyz0123456789"
+        const val HUB_FINGERPRINT =
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        const val LEGACY_SCHEMA_ONE_RECORD =
+            "{\"schemaVersion\":1," +
+                "\"endpoint\":\"ws://127.0.0.1:8787/ws/v1\"," +
+                "\"credentialId\":\"22222222-2222-4222-8222-222222222222\"," +
+                "\"deviceId\":\"goffy-android-test\"," +
+                "\"accessToken\":\"$ACCESS_TOKEN\"," +
+                "\"createdAt\":\"2026-07-13T16:00:00Z\"}"
     }
 }

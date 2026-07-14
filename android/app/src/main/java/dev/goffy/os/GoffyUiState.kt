@@ -42,6 +42,7 @@ data class GoffyUiState(
     val pendingApproval: PendingApproval? = null,
     val auditPersistence: AuditPersistenceState = AuditPersistenceState.LOADING,
     val discardedAuditRecords: Int = 0,
+    val hubIdentityFingerprint: String? = null,
 ) {
     val hubConfigured: Boolean
         get() = hubLinkState == HubLinkState.PAIRED || hubLinkState == HubLinkState.DEVELOPMENT
@@ -55,9 +56,18 @@ data class GoffyUiState(
     val isBusy: Boolean
         get() = timeline.activeTaskId != null
 
-    fun hubConfigured(endpoint: String, persistent: Boolean = false): GoffyUiState = copy(
+    fun hubConfigured(
+        endpoint: String,
+        persistent: Boolean = false,
+        hubIdentityFingerprint: String? = null,
+    ): GoffyUiState = copy(
         hubLinkState = if (persistent) HubLinkState.PAIRED else HubLinkState.DEVELOPMENT,
         hubEndpoint = endpoint,
+        hubIdentityFingerprint = if (persistent) {
+            hubIdentityFingerprint?.take(MAX_FINGERPRINT_LENGTH)
+        } else {
+            null
+        },
         linkError = null,
         linkNotice = null,
     )
@@ -69,12 +79,14 @@ data class GoffyUiState(
 
     fun hubRestoreEmpty(): GoffyUiState = copy(
         hubLinkState = HubLinkState.UNPAIRED,
+        hubIdentityFingerprint = null,
         linkError = null,
         linkNotice = null,
     )
 
     fun hubRestoreFailed(message: String): GoffyUiState = copy(
         hubLinkState = HubLinkState.DEGRADED,
+        hubIdentityFingerprint = null,
         linkError = message.take(MAX_ERROR_LENGTH),
         linkNotice = null,
     )
@@ -82,12 +94,14 @@ data class GoffyUiState(
     fun hubPairingStarted(endpoint: String): GoffyUiState = copy(
         hubLinkState = HubLinkState.PAIRING,
         hubEndpoint = endpoint,
+        hubIdentityFingerprint = null,
         linkError = null,
         linkNotice = null,
     )
 
     fun hubPairingRejected(message: String): GoffyUiState = copy(
         hubLinkState = HubLinkState.UNPAIRED,
+        hubIdentityFingerprint = null,
         linkError = message.take(MAX_ERROR_LENGTH),
         linkNotice = null,
     )
@@ -97,6 +111,7 @@ data class GoffyUiState(
     ): GoffyUiState = copy(
         macConnection = MacConnectionState.DISCONNECTED,
         hubLinkState = HubLinkState.FORGETTING,
+        hubIdentityFingerprint = null,
         linkError = null,
         linkNotice = null,
         timeline = timeline.cancelActive(terminalAtEpochMillis),
@@ -125,6 +140,7 @@ data class GoffyUiState(
     fun hubRotationFailed(message: String): GoffyUiState = copy(
         macConnection = MacConnectionState.DISCONNECTED,
         hubLinkState = HubLinkState.DEGRADED,
+        hubIdentityFingerprint = null,
         linkError = message.take(MAX_ERROR_LENGTH),
         linkNotice = null,
         pendingApproval = null,
@@ -138,6 +154,7 @@ data class GoffyUiState(
         macConnection = MacConnectionState.DISCONNECTED,
         hubLinkState = HubLinkState.UNPAIRED,
         hubEndpoint = defaultEndpoint,
+        hubIdentityFingerprint = null,
         linkError = null,
         linkNotice = notice.bounded(),
         timeline = timeline.cancelActive(terminalAtEpochMillis),
@@ -152,6 +169,7 @@ data class GoffyUiState(
         macConnection = MacConnectionState.DISCONNECTED,
         hubLinkState = HubLinkState.DEGRADED,
         hubEndpoint = defaultEndpoint,
+        hubIdentityFingerprint = null,
         linkError = message.take(MAX_ERROR_LENGTH),
         linkNotice = null,
         timeline = timeline.cancelActive(terminalAtEpochMillis),
@@ -304,6 +322,7 @@ data class GoffyUiState(
     private companion object {
         const val MAX_ERROR_LENGTH = 256
         const val MAX_NOTICE_LENGTH = 256
+        const val MAX_FINGERPRINT_LENGTH = 80
     }
 
     private fun HubLinkNotice.bounded(): HubLinkNotice = copy(

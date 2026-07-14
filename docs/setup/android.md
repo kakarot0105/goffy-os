@@ -297,12 +297,16 @@ arbitrary commands, and never accepts free-form notes.
    open goffy-pairing-bundle.svg
    ```
 
-   Scan it with `Scan QR`, then tap `Pair phone` within 120 seconds. The SVG is a
-   short-lived secret; delete it after pairing. Do not redeem the embedded
-   challenge elsewhere or use a cloud-synchronized clipboard. For legacy mode,
-   enter the development bearer in the debug-only field.
+   Scan it with `Scan QR`, then tap `Pair phone` within 120 seconds. The Android
+   parser requires the Hub identity fingerprint in the bundle before it sends any
+   redemption request, then requires the Hub redemption response to return the
+   same identity before storing the fingerprint with the encrypted paired
+   credential. The SVG is a short-lived secret; delete it after pairing. Do not
+   redeem the embedded challenge elsewhere or use a cloud-synchronized clipboard.
+   For legacy mode, enter the development bearer in the debug-only field.
 6. Submit `Show my Mac status` or `Check my Mac status`, restart the app, and run
-   it again without re-entering the paired bearer.
+   it again without re-entering the paired bearer. The Hub card should remain
+   `PAIRED` and show the same public Hub fingerprint after restart.
 7. Run `scripts/record_moto_g_smoke.py` with the checklist flags above and attach
    the JSON output to the validation notes.
 
@@ -323,12 +327,14 @@ verified yet.
 
 For the pairing slice, verify that restart restores `PAIRED`, an expired or
 altered challenge saves nothing, and `Forget link` first shows an explicit
-confirmation. With the Hub reachable over `adb reverse`, confirm the app reports
-verified Hub revocation and remains unpaired after a second restart. Then list
-credentials on the Mac and confirm that credential has a revocation timestamp. Run
-one offline pass with the Hub stopped: the app should still remove local authority
-and report remote revocation as unverified. Record the Moto G Android version and
-any Keystore, self-revocation, or OEM process-restart failure.
+confirmation. Also verify that old bundles or edited bundles missing
+`hubIdentity.fingerprint` fail before redemption and save no credential. With the
+Hub reachable over `adb reverse`, confirm the app reports verified Hub revocation
+and remains unpaired after a second restart. Then list credentials on the Mac and
+confirm that credential has a revocation timestamp. Run one offline pass with the
+Hub stopped: the app should still remove local authority and report remote
+revocation as unverified. Record the Moto G Android version and any Keystore,
+self-revocation, or OEM process-restart failure.
 
 For the token-rotation slice, pair the phone, start a Mac status task, then tap
 `Rotate token` and confirm. The active task should cancel locally, the link should

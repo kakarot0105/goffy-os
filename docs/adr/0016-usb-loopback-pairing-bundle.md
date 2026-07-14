@@ -35,6 +35,10 @@ pairing parser already tested for the manual foreground field. The bundle makes
 endpoint substitution and premature LAN trust explicit failure cases, while
 preserving the current USB-loopback-only security model.
 
+ADR 0021 supersedes this initial `goffy.pairing.bundle.v1` shape with
+`goffy.pairing.bundle.v2` so Android can require and persist public Hub identity
+metadata.
+
 This does not implement camera capture, QR decoding, trusted certificate
 onboarding, LAN pairing, or automatic token rotation schedules. Hub-side paired
 token rotation is handled by ADR 0018; Android manual rotation UX is handled by

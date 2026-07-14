@@ -86,6 +86,25 @@ class GoffyUiStateTest {
     }
 
     @Test
+    fun hubIdentityFingerprintIsShownOnlyForPersistentPairing() {
+        val fingerprint = "sha256:" + "a".repeat(90)
+
+        val paired = GoffyUiState(hubEndpoint = endpoint).hubConfigured(
+            endpoint,
+            persistent = true,
+            hubIdentityFingerprint = fingerprint,
+        )
+        val development = GoffyUiState(hubEndpoint = endpoint).hubConfigured(
+            endpoint,
+            persistent = false,
+            hubIdentityFingerprint = fingerprint,
+        )
+
+        assertEquals(fingerprint.take(80), paired.hubIdentityFingerprint)
+        assertNull(development.hubIdentityFingerprint)
+    }
+
+    @Test
     fun rotationStateIsAnExclusiveLinkOperation() {
         val state = GoffyUiState(hubEndpoint = endpoint).hubRotationStarted()
 

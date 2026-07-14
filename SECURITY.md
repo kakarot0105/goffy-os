@@ -36,9 +36,11 @@ include real credentials or unrelated personal data.
   JSON is capped at 2 KiB, validation errors never echo secret input, and
   secret-bearing success responses disable caching.
 - Pairing bundles wrap one challenge in the versioned
-  `goffy.pairing.bundle.v1` QR payload shape. The Hub creates them only through
+  `goffy.pairing.bundle.v2` QR payload shape. The Hub creates them only through
   loopback bootstrap administration, requires a loopback Host header, marks them
-  no-store, and declares `trustedLanSupported=false`.
+  no-store, and includes the public Hub ID, stable SHA-256 fingerprint, creation
+  timestamp, and `trustedLanSupported=false`. Redemption success responses carry
+  the same public identity so Android can reject a mismatch before persistence.
 - In paired mode, the Hub creates an owner-only `hub-identity.json` file next to
   the pairing credential database. `GET /admin/v1/hub-identity` is loopback-only,
   bootstrap-admin-only, no-store, and returns only a stable Hub ID, SHA-256
@@ -87,8 +89,14 @@ include real credentials or unrelated personal data.
 - Android redeems pairing challenges only against a loopback endpoint and never
   retries redemption. `MainActivity.onStop()` cancels and joins enrollment before
   local cleanup. The temporary challenge input is foreground-only,
-  password-masked, bounded to 2 KiB, and excluded from saved Compose state,
-  audit rows, URLs, and error text.
+  password-masked, bounded to 2 KiB, and excluded from saved Compose state, audit
+  rows, URLs, and error text. Bundles missing the public Hub identity fingerprint
+  are rejected before any redemption request. If the Hub redemption response
+  returns different public identity metadata, Android rejects pairing before
+  persistence. Persistent paired activation requires encrypted read-back of the
+  bearer plus the pinned Hub identity; legacy records without a pin fail closed
+  and are deleted. The visible fingerprint is public loopback identity metadata
+  only and is not a certificate, public-key proof, or LAN trust grant.
 - Android QR transfer is limited to the visible pairing setup flow. `Scan QR`
   requests `CAMERA` only from that foreground action, binds CameraX preview and
   image analysis to the Activity lifecycle, decodes QR codes only with ML Kit,

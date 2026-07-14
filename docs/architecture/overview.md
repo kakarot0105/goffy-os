@@ -55,11 +55,13 @@ approval state, active work, and execution authority are not revived.
    store. One-time challenges are memory-only, short-lived, attempt-bounded, and
    discarded on restart.
 7. USB-loopback pairing bundles wrap one challenge with an exact `/ws/v1`
-   endpoint and explicit `trustedLanSupported=false` identity metadata. They are
-   QR-ready transfer payloads, not trusted LAN onboarding.
+   endpoint plus public Hub identity metadata. Android requires that identity
+   fingerprint before redemption, requires the redemption response to match it,
+   and persists it with the paired credential. These are QR-ready transfer
+   payloads, not trusted LAN onboarding.
 8. Paired mode creates an owner-only Hub identity file and exposes only its
-   stable fingerprint through loopback bootstrap administration. Android pinning
-   and certificate-based LAN proof are still future trust-boundary work.
+   stable fingerprint through loopback bootstrap administration. Certificate or
+   public-key Hub proof and LAN trust remain future trust-boundary work.
 9. Credential revocation persists before indexed live WebSocket and MCP sessions
    are terminated. New requests recheck the digest store.
 10. GOFFY protocol, MCP metadata, and tool contract versions are checked separately.

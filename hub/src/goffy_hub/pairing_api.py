@@ -34,7 +34,7 @@ RevokeCallback = Callable[[UUID], Awaitable[None]]
 DEVICE_ID_PATTERN = r"^[A-Za-z0-9._:-]{1,64}$"
 DISPLAY_NAME_PATTERN = r"^[^\x00-\x1F\x7F]{1,80}$"
 MAX_PAIRING_REQUEST_BYTES = 2_048
-PAIRING_BUNDLE_VERSION: Literal["goffy.pairing.bundle.v1"] = "goffy.pairing.bundle.v1"
+PAIRING_BUNDLE_VERSION: Literal["goffy.pairing.bundle.v2"] = "goffy.pairing.bundle.v2"
 
 
 class PairingApiModel(BaseModel):
@@ -53,6 +53,10 @@ class PairingChallengeResponse(PairingApiModel):
 
 
 class PairingBundleHubIdentity(PairingApiModel):
+    schema_version: HubIdentitySchemaVersion
+    hub_id: UUID
+    fingerprint: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    created_at: datetime
     mode: Literal["usb_loopback"]
     verified_by: Literal["loopback_admin_session"]
     trusted_lan_supported: Literal[False]
@@ -68,7 +72,7 @@ class HubIdentityResponse(PairingApiModel):
 
 
 class PairingBundleResponse(PairingApiModel):
-    bundle_version: Literal["goffy.pairing.bundle.v1"]
+    bundle_version: Literal["goffy.pairing.bundle.v2"]
     hub_endpoint: str = Field(min_length=1, max_length=2048)
     hub_identity: PairingBundleHubIdentity
     challenge: PairingChallengeResponse
@@ -90,6 +94,7 @@ class PairingSuccessResponse(PairingApiModel):
     credential_id: UUID
     access_token: str = Field(repr=False)
     created_at: datetime
+    hub_identity: PairingBundleHubIdentity
 
 
 class TokenRotationResponse(PairingApiModel):
@@ -169,11 +174,7 @@ def build_pairing_router(
         return PairingBundleResponse(
             bundle_version=PAIRING_BUNDLE_VERSION,
             hub_endpoint=hub_endpoint,
-            hub_identity=PairingBundleHubIdentity(
-                mode="usb_loopback",
-                verified_by="loopback_admin_session",
-                trusted_lan_supported=False,
-            ),
+            hub_identity=_pairing_bundle_identity(hub_identity),
             challenge=challenge,
         )
 
@@ -240,6 +241,7 @@ def build_pairing_router(
             credential_id=issued.credential.credential_id,
             access_token=issued.access_token,
             created_at=issued.credential.created_at,
+            hub_identity=_pairing_bundle_identity(hub_identity),
         )
 
     @router.get(
@@ -417,6 +419,18 @@ def _hub_identity_response(hub_identity: HubIdentity) -> HubIdentityResponse:
         hub_id=hub_identity.hub_id,
         fingerprint=hub_identity.fingerprint,
         created_at=hub_identity.created_at,
+        verified_by="loopback_admin_session",
+        trusted_lan_supported=False,
+    )
+
+
+def _pairing_bundle_identity(hub_identity: HubIdentity) -> PairingBundleHubIdentity:
+    return PairingBundleHubIdentity(
+        schema_version=HUB_IDENTITY_SCHEMA_VERSION,
+        hub_id=hub_identity.hub_id,
+        fingerprint=hub_identity.fingerprint,
+        created_at=hub_identity.created_at,
+        mode="usb_loopback",
         verified_by="loopback_admin_session",
         trusted_lan_supported=False,
     )

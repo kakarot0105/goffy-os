@@ -77,7 +77,7 @@ class OkHttpHubPairingGateway internal constructor(
                         response.use {
                             if (!continuation.isActive) return
                             try {
-                                continuation.resume(parseResponse(response))
+                                continuation.resume(parseResponse(response, challenge.hubIdentity))
                             } catch (error: HubPairingException) {
                                 continuation.resumeWithException(error)
                             } catch (_: Exception) {
@@ -231,10 +231,35 @@ class OkHttpHubPairingGateway internal constructor(
         ) {
             throw invalidChallenge()
         }
-        return parseChallengeObject(value.requiredObject("challenge"))
+        val hubIdentity = parseHubIdentity(identity)
+        return parseChallengeObject(value.requiredObject("challenge"), hubIdentity)
     }
 
-    private fun parseChallengeObject(value: JsonObject): PairingChallenge {
+    private fun parseHubIdentity(value: JsonObject): HubIdentityPin {
+        if (value.requiredString("schemaVersion") != HubIdentityPin.SCHEMA_VERSION) {
+            throw invalidChallenge()
+        }
+        val hubId = parseCanonicalUuid(value.requiredString("hubId")) ?: throw invalidChallenge()
+        val createdAt = try {
+            Instant.parse(value.requiredString("createdAt"))
+        } catch (_: DateTimeParseException) {
+            throw invalidChallenge()
+        }
+        return try {
+            HubIdentityPin.create(
+                hubId = hubId,
+                fingerprint = value.requiredString("fingerprint"),
+                createdAt = createdAt,
+            )
+        } catch (_: HubCredentialStoreException) {
+            throw invalidChallenge()
+        }
+    }
+
+    private fun parseChallengeObject(
+        value: JsonObject,
+        hubIdentity: HubIdentityPin,
+    ): PairingChallenge {
         value.requireExactKeys(CHALLENGE_KEYS)
         val wire = PairingChallengeWire(
             challengeId = value.requiredString("challengeId"),
@@ -250,7 +275,7 @@ class OkHttpHubPairingGateway internal constructor(
         } catch (_: DateTimeParseException) {
             throw invalidChallenge()
         }
-        return PairingChallenge(challengeId, wire.pairingToken)
+        return PairingChallenge(challengeId, wire.pairingToken, hubIdentity)
     }
 
     private fun validateMetadata(deviceId: String, displayName: String) {
@@ -265,7 +290,10 @@ class OkHttpHubPairingGateway internal constructor(
         }
     }
 
-    private fun parseResponse(response: Response): IssuedHubCredential {
+    private fun parseResponse(
+        response: Response,
+        hubIdentity: HubIdentityPin,
+    ): IssuedHubCredential {
         if (response.code != HTTP_CREATED) throw statusError(response.code)
         val contentType = response.header("Content-Type")
         if (contentType?.substringBefore(';')?.trim()?.lowercase() != "application/json") {
@@ -279,11 +307,26 @@ class OkHttpHubPairingGateway internal constructor(
                 credentialId = value.requiredString("credentialId"),
                 accessToken = value.requiredString("accessToken"),
                 createdAt = value.requiredString("createdAt"),
+                hubIdentity = value.requiredObject("hubIdentity"),
             )
         } catch (_: SerializationException) {
             throw invalidResponse()
         } catch (_: IllegalArgumentException) {
             throw invalidResponse()
+        }
+        wire.hubIdentity.requireExactKeys(PAIRING_BUNDLE_IDENTITY_KEYS)
+        if (wire.hubIdentity.requiredString("mode") != "usb_loopback" ||
+            wire.hubIdentity.requiredString("verifiedBy") != "loopback_admin_session" ||
+            wire.hubIdentity.requiredBoolean("trustedLanSupported")
+        ) {
+            throw invalidResponse()
+        }
+        val returnedHubIdentity = parseHubIdentity(wire.hubIdentity)
+        if (!sameHubIdentity(returnedHubIdentity, hubIdentity)) {
+            throw HubPairingException(
+                "hub_identity_mismatch",
+                "Hub identity changed during pairing. Create a fresh pairing bundle.",
+            )
         }
         val credentialId = parseCanonicalUuid(wire.credentialId) ?: throw invalidResponse()
         if (wire.accessToken.length !in MIN_ACCESS_TOKEN_LENGTH..MAX_ACCESS_TOKEN_LENGTH) {
@@ -294,8 +337,13 @@ class OkHttpHubPairingGateway internal constructor(
         } catch (_: DateTimeParseException) {
             throw invalidResponse()
         }
-        return IssuedHubCredential(credentialId, wire.accessToken, createdAt)
+        return IssuedHubCredential(credentialId, wire.accessToken, createdAt, returnedHubIdentity)
     }
+
+    private fun sameHubIdentity(first: HubIdentityPin, second: HubIdentityPin): Boolean =
+        first.hubId == second.hubId &&
+            first.fingerprint == second.fingerprint &&
+            first.createdAt == second.createdAt
 
     private fun parseRevocationResponse(
         response: Response,
@@ -463,9 +511,11 @@ class OkHttpHubPairingGateway internal constructor(
     private class PairingChallenge(
         val challengeId: UUID,
         val pairingToken: String,
+        val hubIdentity: HubIdentityPin,
     ) {
         override fun toString(): String =
-            "PairingChallenge(challengeId=$challengeId, pairingToken=REDACTED)"
+            "PairingChallenge(challengeId=$challengeId, pairingToken=REDACTED, " +
+                "hubIdentity=$hubIdentity)"
     }
 
     private class PairingChallengeWire(
@@ -482,10 +532,11 @@ class OkHttpHubPairingGateway internal constructor(
         val credentialId: String,
         val accessToken: String,
         val createdAt: String,
+        val hubIdentity: JsonObject,
     ) {
         override fun toString(): String =
             "PairingSuccessWire(credentialId=$credentialId, accessToken=REDACTED, " +
-                "createdAt=$createdAt)"
+                "createdAt=$createdAt, hubIdentity=$hubIdentity)"
     }
 
     private companion object {
@@ -498,7 +549,7 @@ class OkHttpHubPairingGateway internal constructor(
         const val MAX_ACCESS_TOKEN_LENGTH = 4_096
         const val MAX_DISPLAY_NAME_LENGTH = 80
         val DEVICE_ID_REGEX = Regex("^[A-Za-z0-9._:-]{1,64}$")
-        const val PAIRING_BUNDLE_VERSION = "goffy.pairing.bundle.v1"
+        const val PAIRING_BUNDLE_VERSION = "goffy.pairing.bundle.v2"
         val CHALLENGE_KEYS = setOf("challengeId", "pairingToken", "expiresAt")
         val PAIRING_BUNDLE_KEYS = setOf(
             "bundleVersion",
@@ -507,11 +558,15 @@ class OkHttpHubPairingGateway internal constructor(
             "challenge",
         )
         val PAIRING_BUNDLE_IDENTITY_KEYS = setOf(
+            "schemaVersion",
+            "hubId",
+            "fingerprint",
+            "createdAt",
             "mode",
             "verifiedBy",
             "trustedLanSupported",
         )
-        val SUCCESS_KEYS = setOf("credentialId", "accessToken", "createdAt")
+        val SUCCESS_KEYS = setOf("credentialId", "accessToken", "createdAt", "hubIdentity")
         val REVOCATION_KEYS = setOf("credentialId", "revoked")
         val ROTATION_KEYS = setOf("credentialId", "accessToken", "rotatedAt")
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()

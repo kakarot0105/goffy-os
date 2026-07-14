@@ -8,6 +8,8 @@
 GOFFY Hub can now emit a versioned `goffy.pairing.bundle.v1` payload that is
 safe to transfer as a QR code during USB-loopback onboarding. Android still
 required manual JSON entry, which is too error-prone for phone-first setup.
+ADR 0021 later supersedes this initial payload with `goffy.pairing.bundle.v2`
+for Android-pinned public Hub identity metadata.
 
 Adding camera access is a security decision. GOFFY must not create background
 camera behavior, generic camera capture, or an automatic pairing shortcut that

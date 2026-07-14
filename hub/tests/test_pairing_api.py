@@ -226,9 +226,13 @@ def test_pairing_bundle_contains_loopback_identity_and_redeemable_challenge(
         )
 
     assert bundle == {
-        "bundleVersion": "goffy.pairing.bundle.v1",
+        "bundleVersion": "goffy.pairing.bundle.v2",
         "hubEndpoint": "ws://127.0.0.1:8787/ws/v1",
         "hubIdentity": {
+            "schemaVersion": "goffy.hub.identity.v1",
+            "hubId": bundle["hubIdentity"]["hubId"],
+            "fingerprint": bundle["hubIdentity"]["fingerprint"],
+            "createdAt": bundle["hubIdentity"]["createdAt"],
             "mode": "usb_loopback",
             "verifiedBy": "loopback_admin_session",
             "trustedLanSupported": False,
@@ -239,7 +243,11 @@ def test_pairing_bundle_contains_loopback_identity_and_redeemable_challenge(
             "expiresAt": bundle["challenge"]["expiresAt"],
         },
     }
+    assert bundle["hubIdentity"]["fingerprint"].startswith("sha256:")
+    assert "identitySeed" not in bundle_response.text
     assert redemption_response.status_code == 201
+    assert redemption_response.json()["hubIdentity"] == bundle["hubIdentity"]
+    assert "identitySeed" not in redemption_response.text
 
 
 def test_admin_hub_identity_is_stable_no_store_and_never_exposes_seed(

@@ -12,11 +12,12 @@ tools are the capability boundary.
 > for the newest 50 terminal tasks. MCP tool-list changes now stream with
 > bounded, session-local reconnect replay. Paired phones can now forget locally
 > and ask the Hub once to revoke or rotate the exact matching credential over
-> loopback. The Hub now emits a versioned USB-loopback pairing bundle, and Android
-> can scan that bundle through a foreground-only QR pairing panel. The Hub also
-> persists a loopback-only identity fingerprint for future pinning. Physical
-> Moto G verification, automatic rotation scheduling, direct Hub/MCP operator
-> audit, Android-pinned Hub identity, and trusted LAN operation remain open.
+> loopback. The Hub now emits a versioned USB-loopback pairing bundle with its
+> public loopback identity fingerprint, and Android can scan that bundle through
+> a foreground-only QR pairing panel, reject bundles without the fingerprint, and
+> restore the pinned identity from encrypted paired credentials. Physical Moto G
+> verification, automatic rotation scheduling, direct Hub/MCP operator audit,
+> certificate-backed Hub identity proof, and trusted LAN operation remain open.
 
 ## Current vertical slice
 
@@ -41,7 +42,7 @@ tools are the capability boundary.
 - Bounded, fail-closed Hub tool-health checks
 - Authenticated MCP tool-list change notifications with bounded reconnect replay
 - Explicit loopback pairing with digest-only, revocable per-device Hub credentials
-- QR-ready `goffy.pairing.bundle.v1` payloads for USB-loopback onboarding
+- QR-ready `goffy.pairing.bundle.v2` payloads for USB-loopback onboarding
 - Local operator script that writes a short-lived pairing-bundle SVG QR artifact
 - In-process pairing smoke verifier for bundle creation, one-time redemption,
   replay rejection, and token rotation
@@ -49,6 +50,8 @@ tools are the capability boundary.
   termination
 - Loopback-admin Hub identity fingerprint endpoint backed by an owner-only local
   identity file
+- Android-pinned USB-loopback Hub identity fingerprint in the pairing bundle and
+  encrypted paired credential record
 - Foreground Android challenge redemption with API-26 Keystore AES-GCM storage,
   verified restart restore, paired self-revocation, and manual paired-token
   rotation
@@ -98,10 +101,11 @@ token. The default command above is legacy USB development mode. To enable
 stable paired identity, configure the explicit state path and follow
 [Hub setup](docs/setup/hub.md). Pairing remains loopback-only and trusted LAN use
 is still unsupported. Android can now redeem the versioned pairing bundle through
-the foreground Hub card over USB loopback, scan that bundle as a QR code, and
-restore the encrypted credential after restart. Hub-side token rotation is
-available over loopback, and Android exposes a confirmed manual rotation action
-for paired links.
+the foreground Hub card over USB loopback, scan that bundle as a QR code, pin the
+public Hub fingerprint from the bundle only after the redemption response returns
+the same identity, and restore the encrypted credential and fingerprint after
+restart. Hub-side token rotation is available over loopback, and Android exposes
+a confirmed manual rotation action for paired links.
 Generate the local QR artifact from the Mac with:
 
 ```bash

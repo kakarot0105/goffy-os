@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 from collections.abc import Mapping
 from pathlib import Path
@@ -24,9 +25,13 @@ from scripts.create_pairing_qr import (
 
 TEST_BOOTSTRAP_TOKEN = "bootstrap-" + "token"
 PAIRING_BUNDLE: dict[str, Any] = {
-    "bundleVersion": "goffy.pairing.bundle.v1",
+    "bundleVersion": "goffy.pairing.bundle.v2",
     "hubEndpoint": "ws://127.0.0.1:8787/ws/v1",
     "hubIdentity": {
+        "schemaVersion": "goffy.hub.identity.v1",
+        "hubId": "22222222-2222-4222-8222-222222222222",
+        "fingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "createdAt": "2026-07-14T12:00:00Z",
         "mode": "usb_loopback",
         "verifiedBy": "loopback_admin_session",
         "trustedLanSupported": False,
@@ -123,6 +128,45 @@ def test_validate_pairing_bundle_rejects_trusted_lan_claim() -> None:
         validate_pairing_bundle(bad_bundle)
 
 
+def test_validate_pairing_bundle_requires_hub_identity_fingerprint() -> None:
+    bad_bundle = json.loads(json.dumps(PAIRING_BUNDLE))
+    del bad_bundle["hubIdentity"]["fingerprint"]
+
+    with pytest.raises(PairingQrError):
+        validate_pairing_bundle(bad_bundle)
+
+
+def test_validate_pairing_bundle_requires_typed_hub_identity_fields() -> None:
+    bad_hub_id = json.loads(json.dumps(PAIRING_BUNDLE))
+    bad_hub_id["hubIdentity"]["hubId"] = "not-a-uuid"
+    bad_timestamp = json.loads(json.dumps(PAIRING_BUNDLE))
+    bad_timestamp["hubIdentity"]["createdAt"] = "not-a-timestamp"
+    naive_timestamp = json.loads(json.dumps(PAIRING_BUNDLE))
+    naive_timestamp["hubIdentity"]["createdAt"] = "2026-07-14T12:00:00"
+
+    with pytest.raises(PairingQrError):
+        validate_pairing_bundle(bad_hub_id)
+    with pytest.raises(PairingQrError):
+        validate_pairing_bundle(bad_timestamp)
+    with pytest.raises(PairingQrError):
+        validate_pairing_bundle(naive_timestamp)
+
+
+def test_validate_pairing_bundle_requires_typed_endpoint_and_challenge_fields() -> None:
+    bad_endpoint = json.loads(json.dumps(PAIRING_BUNDLE))
+    bad_endpoint["hubEndpoint"] = "not-a-ws-endpoint"
+    bad_challenge_id = json.loads(json.dumps(PAIRING_BUNDLE))
+    bad_challenge_id["challenge"]["challengeId"] = "not-a-uuid"
+    short_token = json.loads(json.dumps(PAIRING_BUNDLE))
+    short_token["challenge"]["pairingToken"] = "x"
+    bad_expiry = json.loads(json.dumps(PAIRING_BUNDLE))
+    bad_expiry["challenge"]["expiresAt"] = "not-a-timestamp"
+
+    for bad_bundle in (bad_endpoint, bad_challenge_id, short_token, bad_expiry):
+        with pytest.raises(PairingQrError):
+            validate_pairing_bundle(bad_bundle)
+
+
 def test_canonical_payload_is_stable_and_secret_stays_in_payload_only() -> None:
     payload = canonical_bundle_payload(PAIRING_BUNDLE)
 
@@ -142,6 +186,19 @@ def test_write_private_text_rejects_overwrite_without_force(tmp_path: Path) -> N
     write_private_text(output, "second", force=True)
     assert output.read_text(encoding="utf-8") == "second"
     assert stat.S_IMODE(output.stat().st_mode) == 0o600
+
+
+def test_write_private_text_rejects_symlink_output(tmp_path: Path) -> None:
+    if getattr(os, "O_NOFOLLOW", 0) == 0:
+        pytest.skip("O_NOFOLLOW is unavailable on this platform")
+    target = tmp_path / "target.svg"
+    output = tmp_path / "qr.svg"
+    output.symlink_to(target)
+
+    with pytest.raises(PairingQrError):
+        write_private_text(output, "secret", force=True)
+
+    assert not target.exists()
 
 
 def test_svg_qr_uses_local_renderer() -> None:

@@ -32,9 +32,11 @@ class IssuedHubCredential(
     val credentialId: UUID,
     internal val accessToken: String,
     val createdAt: Instant,
+    val hubIdentity: HubIdentityPin,
 ) {
     override fun toString(): String =
-        "IssuedHubCredential(credentialId=$credentialId, accessToken=REDACTED, createdAt=$createdAt)"
+        "IssuedHubCredential(credentialId=$credentialId, accessToken=REDACTED, " +
+            "createdAt=$createdAt, hubIdentity=$hubIdentity)"
 }
 
 class RotatedHubCredential(

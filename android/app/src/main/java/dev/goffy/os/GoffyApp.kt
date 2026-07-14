@@ -626,6 +626,22 @@ private fun HubLinkSection(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (state.hubLinkState == HubLinkState.PAIRED &&
+                    state.hubIdentityFingerprint != null
+                ) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(
+                            R.string.hub_identity_fingerprint,
+                            state.hubIdentityFingerprint,
+                        ),
+                        color = Mist,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             TextButton(onClick = onToggleSetup) {
                 Text(stringResource(if (showSetup) R.string.hide_link_setup else R.string.edit_link_setup))

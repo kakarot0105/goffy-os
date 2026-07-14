@@ -25,7 +25,7 @@ from goffy_protocol import (
 
 FIXTURE_PATH = Path(__file__).parents[1] / "protocol" / "fixtures" / "mac-system-info-flow.jsonl"
 PAIRING_BUNDLE_FIXTURE_PATH = (
-    Path(__file__).parents[1] / "protocol" / "fixtures" / "pairing-bundle-v1.json"
+    Path(__file__).parents[1] / "protocol" / "fixtures" / "pairing-bundle-v2.json"
 )
 DISCOVERY_SCHEMA_PATH = (
     Path(__file__).parents[1] / "protocol" / "schemas" / "capability-discovery.schema.json"

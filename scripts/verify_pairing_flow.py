@@ -156,6 +156,10 @@ def verify_pairing_flow(output: Path | None = None, force: bool = False) -> Pair
             require_status(redemption_response, 201, "pairing redemption")
             require_no_store(redemption_response, "pairing redemption")
             credential = redemption_response.json()
+            if credential.get("hubIdentity") != bundle["hubIdentity"]:
+                raise PairingSmokeError("pairing redemption Hub identity did not match bundle")
+            if "identitySeed" in redemption_response.text:
+                raise PairingSmokeError("pairing redemption exposed private Hub identity material")
 
             replay_response = client.post("/pairing/v1/redeem", json=redemption_request)
             if replay_response.status_code == 201:

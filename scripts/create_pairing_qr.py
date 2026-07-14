@@ -3,10 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import stat
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import datetime
 from io import BytesIO
 from ipaddress import ip_address
 from pathlib import Path
@@ -14,14 +16,19 @@ from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
+from uuid import UUID
 
 PAIRING_BUNDLE_PATH = "/admin/v1/pairing/bundles"
 DEFAULT_HUB_URL = "http://127.0.0.1:8787"
 DEFAULT_OUTPUT = Path("goffy-pairing-bundle.svg")
 MAX_BUNDLE_BYTES = 4096
 TIMEOUT_SECONDS = 5.0
-PAIRING_BUNDLE_VERSION = "goffy.pairing.bundle.v1"
+PAIRING_BUNDLE_VERSION = "goffy.pairing.bundle.v2"
 PAIRING_QR_ARTIFACT_MARKER = "GOFFY_PAIRING_QR_ARTIFACT_V1"
+PAIRING_ENDPOINT_PATTERN = re.compile(r"^wss?://127\.0\.0\.1(?::[0-9]{1,5})?/ws/v1$")
+TIMESTAMP_PATTERN = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$"
+)
 
 UrlOpen = Callable[[Request, float], Any]
 
@@ -117,21 +124,32 @@ def validate_pairing_bundle(bundle: Mapping[str, Any]) -> None:
         raise PairingQrError("Hub pairing bundle has an unexpected shape.")
     if bundle["bundleVersion"] != PAIRING_BUNDLE_VERSION:
         raise PairingQrError("Hub pairing bundle version is unsupported.")
-    if not isinstance(bundle["hubEndpoint"], str) or not bundle["hubEndpoint"]:
+    if not _is_hub_endpoint(bundle["hubEndpoint"]):
         raise PairingQrError("Hub pairing bundle endpoint is invalid.")
     identity = bundle["hubIdentity"]
     challenge = bundle["challenge"]
     if not isinstance(identity, dict) or set(identity) != {
+        "schemaVersion",
+        "hubId",
+        "fingerprint",
+        "createdAt",
         "mode",
         "verifiedBy",
         "trustedLanSupported",
     }:
         raise PairingQrError("Hub pairing bundle identity is invalid.")
-    if identity != {
-        "mode": "usb_loopback",
-        "verifiedBy": "loopback_admin_session",
-        "trustedLanSupported": False,
-    }:
+    if (
+        identity["schemaVersion"] != "goffy.hub.identity.v1"
+        or not _is_uuid(identity["hubId"])
+        or not isinstance(identity["fingerprint"], str)
+        or not identity["fingerprint"].startswith("sha256:")
+        or len(identity["fingerprint"]) != len("sha256:") + 64
+        or any(character not in "0123456789abcdef" for character in identity["fingerprint"][7:])
+        or not _is_datetime(identity["createdAt"])
+        or identity["mode"] != "usb_loopback"
+        or identity["verifiedBy"] != "loopback_admin_session"
+        or identity["trustedLanSupported"] is not False
+    ):
         raise PairingQrError("Hub pairing bundle identity is not USB-loopback-only.")
     if not isinstance(challenge, dict) or set(challenge) != {
         "challengeId",
@@ -139,8 +157,43 @@ def validate_pairing_bundle(bundle: Mapping[str, Any]) -> None:
         "expiresAt",
     }:
         raise PairingQrError("Hub pairing bundle challenge is invalid.")
-    if not all(isinstance(challenge[key], str) and challenge[key] for key in challenge):
+    if (
+        not _is_uuid(challenge["challengeId"])
+        or not isinstance(challenge["pairingToken"], str)
+        or not 32 <= len(challenge["pairingToken"]) <= 128
+        or not _is_datetime(challenge["expiresAt"])
+    ):
         raise PairingQrError("Hub pairing bundle challenge fields are invalid.")
+
+
+def _is_hub_endpoint(value: object) -> bool:
+    if not isinstance(value, str) or not PAIRING_ENDPOINT_PATTERN.fullmatch(value):
+        return False
+    parsed = urlparse(value)
+    try:
+        port = parsed.port
+    except ValueError:
+        return False
+    if port is not None and not 1 <= port <= 65_535:
+        return False
+    return parsed.hostname == "127.0.0.1" and parsed.path == "/ws/v1"
+
+
+def _is_uuid(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    with suppress(ValueError):
+        return str(UUID(value)) == value.lower()
+    return False
+
+
+def _is_datetime(value: object) -> bool:
+    if not isinstance(value, str) or not TIMESTAMP_PATTERN.fullmatch(value):
+        return False
+    with suppress(ValueError):
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.tzinfo is not None and parsed.utcoffset() is not None
+    return False
 
 
 def canonical_bundle_payload(bundle: Mapping[str, Any]) -> str:
@@ -152,15 +205,22 @@ def write_private_text(path: Path, content: str, *, force: bool) -> None:
         raise PairingQrError(f"{path} already exists. Pass --force to overwrite it.")
     path.parent.mkdir(parents=True, exist_ok=True)
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    flags |= getattr(os, "O_NOFOLLOW", 0)
     if not force:
         flags |= os.O_EXCL
-    descriptor = os.open(path, flags, 0o600)
     try:
+        descriptor = os.open(path, flags, 0o600)
+    except OSError as error:
+        raise PairingQrError(f"{path} could not be opened safely for writing.") from error
+    try:
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise PairingQrError("QR output must be a regular file.")
         with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            descriptor = -1
             file.write(content)
         path.chmod(stat.S_IRUSR | stat.S_IWUSR)
     except Exception:
-        with suppress(OSError):
+        if descriptor >= 0:
             os.close(descriptor)
         raise
 

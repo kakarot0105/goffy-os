@@ -13,6 +13,7 @@ import dev.goffy.os.hub.HubCredentialLoadResult
 import dev.goffy.os.hub.HubCredentialStore
 import dev.goffy.os.hub.HubEndpoint
 import dev.goffy.os.hub.HubGateway
+import dev.goffy.os.hub.HubIdentityPin
 import dev.goffy.os.hub.HubPairingException
 import dev.goffy.os.hub.HubPairingGateway
 import dev.goffy.os.hub.IssuedHubCredential
@@ -68,6 +69,8 @@ class GoffyViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private val endpoint = "ws://127.0.0.1:8787/ws/v1"
     private val token = "test-token-that-is-long-enough"
+    private val hubFingerprint =
+        "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
     @Before
     fun setUp() {
@@ -109,6 +112,7 @@ class GoffyViewModelTest {
         advanceUntilIdle()
 
         assertEquals(HubLinkState.PAIRED, viewModel.uiState.value.hubLinkState)
+        assertEquals(hubFingerprint, viewModel.uiState.value.hubIdentityFingerprint)
         assertEquals(TaskPhase.VERIFIED, viewModel.uiState.value.timeline.entries.single().phase)
         assertEquals(1, gateway.requests.size)
         assertFalse(viewModel.uiState.value.toString().contains(token))
@@ -130,6 +134,7 @@ class GoffyViewModelTest {
 
         assertEquals(HubLinkState.PAIRED, viewModel.uiState.value.hubLinkState)
         assertEquals(endpoint, viewModel.uiState.value.hubEndpoint)
+        assertEquals(hubFingerprint, viewModel.uiState.value.hubIdentityFingerprint)
         assertEquals(1, pairingGateway.calls)
         assertEquals(1, credentialStore.saves)
         assertFalse(viewModel.uiState.value.toString().contains(token))
@@ -321,7 +326,12 @@ class GoffyViewModelTest {
             storedCredential().createdAt,
             credentialStore.savedCredentials.single().createdAt,
         )
+        assertEquals(
+            hubFingerprint,
+            credentialStore.savedCredentials.single().hubIdentity.fingerprint,
+        )
         assertEquals(HubLinkState.PAIRED, viewModel.uiState.value.hubLinkState)
+        assertEquals(hubFingerprint, viewModel.uiState.value.hubIdentityFingerprint)
         assertTrue(viewModel.uiState.value.linkNotice?.message.orEmpty().contains("rotated"))
         assertEquals(TaskPhase.CANCELLED, viewModel.uiState.value.timeline.entries.single().phase)
         assertFalse(viewModel.uiState.value.toString().contains("rotated-token"))
@@ -860,7 +870,14 @@ class GoffyViewModelTest {
         deviceId = "goffy-android-test",
         accessToken = "$token-xx",
         createdAt = Instant.parse("2026-07-13T16:00:00Z"),
+        hubIdentity = hubIdentityPin(),
         allowInsecureLoopback = true,
+    )
+
+    private fun hubIdentityPin(): HubIdentityPin = HubIdentityPin.create(
+        hubId = UUID.fromString("44444444-4444-4444-8444-444444444444"),
+        fingerprint = hubFingerprint,
+        createdAt = Instant.parse("2026-07-13T15:59:00Z"),
     )
 
     private fun batteryAuditRecord(): ClosedTerminalAuditRecord = ClosedTerminalAuditRecord(
@@ -1048,6 +1065,7 @@ class GoffyViewModelTest {
                 UUID.fromString("55555555-5555-4555-8555-555555555555"),
                 "test-token-that-is-long-enough-xx",
                 Instant.parse("2026-07-13T16:00:00Z"),
+                hubIdentityPin(),
             )
         }
 

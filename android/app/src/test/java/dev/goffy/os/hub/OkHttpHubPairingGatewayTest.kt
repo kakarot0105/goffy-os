@@ -66,6 +66,9 @@ class OkHttpHubPairingGatewayTest {
             )
             assertEquals(UUID.fromString(CREDENTIAL_ID), issued.credentialId)
             assertEquals(Instant.parse("2026-07-13T16:00:00Z"), issued.createdAt)
+            assertEquals(UUID.fromString(HUB_ID), issued.hubIdentity.hubId)
+            assertEquals(HUB_FINGERPRINT, issued.hubIdentity.fingerprint)
+            assertEquals(Instant.parse(HUB_IDENTITY_CREATED_AT), issued.hubIdentity.createdAt)
             assertFalse(issued.toString().contains(ACCESS_TOKEN))
             gateway.close()
         }
@@ -77,7 +80,7 @@ class OkHttpHubPairingGatewayTest {
             server.start()
             val gateway = OkHttpHubPairingGateway(OkHttpClient())
             val badIdentity = pairingBundle(server).replace(
-                "\"hubIdentity\":{\"mode\":\"usb_loopback\",\"verifiedBy\":\"loopback_admin_session\",\"trustedLanSupported\":false}",
+                hubIdentityJson(),
                 "\"hubIdentity\":true",
             )
             val badChallenge = pairingBundle(server).replace(
@@ -164,6 +167,36 @@ class OkHttpHubPairingGatewayTest {
 
             assertTrue(failure is HubPairingException)
             assertEquals("invalid_pairing_response", (failure as HubPairingException).code)
+            assertEquals(1, server.requestCount)
+            gateway.close()
+        }
+    }
+
+    @Test
+    fun rejectsRedemptionResponseWithMismatchedHubIdentity() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            val mismatchedIdentity = hubIdentityJson().replace(
+                HUB_FINGERPRINT,
+                "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+            )
+            server.enqueue(
+                jsonResponse(
+                    201,
+                    "{\"credentialId\":\"$CREDENTIAL_ID\",\"accessToken\":\"$ACCESS_TOKEN\"," +
+                        "\"createdAt\":\"2026-07-13T16:00:00Z\"," +
+                        mismatchedIdentity + "}",
+                ),
+            )
+            val gateway = OkHttpHubPairingGateway(OkHttpClient())
+
+            val failure = runCatching {
+                gateway.redeem(endpoint(server), pairingBundle(server), "goffy-test", "Moto G")
+            }.exceptionOrNull()
+
+            assertTrue(failure is HubPairingException)
+            assertEquals("hub_identity_mismatch", (failure as HubPairingException).code)
+            assertFalse(failure.message.orEmpty().contains(ACCESS_TOKEN))
             assertEquals(1, server.requestCount)
             gateway.close()
         }
@@ -470,18 +503,47 @@ class OkHttpHubPairingGatewayTest {
         gateway.close()
     }
 
+    @Test
+    fun rejectsPairingBundleWithoutHubFingerprintBeforeAnyNetworkCall() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            val gateway = OkHttpHubPairingGateway(OkHttpClient())
+            val missingFingerprint = pairingBundle(server).replace(
+                "\"fingerprint\":\"$HUB_FINGERPRINT\",",
+                "",
+            )
+
+            val failure = runCatching {
+                gateway.redeem(endpoint(server), missingFingerprint, "goffy-test", "Moto G")
+            }.exceptionOrNull()
+
+            assertTrue(failure is HubPairingException)
+            assertEquals("invalid_pairing_payload", (failure as HubPairingException).code)
+            assertFalse(failure.message.orEmpty().contains(PAIRING_TOKEN))
+            assertEquals(0, server.requestCount)
+            gateway.close()
+        }
+    }
+
     private fun endpoint(server: MockWebServer): HubEndpoint = HubEndpoint.create(
         server.url("/ws/v1").toString().replaceFirst("http://", "ws://"),
         allowInsecureLoopback = true,
     )
 
     private fun pairingBundle(server: MockWebServer): String =
-        "{\"bundleVersion\":\"goffy.pairing.bundle.v1\"," +
+        "{\"bundleVersion\":\"goffy.pairing.bundle.v2\"," +
             "\"hubEndpoint\":\"${endpoint(server).webSocketUrl}\"," +
-            "\"hubIdentity\":{\"mode\":\"usb_loopback\"," +
-            "\"verifiedBy\":\"loopback_admin_session\"," +
-            "\"trustedLanSupported\":false}," +
+            hubIdentityJson() + "," +
             "\"challenge\":$CHALLENGE_JSON}"
+
+    private fun hubIdentityJson(): String =
+        "\"hubIdentity\":{\"schemaVersion\":\"goffy.hub.identity.v1\"," +
+            "\"hubId\":\"$HUB_ID\"," +
+            "\"fingerprint\":\"$HUB_FINGERPRINT\"," +
+            "\"createdAt\":\"$HUB_IDENTITY_CREATED_AT\"," +
+            "\"mode\":\"usb_loopback\"," +
+            "\"verifiedBy\":\"loopback_admin_session\"," +
+            "\"trustedLanSupported\":false}"
 
     private fun jsonResponse(status: Int, body: String): MockResponse = MockResponse.Builder()
         .code(status)
@@ -493,6 +555,10 @@ class OkHttpHubPairingGatewayTest {
         const val CHALLENGE_ID = "11111111-1111-4111-8111-111111111111"
         const val CREDENTIAL_ID = "22222222-2222-4222-8222-222222222222"
         const val OTHER_CREDENTIAL_ID = "33333333-3333-4333-8333-333333333333"
+        const val HUB_ID = "44444444-4444-4444-8444-444444444444"
+        const val HUB_IDENTITY_CREATED_AT = "2026-07-13T15:59:00Z"
+        const val HUB_FINGERPRINT =
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
         const val PAIRING_TOKEN = "pairing-token-abcdefghijklmnopqrstuvwxyz0123456789"
         const val ACCESS_TOKEN = "paired-access-token-abcdefghijklmnopqrstuvwxyz0123456789"
         const val ROTATED_ACCESS_TOKEN = "rotated-access-token-abcdefghijklmnopqrstuvwxyz0123456789"
@@ -501,7 +567,14 @@ class OkHttpHubPairingGatewayTest {
                 "\"expiresAt\":\"2026-07-13T16:02:00Z\"}"
         const val SUCCESS_JSON =
             "{\"credentialId\":\"$CREDENTIAL_ID\",\"accessToken\":\"$ACCESS_TOKEN\"," +
-                "\"createdAt\":\"2026-07-13T16:00:00Z\"}"
+                "\"createdAt\":\"2026-07-13T16:00:00Z\"," +
+                "\"hubIdentity\":{\"schemaVersion\":\"goffy.hub.identity.v1\"," +
+                "\"hubId\":\"$HUB_ID\"," +
+                "\"fingerprint\":\"$HUB_FINGERPRINT\"," +
+                "\"createdAt\":\"$HUB_IDENTITY_CREATED_AT\"," +
+                "\"mode\":\"usb_loopback\"," +
+                "\"verifiedBy\":\"loopback_admin_session\"," +
+                "\"trustedLanSupported\":false}}"
         const val ROTATION_JSON =
             "{\"credentialId\":\"$CREDENTIAL_ID\",\"accessToken\":\"$ROTATED_ACCESS_TOKEN\"," +
                 "\"rotatedAt\":\"2026-07-13T16:05:00Z\"}"

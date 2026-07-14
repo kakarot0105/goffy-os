@@ -54,14 +54,29 @@ class AndroidHubCredentialStore internal constructor(
                 deviceId = value.requiredString("deviceId"),
                 accessToken = value.requiredString("accessToken"),
                 createdAt = value.requiredString("createdAt"),
+                hubIdentity = value.requiredObject("hubIdentity"),
             )
             if (wire.schemaVersion != SCHEMA_VERSION) throw IllegalArgumentException("schema mismatch")
+            val identity = wire.hubIdentity
+            identity.requireExactKeys(HUB_IDENTITY_KEYS)
+            if (
+                identity.requiredString("schemaVersion") != HubIdentityPin.SCHEMA_VERSION ||
+                identity.requiredString("verifiedBy") != HubIdentityPin.VERIFIED_BY ||
+                identity.requiredBoolean("trustedLanSupported")
+            ) {
+                throw IllegalArgumentException("Hub identity is not trusted for local pairing")
+            }
             val credential = StoredHubCredential.create(
                 endpoint = wire.endpoint,
                 credentialId = java.util.UUID.fromString(wire.credentialId),
                 deviceId = wire.deviceId,
                 accessToken = wire.accessToken,
                 createdAt = java.time.Instant.parse(wire.createdAt),
+                hubIdentity = HubIdentityPin.create(
+                    hubId = java.util.UUID.fromString(identity.requiredString("hubId")),
+                    fingerprint = identity.requiredString("fingerprint"),
+                    createdAt = java.time.Instant.parse(identity.requiredString("createdAt")),
+                ),
                 allowInsecureLoopback = allowInsecureLoopback,
             )
             HubCredentialLoadResult.Loaded(credential)
@@ -81,6 +96,14 @@ class AndroidHubCredentialStore internal constructor(
             put("deviceId", credential.deviceId)
             put("accessToken", credential.accessToken)
             put("createdAt", credential.createdAt.toString())
+            put("hubIdentity", buildJsonObject {
+                put("schemaVersion", HubIdentityPin.SCHEMA_VERSION)
+                put("hubId", credential.hubIdentity.hubId.toString())
+                put("fingerprint", credential.hubIdentity.fingerprint)
+                put("createdAt", credential.hubIdentity.createdAt.toString())
+                put("verifiedBy", HubIdentityPin.VERIFIED_BY)
+                put("trustedLanSupported", false)
+            })
         }.toString().toByteArray(Charsets.UTF_8)
         if (plaintext.size > MAX_PLAINTEXT_BYTES) {
             throw HubCredentialStoreException("Hub credential record is too large.")
@@ -152,16 +175,17 @@ class AndroidHubCredentialStore internal constructor(
         val deviceId: String,
         val accessToken: String,
         val createdAt: String,
+        val hubIdentity: JsonObject,
     ) {
         override fun toString(): String =
             "StoredCredentialWire(schemaVersion=$schemaVersion, endpoint=$endpoint, " +
                 "credentialId=$credentialId, deviceId=$deviceId, accessToken=REDACTED, " +
-                "createdAt=$createdAt)"
+                "createdAt=$createdAt, hubIdentity=$hubIdentity)"
     }
 
     private companion object {
         const val CREDENTIAL_FILE_NAME = "paired-hub-credential.v1"
-        const val SCHEMA_VERSION = 1
+        const val SCHEMA_VERSION = 2
         const val MAX_PLAINTEXT_BYTES = 8_192
         const val MAX_SEALED_BYTES = 12_288
         val RECORD_KEYS = setOf(
@@ -171,6 +195,15 @@ class AndroidHubCredentialStore internal constructor(
             "deviceId",
             "accessToken",
             "createdAt",
+            "hubIdentity",
+        )
+        val HUB_IDENTITY_KEYS = setOf(
+            "schemaVersion",
+            "hubId",
+            "fingerprint",
+            "createdAt",
+            "verifiedBy",
+            "trustedLanSupported",
         )
 
         fun strictJson() = Json {
@@ -197,6 +230,18 @@ class AndroidHubCredentialStore internal constructor(
             return primitive.content.toIntOrNull()
                 ?: throw SerializationException("JSON number is invalid")
         }
+
+        fun JsonObject.requiredBoolean(name: String): Boolean {
+            val primitive = get(name) as? JsonPrimitive
+                ?: throw SerializationException("missing JSON Boolean")
+            if (primitive.isString || primitive.content !in setOf("true", "false")) {
+                throw SerializationException("JSON value must be a Boolean")
+            }
+            return primitive.content == "true"
+        }
+
+        fun JsonObject.requiredObject(name: String): JsonObject =
+            get(name) as? JsonObject ?: throw SerializationException("missing JSON object")
     }
 }
 
