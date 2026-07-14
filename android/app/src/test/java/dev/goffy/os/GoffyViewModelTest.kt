@@ -16,6 +16,7 @@ import dev.goffy.os.hub.HubGateway
 import dev.goffy.os.hub.HubPairingException
 import dev.goffy.os.hub.HubPairingGateway
 import dev.goffy.os.hub.IssuedHubCredential
+import dev.goffy.os.hub.RotatedHubCredential
 import dev.goffy.os.hub.SelfRevocationResult
 import dev.goffy.os.hub.StoredHubCredential
 import dev.goffy.os.phone.DefaultPhoneToolGateway
@@ -278,6 +279,122 @@ class GoffyViewModelTest {
         assertEquals(HubLinkState.UNPAIRED, viewModel.uiState.value.hubLinkState)
         assertEquals(false, viewModel.uiState.value.linkNotice?.warning)
         assertTrue(viewModel.uiState.value.linkNotice?.message.orEmpty().contains("Debug"))
+    }
+
+    @Test
+    fun rotationCancelsActiveWorkAndPersistsTheNewBearer() = runTest(dispatcher) {
+        val credentialStore = RecordingCredentialStore(
+            HubCredentialLoadResult.Loaded(storedCredential()),
+        )
+        val pairingGateway = RecordingPairingGateway()
+        val gateway = FakeHubGateway {
+            flow {
+                emit(ExecutionEvent.Starting(1))
+                awaitCancellation()
+            }
+        }
+        val viewModel = createViewModel(
+            gateway,
+            pairingGateway = pairingGateway,
+            credentialStore = credentialStore,
+        )
+        advanceUntilIdle()
+        viewModel.submitCommand("Show my Mac status")
+        runCurrent()
+
+        viewModel.rotateHubCredential()
+        advanceUntilIdle()
+
+        assertEquals(1, pairingGateway.rotationCalls)
+        assertEquals(storedCredential().credentialId, pairingGateway.rotatedCredentialIds.single())
+        assertEquals(1, credentialStore.saves)
+        assertEquals(
+            storedCredential().credentialId,
+            credentialStore.savedCredentials.single().credentialId,
+        )
+        assertEquals("goffy-android-test", credentialStore.savedCredentials.single().deviceId)
+        assertEquals(
+            "rotated-token-that-is-long-enough-xx",
+            credentialStore.savedCredentials.single().accessToken,
+        )
+        assertEquals(
+            storedCredential().createdAt,
+            credentialStore.savedCredentials.single().createdAt,
+        )
+        assertEquals(HubLinkState.PAIRED, viewModel.uiState.value.hubLinkState)
+        assertTrue(viewModel.uiState.value.linkNotice?.message.orEmpty().contains("rotated"))
+        assertEquals(TaskPhase.CANCELLED, viewModel.uiState.value.timeline.entries.single().phase)
+        assertFalse(viewModel.uiState.value.toString().contains("rotated-token"))
+    }
+
+    @Test
+    fun rotationFailureDisablesMacAccessAndClearsLocalAuthority() = runTest(dispatcher) {
+        val credentialStore = RecordingCredentialStore(
+            HubCredentialLoadResult.Loaded(storedCredential()),
+        )
+        val pairingGateway = RecordingPairingGateway(failRotation = true)
+        val viewModel = createViewModel(
+            FakeHubGateway { flowOf() },
+            pairingGateway = pairingGateway,
+            credentialStore = credentialStore,
+        )
+        advanceUntilIdle()
+
+        viewModel.rotateHubCredential()
+        advanceUntilIdle()
+
+        assertEquals(1, pairingGateway.rotationCalls)
+        assertEquals(0, credentialStore.saves)
+        assertEquals(1, credentialStore.clears)
+        assertEquals(HubLinkState.DEGRADED, viewModel.uiState.value.hubLinkState)
+        assertFalse(viewModel.uiState.value.hubConfigured)
+        assertTrue(viewModel.uiState.value.linkError.orEmpty().contains("disabled"))
+    }
+
+    @Test
+    fun rotationPersistenceFailureDisablesMacAccessAndClearsLocalAuthority() = runTest(dispatcher) {
+        val credentialStore = RecordingCredentialStore(
+            initial = HubCredentialLoadResult.Loaded(storedCredential()),
+            failSaves = true,
+        )
+        val pairingGateway = RecordingPairingGateway()
+        val viewModel = createViewModel(
+            FakeHubGateway { flowOf() },
+            pairingGateway = pairingGateway,
+            credentialStore = credentialStore,
+        )
+        advanceUntilIdle()
+
+        viewModel.rotateHubCredential()
+        advanceUntilIdle()
+
+        assertEquals(1, pairingGateway.rotationCalls)
+        assertEquals(1, credentialStore.saves)
+        assertEquals(1, credentialStore.clears)
+        assertEquals(HubLinkState.DEGRADED, viewModel.uiState.value.hubLinkState)
+        assertFalse(viewModel.uiState.value.hubConfigured)
+        assertTrue(viewModel.uiState.value.linkError.orEmpty().contains("pair again"))
+    }
+
+    @Test
+    fun rotationIsUnavailableForDevelopmentBearerLinks() = runTest(dispatcher) {
+        val pairingGateway = RecordingPairingGateway()
+        val credentialStore = RecordingCredentialStore()
+        val viewModel = createViewModel(
+            FakeHubGateway { flowOf() },
+            pairingGateway = pairingGateway,
+            credentialStore = credentialStore,
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.configureHub(endpoint, token))
+        viewModel.rotateHubCredential()
+        advanceUntilIdle()
+
+        assertEquals(0, pairingGateway.rotationCalls)
+        assertEquals(0, credentialStore.saves)
+        assertEquals(HubLinkState.DEVELOPMENT, viewModel.uiState.value.hubLinkState)
+        assertTrue(viewModel.uiState.value.linkError.orEmpty().contains("paired"))
     }
 
     @Test
@@ -912,10 +1029,13 @@ class GoffyViewModelTest {
 
     private class RecordingPairingGateway(
         private val failRevocation: Boolean = false,
+        private val failRotation: Boolean = false,
     ) : HubPairingGateway {
         var calls = 0
         var revocationCalls = 0
+        var rotationCalls = 0
         val revokedCredentialIds = mutableListOf<UUID>()
+        val rotatedCredentialIds = mutableListOf<UUID>()
 
         override suspend fun redeem(
             endpoint: HubEndpoint,
@@ -946,6 +1066,25 @@ class GoffyViewModelTest {
             return SelfRevocationResult(expectedCredentialId, revoked = true)
         }
 
+        override suspend fun rotateSelf(
+            config: HubConfig,
+            expectedCredentialId: UUID,
+        ): RotatedHubCredential {
+            rotationCalls += 1
+            rotatedCredentialIds += expectedCredentialId
+            if (failRotation) {
+                throw HubPairingException(
+                    "simulated_rotation_failure",
+                    "Simulated rotation failure.",
+                )
+            }
+            return RotatedHubCredential(
+                expectedCredentialId,
+                "rotated-token-that-is-long-enough-xx",
+                Instant.parse("2026-07-13T16:05:00Z"),
+            )
+        }
+
         override fun close() = Unit
     }
 
@@ -962,6 +1101,11 @@ class GoffyViewModelTest {
             expectedCredentialId: UUID,
         ): SelfRevocationResult = error("self-revocation should not run while pairing is blocked")
 
+        override suspend fun rotateSelf(
+            config: HubConfig,
+            expectedCredentialId: UUID,
+        ): RotatedHubCredential = error("rotation should not run while pairing is blocked")
+
         override fun close() = Unit
     }
 
@@ -973,12 +1117,14 @@ class GoffyViewModelTest {
         private var loaded = initial
         var saves = 0
         var clears = 0
+        val savedCredentials = mutableListOf<StoredHubCredential>()
 
         override fun load(): HubCredentialLoadResult = loaded
 
         override fun save(credential: StoredHubCredential): StoredHubCredential {
             saves += 1
             if (failSaves) error("simulated credential persistence failure")
+            savedCredentials += credential
             loaded = HubCredentialLoadResult.Loaded(credential)
             return credential
         }

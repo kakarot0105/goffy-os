@@ -88,6 +88,11 @@ review both published checksums during any wrapper upgrade.
   Hub. The UI reports whether Hub revocation was verified or remains unverified.
   If local credential deletion itself cannot be verified, GOFFY enters a degraded
   state and tells the operator to clear app data before relaunching.
+- `Rotate token` is available only for paired links. It requires a visible
+  confirmation, cancels active work, makes one loopback rotation request, saves
+  the new bearer only after encrypted read-back verification, and disables Mac
+  access with a re-pair instruction if Hub rotation or local persistence is
+  ambiguous.
 - Pairing QR scanning is foreground-only. Tapping `Scan QR` requests the normal
   Android camera permission if needed, opens a visible scanner panel, decodes QR
   codes only, stores no image, and closes the camera when the panel is dismissed,
@@ -186,6 +191,15 @@ credentials on the Mac and confirm that credential has a revocation timestamp. R
 one offline pass with the Hub stopped: the app should still remove local authority
 and report remote revocation as unverified. Record the Moto G Android version and
 any Keystore, self-revocation, or OEM process-restart failure.
+
+For the token-rotation slice, pair the phone, start a Mac status task, then tap
+`Rotate token` and confirm. The active task should cancel locally, the link should
+return to `PAIRED`, and the setup card should show a non-warning rotation notice.
+Run `Show my Mac status` again to verify the new bearer works. Then restart the
+app and confirm the paired link restores without re-entering a bearer. Finally,
+force one failure by stopping the Hub before rotation; GOFFY should mark the link
+degraded, disable Mac access, and require re-pairing rather than silently using a
+possibly stale token.
 
 For the QR transfer path, first deny the camera permission and confirm pairing is
 not attempted and the setup card tells you to paste the bundle instead. Then grant

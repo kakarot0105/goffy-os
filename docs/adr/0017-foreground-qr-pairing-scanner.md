@@ -27,8 +27,8 @@ bypasses the existing typed bundle parser.
   field and require the user to tap `Pair phone` before redemption.
 - Add a local operator script that calls the loopback Hub bundle endpoint and
   writes an owner-only SVG QR artifact.
-- Keep trusted LAN, certificate pin onboarding, and Android-triggered token
-  rotation UX out of scope.
+- Keep trusted LAN, certificate pin onboarding, and automatic token rotation
+  schedules out of scope.
 
 ## Consequences
 

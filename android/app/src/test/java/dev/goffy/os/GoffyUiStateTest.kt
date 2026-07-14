@@ -86,6 +86,15 @@ class GoffyUiStateTest {
     }
 
     @Test
+    fun rotationStateIsAnExclusiveLinkOperation() {
+        val state = GoffyUiState(hubEndpoint = endpoint).hubRotationStarted()
+
+        assertEquals(HubLinkState.ROTATING, state.hubLinkState)
+        assertTrue(state.linkOperationInProgress)
+        assertFalse(state.hubConfigured)
+    }
+
+    @Test
     fun connectionAndFailureEventsRemainObservable() {
         var state = GoffyUiState(hubEndpoint = endpoint).startTask(taskId, plan)
         state = state.applyTaskEvent(taskId, ExecutionEvent.Starting(1))

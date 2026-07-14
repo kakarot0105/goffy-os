@@ -334,6 +334,129 @@ class OkHttpHubPairingGatewayTest {
     }
 
     @Test
+    fun rotatesSelfWithExactTypedRequestAndBearerHeader() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(jsonResponse(200, ROTATION_JSON))
+            val gateway = OkHttpHubPairingGateway(OkHttpClient())
+            val config = HubConfig.create(
+                server.url("/ws/v1").toString().replaceFirst("http://", "ws://"),
+                ACCESS_TOKEN,
+                allowInsecureLoopback = true,
+            )
+
+            val result = gateway.rotateSelf(config, UUID.fromString(CREDENTIAL_ID))
+            val request = server.takeRequest()
+
+            assertEquals("/pairing/v1/rotate", request.url.encodedPath)
+            assertNull(request.url.query)
+            assertEquals("POST", request.method)
+            assertEquals("Bearer $ACCESS_TOKEN", request.headers["Authorization"])
+            assertEquals(0, request.bodySize)
+            assertEquals(UUID.fromString(CREDENTIAL_ID), result.credentialId)
+            assertEquals(Instant.parse("2026-07-13T16:05:00Z"), result.rotatedAt)
+            assertFalse(result.toString().contains(ROTATED_ACCESS_TOKEN))
+            gateway.close()
+        }
+    }
+
+    @Test
+    fun rejectsMismatchedRotationResponsesWithoutRetrying() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(
+                jsonResponse(
+                    200,
+                    "{\"credentialId\":\"$OTHER_CREDENTIAL_ID\",\"accessToken\":\"$ROTATED_ACCESS_TOKEN\",\"rotatedAt\":\"2026-07-13T16:05:00Z\"}",
+                ),
+            )
+            val gateway = OkHttpHubPairingGateway(OkHttpClient())
+            val config = HubConfig.create(
+                server.url("/ws/v1").toString().replaceFirst("http://", "ws://"),
+                ACCESS_TOKEN,
+                allowInsecureLoopback = true,
+            )
+
+            val failure = runCatching {
+                gateway.rotateSelf(config, UUID.fromString(CREDENTIAL_ID))
+            }.exceptionOrNull()
+
+            assertTrue(failure is HubPairingException)
+            assertEquals("invalid_rotation_response", (failure as HubPairingException).code)
+            assertEquals(1, server.requestCount)
+            gateway.close()
+        }
+    }
+
+    @Test
+    fun mapsRotationErrorsWithoutReadingOrEchoingSecretBodies() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(jsonResponse(409, "{\"detail\":\"$ACCESS_TOKEN\"}"))
+            val gateway = OkHttpHubPairingGateway(OkHttpClient())
+            val config = HubConfig.create(
+                server.url("/ws/v1").toString().replaceFirst("http://", "ws://"),
+                ACCESS_TOKEN,
+                allowInsecureLoopback = true,
+            )
+
+            val failure = runCatching {
+                gateway.rotateSelf(config, UUID.fromString(CREDENTIAL_ID))
+            }.exceptionOrNull()
+
+            assertTrue(failure is HubPairingException)
+            assertEquals("rotation_conflict", (failure as HubPairingException).code)
+            assertFalse(failure.message.orEmpty().contains(ACCESS_TOKEN))
+            assertFalse(failure.toString().contains(ACCESS_TOKEN))
+            assertEquals(1, server.requestCount)
+            gateway.close()
+        }
+    }
+
+    @Test
+    fun defaultClientDoesNotFollowRotationRedirects() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(
+                MockResponse.Builder()
+                    .code(307)
+                    .addHeader("Location", server.url("/redirected").toString())
+                    .build(),
+            )
+            val gateway = OkHttpHubPairingGateway()
+            val config = HubConfig.create(
+                server.url("/ws/v1").toString().replaceFirst("http://", "ws://"),
+                ACCESS_TOKEN,
+                allowInsecureLoopback = true,
+            )
+
+            val failure = runCatching {
+                gateway.rotateSelf(config, UUID.fromString(CREDENTIAL_ID))
+            }.exceptionOrNull()
+
+            assertTrue(failure is HubPairingException)
+            assertEquals("rotation_rejected", (failure as HubPairingException).code)
+            assertEquals(1, server.requestCount)
+            assertEquals("/pairing/v1/rotate", server.takeRequest().url.encodedPath)
+            gateway.close()
+        }
+    }
+
+    @Test
+    fun refusesPairedTokenRotationAgainstNonLoopbackEndpoints() = runTest {
+        val gateway = OkHttpHubPairingGateway(OkHttpClient())
+        val config = HubConfig.create("wss://hub.example/ws/v1", ACCESS_TOKEN, false)
+
+        val failure = runCatching {
+            gateway.rotateSelf(config, UUID.fromString(CREDENTIAL_ID))
+        }.exceptionOrNull()
+
+        assertTrue(failure is HubPairingException)
+        assertEquals("rotation_loopback_required", (failure as HubPairingException).code)
+        gateway.close()
+    }
+
+    @Test
     fun refusesPairedSelfRevocationAgainstNonLoopbackEndpoints() = runTest {
         val gateway = OkHttpHubPairingGateway(OkHttpClient())
         val config = HubConfig.create("wss://hub.example/ws/v1", ACCESS_TOKEN, false)
@@ -372,11 +495,15 @@ class OkHttpHubPairingGatewayTest {
         const val OTHER_CREDENTIAL_ID = "33333333-3333-4333-8333-333333333333"
         const val PAIRING_TOKEN = "pairing-token-abcdefghijklmnopqrstuvwxyz0123456789"
         const val ACCESS_TOKEN = "paired-access-token-abcdefghijklmnopqrstuvwxyz0123456789"
+        const val ROTATED_ACCESS_TOKEN = "rotated-access-token-abcdefghijklmnopqrstuvwxyz0123456789"
         const val CHALLENGE_JSON =
             "{\"challengeId\":\"$CHALLENGE_ID\",\"pairingToken\":\"$PAIRING_TOKEN\"," +
                 "\"expiresAt\":\"2026-07-13T16:02:00Z\"}"
         const val SUCCESS_JSON =
             "{\"credentialId\":\"$CREDENTIAL_ID\",\"accessToken\":\"$ACCESS_TOKEN\"," +
                 "\"createdAt\":\"2026-07-13T16:00:00Z\"}"
+        const val ROTATION_JSON =
+            "{\"credentialId\":\"$CREDENTIAL_ID\",\"accessToken\":\"$ROTATED_ACCESS_TOKEN\"," +
+                "\"rotatedAt\":\"2026-07-13T16:05:00Z\"}"
     }
 }

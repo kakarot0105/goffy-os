@@ -26,6 +26,7 @@ enum class HubLinkState {
     PAIRED,
     DEVELOPMENT,
     FORGETTING,
+    ROTATING,
     DEGRADED,
 }
 
@@ -48,7 +49,8 @@ data class GoffyUiState(
     val linkOperationInProgress: Boolean
         get() = hubLinkState == HubLinkState.LOADING ||
             hubLinkState == HubLinkState.PAIRING ||
-            hubLinkState == HubLinkState.FORGETTING
+            hubLinkState == HubLinkState.FORGETTING ||
+            hubLinkState == HubLinkState.ROTATING
 
     val isBusy: Boolean
         get() = timeline.activeTaskId != null
@@ -98,6 +100,33 @@ data class GoffyUiState(
         linkError = null,
         linkNotice = null,
         timeline = timeline.cancelActive(terminalAtEpochMillis),
+        pendingApproval = null,
+    )
+
+    fun hubRotationStarted(
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): GoffyUiState = copy(
+        macConnection = MacConnectionState.DISCONNECTED,
+        hubLinkState = HubLinkState.ROTATING,
+        linkError = null,
+        linkNotice = null,
+        timeline = timeline.cancelActive(terminalAtEpochMillis),
+        pendingApproval = null,
+    )
+
+    fun hubRotationSucceeded(notice: HubLinkNotice): GoffyUiState = copy(
+        macConnection = MacConnectionState.DISCONNECTED,
+        hubLinkState = HubLinkState.PAIRED,
+        linkError = null,
+        linkNotice = notice.bounded(),
+        pendingApproval = null,
+    )
+
+    fun hubRotationFailed(message: String): GoffyUiState = copy(
+        macConnection = MacConnectionState.DISCONNECTED,
+        hubLinkState = HubLinkState.DEGRADED,
+        linkError = message.take(MAX_ERROR_LENGTH),
+        linkNotice = null,
         pendingApproval = null,
     )
 

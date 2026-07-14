@@ -14,7 +14,7 @@ tools are the capability boundary.
 > and ask the Hub once to revoke or rotate the exact matching credential over
 > loopback. The Hub now emits a versioned USB-loopback pairing bundle, and Android
 > can scan that bundle through a foreground-only QR pairing panel. Physical Moto G
-> verification, Android-triggered rotation UX, direct Hub/MCP operator audit, and
+> verification, automatic rotation scheduling, direct Hub/MCP operator audit, and
 > trusted LAN operation remain open.
 
 ## Current vertical slice
@@ -47,7 +47,8 @@ tools are the capability boundary.
 - Loopback paired-token rotation API with old-token invalidation and live-session
   termination
 - Foreground Android challenge redemption with API-26 Keystore AES-GCM storage,
-  verified restart restore, and paired self-revocation
+  verified restart restore, paired self-revocation, and manual paired-token
+  rotation
 - Foreground-only Android QR scanner for pairing bundles, with no image storage
   or automatic pairing after scan
 - Allowlisted, read-only `SAFE mac.system_info` tool
@@ -96,7 +97,8 @@ stable paired identity, configure the explicit state path and follow
 is still unsupported. Android can now redeem the versioned pairing bundle through
 the foreground Hub card over USB loopback, scan that bundle as a QR code, and
 restore the encrypted credential after restart. Hub-side token rotation is
-available over loopback; Android-triggered rotation UX remains open.
+available over loopback, and Android exposes a confirmed manual rotation action
+for paired links.
 Generate the local QR artifact from the Mac with:
 
 ```bash
@@ -187,6 +189,10 @@ undecryptable state is deleted and visibly disables Mac access. `Forget link`
 removes the phone copy first; paired links then make exactly one authenticated
 loopback self-revocation request for the stored credential ID. If the Hub cannot
 verify it, the phone reports local deletion with remote revocation unverified.
+`Rotate token` is also paired-only and foreground-confirmed. It cancels active
+work, asks the Hub once to rotate the credential, and activates the new bearer
+only after encrypted read-back verification. Ambiguous rotation or storage
+failure disables Mac access and requires re-pairing.
 Direct Hub/MCP operator audit remains future work.
 The QR scanner exists only in the visible pairing setup panel, requests the
 normal Android `CAMERA` permission from that action, decodes QR codes only, saves

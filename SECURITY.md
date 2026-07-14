@@ -66,9 +66,9 @@ include real credentials or unrelated personal data.
   and 8 KiB per structured output.
 - MCP execution defaults to two concurrent calls with a bounded one-second queue.
   Registry tool timeouts remain authoritative after admission.
-- Paired credentials are not MCP OAuth. Hub-side loopback token rotation is
-  implemented, but Android-triggered rotation UX and trusted LAN onboarding remain
-  unimplemented.
+- Paired credentials are not MCP OAuth. Loopback token rotation is implemented for
+  the Hub and a confirmed Android foreground action, but automatic rotation
+  schedules and trusted LAN onboarding remain unimplemented.
 - Paired token rotation is loopback-only and paired-principal-only. The Hub derives
   the credential ID from authentication, atomically verifies that the presented
   bearer digest is still current before replacing it, returns the same credential
@@ -109,10 +109,20 @@ include real credentials or unrelated personal data.
   sessions, and returns the revoked credential ID. Android treats any lost,
   mismatched, false, or error response as remote revocation unverified; it does
   not retry an ambiguous DELETE.
+- `Rotate token` requires an explicit confirmation and runs only for paired
+  loopback links. Android cancels active work before the request, accepts only a
+  matching returned credential ID, preserves the existing endpoint, credential ID,
+  descriptive phone ID, and original creation time, and activates the new bearer
+  only after encrypted read-back verification succeeds.
+- Android makes exactly one rotation request and does not retry ambiguous
+  transport or HTTP failures. If Hub rotation, response validation, or local
+  persistence fails, Android disables Mac access, best-effort clears local paired
+  authority, marks the link degraded, and requires re-pairing plus Mac-side
+  credential inspection.
 - The bearer is decrypted into process memory while the active ViewModel owns the
   Hub connection configuration. Rooted-device/process compromise is outside this
   pre-alpha storage guarantee. Trusted certificate pin onboarding and
-  Android-triggered token rotation UX are not implemented.
+  automatic token rotation schedules are not implemented.
 - Release Android clients require `wss://`; debug cleartext is limited to
   `localhost` and `127.0.0.1` for the documented USB port-reversal flow.
 - Automatic reconnect occurs only before an invocation is sent. Sent requests

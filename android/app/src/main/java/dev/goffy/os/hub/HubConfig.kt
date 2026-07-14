@@ -29,6 +29,9 @@ class HubConfig private constructor(
     internal val selfRevocationUrl: String
         get() = hubEndpoint.selfRevocationUrl
 
+    internal val tokenRotationUrl: String
+        get() = hubEndpoint.tokenRotationUrl
+
     internal val isLoopback: Boolean
         get() = hubEndpoint.isLoopback
 

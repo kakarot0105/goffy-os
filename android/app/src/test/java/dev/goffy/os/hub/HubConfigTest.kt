@@ -35,6 +35,10 @@ class HubConfigTest {
             "http://127.0.0.1:8787/pairing/v1/redeem",
             pairingEndpoint.pairingRedemptionUrl,
         )
+        assertEquals(
+            "http://127.0.0.1:8787/pairing/v1/rotate",
+            pairingEndpoint.tokenRotationUrl,
+        )
         assertFalse(HubEndpoint.create("wss://hub.example/ws/v1", false).isLoopback)
     }
 

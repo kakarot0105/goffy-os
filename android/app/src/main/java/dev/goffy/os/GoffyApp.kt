@@ -116,6 +116,7 @@ fun GoffyApp(viewModel: GoffyViewModel) {
     var bearerToken by remember { mutableStateOf("") }
     var showLinkSetup by remember(state.hubConfigured) { mutableStateOf(!state.hubConfigured) }
     var showForgetConfirmation by remember { mutableStateOf(false) }
+    var showRotateConfirmation by remember { mutableStateOf(false) }
     var showPairingScanner by remember { mutableStateOf(false) }
     var pairingScannerNotice by remember { mutableStateOf<PairingScannerNotice?>(null) }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
@@ -145,6 +146,16 @@ fun GoffyApp(viewModel: GoffyViewModel) {
                         showLinkSetup = true
                     },
                     onDismiss = { showForgetConfirmation = false },
+                )
+            }
+            if (showRotateConfirmation) {
+                RotateHubDialog(
+                    onConfirm = {
+                        showRotateConfirmation = false
+                        viewModel.rotateHubCredential()
+                        showLinkSetup = true
+                    },
+                    onDismiss = { showRotateConfirmation = false },
                 )
             }
             if (showPairingScanner) {
@@ -205,6 +216,7 @@ fun GoffyApp(viewModel: GoffyViewModel) {
                     pairingScannerNotice = null
                     viewModel.pairHub(endpoint, challenge)
                 },
+                onRotateHub = { showRotateConfirmation = true },
                 onForgetHub = { showForgetConfirmation = true },
                 onSubmit = {
                     viewModel.submitCommand(command)
@@ -317,6 +329,44 @@ private fun ForgetHubDialog(
 }
 
 @Composable
+private fun RotateHubDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnClickOutside = false),
+        title = { Text(stringResource(R.string.rotate_hub_title)) },
+        text = {
+            Text(
+                text = stringResource(R.string.rotate_hub_explanation),
+                color = Mist,
+                fontSize = 13.sp,
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Signal,
+                    contentColor = Void,
+                ),
+            ) {
+                Text(stringResource(R.string.rotate_hub_confirm), fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.rotate_hub_cancel), color = Signal)
+            }
+        },
+        containerColor = Panel,
+        titleContentColor = Bone,
+        textContentColor = Mist,
+    )
+}
+
+@Composable
 private fun GoffyHomeScreen(
     state: GoffyUiState,
     command: String,
@@ -333,6 +383,7 @@ private fun GoffyHomeScreen(
     onConfigureHub: () -> Unit,
     onScanPairingQr: () -> Unit,
     onPairHub: () -> Unit,
+    onRotateHub: () -> Unit,
     onForgetHub: () -> Unit,
     onSubmit: () -> Unit,
     onCancel: () -> Unit,
@@ -371,6 +422,7 @@ private fun GoffyHomeScreen(
             onConfigure = onConfigureHub,
             onScanPairingQr = onScanPairingQr,
             onPair = onPairHub,
+            onRotate = onRotateHub,
             onForget = onForgetHub,
         )
         Spacer(Modifier.height(16.dp))
@@ -538,6 +590,7 @@ private fun HubLinkSection(
     onConfigure: () -> Unit,
     onScanPairingQr: () -> Unit,
     onPair: () -> Unit,
+    onRotate: () -> Unit,
     onForget: () -> Unit,
 ) {
     Column(
@@ -560,6 +613,7 @@ private fun HubLinkSection(
                         HubLinkState.LOADING -> stringResource(R.string.hub_loading)
                         HubLinkState.PAIRING -> stringResource(R.string.hub_pairing)
                         HubLinkState.FORGETTING -> stringResource(R.string.hub_forgetting)
+                        HubLinkState.ROTATING -> stringResource(R.string.hub_rotating)
                         HubLinkState.DEGRADED -> stringResource(R.string.hub_degraded)
                         HubLinkState.UNPAIRED -> stringResource(R.string.hub_not_configured)
                         HubLinkState.PAIRED,
@@ -668,6 +722,15 @@ private fun HubLinkSection(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (state.hubConfigured) {
+                    if (state.hubLinkState == HubLinkState.PAIRED) {
+                        OutlinedButton(
+                            onClick = onRotate,
+                            enabled = !state.isBusy && !state.linkOperationInProgress,
+                        ) {
+                            Text(stringResource(R.string.rotate_hub), color = Signal)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                    }
                     TextButton(onClick = onForget) {
                         Text(stringResource(R.string.forget_hub), color = Warning)
                     }

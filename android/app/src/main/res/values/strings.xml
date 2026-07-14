@@ -15,6 +15,7 @@
     <string name="hub_loading">LOADING LOCAL LINK</string>
     <string name="hub_pairing">PAIRING IN FOREGROUND</string>
     <string name="hub_forgetting">REMOVING LOCAL LINK</string>
+    <string name="hub_rotating">ROTATING HUB TOKEN</string>
     <string name="hub_degraded">LOCAL LINK NEEDS ATTENTION</string>
     <string name="hub_endpoint_label">WebSocket endpoint</string>
     <string name="hub_pairing_challenge_label">Pairing bundle JSON</string>
@@ -30,6 +31,11 @@
     <string name="pairing_scanner_captured">Pairing bundle captured. Review the endpoint, then pair the phone.</string>
     <string name="pair_hub">Pair phone</string>
     <string name="configure_hub">Debug link</string>
+    <string name="rotate_hub">Rotate token</string>
+    <string name="rotate_hub_title">Rotate Hub token?</string>
+    <string name="rotate_hub_explanation">GOFFY will ask the Hub once to replace this phone's bearer, then save the new bearer in Keystore before Mac access continues. If storage or transport is ambiguous, GOFFY disables Mac access and you must pair again.</string>
+    <string name="rotate_hub_confirm">Rotate token</string>
+    <string name="rotate_hub_cancel">Keep current token</string>
     <string name="forget_hub">Forget link</string>
     <string name="forget_hub_title">Revoke this phone?</string>
     <string name="forget_hub_paired_explanation">GOFFY will remove the local credential first, then ask the Hub once to revoke this exact paired phone. If the Hub is offline, local Mac access stops but remote revocation is unverified.</string>

@@ -39,9 +39,9 @@ immediately after a verified rotation response, and old live sessions are closed
 Concurrent stale rotations fail closed instead of invalidating a newly returned
 token.
 
-The Hub API primitive is implemented first. Android-triggered scheduled or
-manual rotation policy, user-visible recovery UX, trusted LAN rotation, and
-direct Hub/MCP operator audit remain separate work.
+The Hub API primitive was implemented first. Android manual rotation and
+user-visible recovery are handled by ADR 0019. Automatic rotation schedules,
+trusted LAN rotation, and direct Hub/MCP operator audit remain separate work.
 
 ## Rejected alternatives
 

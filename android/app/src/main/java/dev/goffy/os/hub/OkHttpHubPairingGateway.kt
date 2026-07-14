@@ -142,6 +142,58 @@ class OkHttpHubPairingGateway internal constructor(
         }
     }
 
+    override suspend fun rotateSelf(
+        config: HubConfig,
+        expectedCredentialId: UUID,
+    ): RotatedHubCredential {
+        if (!config.isLoopback) {
+            throw HubPairingException(
+                "rotation_loopback_required",
+                "Paired token rotation currently requires the USB loopback link.",
+            )
+        }
+        val request = Request.Builder()
+            .url(config.tokenRotationUrl)
+            .header("Accept", "application/json")
+            .header("Authorization", config.authorizationHeaderValue)
+            .post(ByteArray(0).toRequestBody(null))
+            .build()
+
+        return suspendCancellableCoroutine { continuation ->
+            val call = client.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(
+                object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        if (continuation.isActive) {
+                            continuation.resumeWithException(
+                                HubPairingException(
+                                    "rotation_transport_failed",
+                                    "The Hub could not be reached to rotate this credential.",
+                                ),
+                            )
+                        }
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        response.use {
+                            if (!continuation.isActive) return
+                            try {
+                                continuation.resume(
+                                    parseRotationResponse(response, expectedCredentialId),
+                                )
+                            } catch (error: HubPairingException) {
+                                continuation.resumeWithException(error)
+                            } catch (_: Exception) {
+                                continuation.resumeWithException(invalidRotationResponse())
+                            }
+                        }
+                    }
+                },
+            )
+        }
+    }
+
     override fun close() {
         client.dispatcher.cancelAll()
         client.connectionPool.evictAll()
@@ -219,7 +271,7 @@ class OkHttpHubPairingGateway internal constructor(
         if (contentType?.substringBefore(';')?.trim()?.lowercase() != "application/json") {
             throw invalidResponse()
         }
-        val bytes = readBoundedBody(response)
+        val bytes = readBoundedBody(response, ::invalidResponse)
         val wire = try {
             val value = json.parseToJsonElement(bytes.toString(Charsets.UTF_8)).jsonObject
             value.requireExactKeys(SUCCESS_KEYS)
@@ -254,7 +306,7 @@ class OkHttpHubPairingGateway internal constructor(
         if (contentType?.substringBefore(';')?.trim()?.lowercase() != "application/json") {
             throw invalidRevocationResponse()
         }
-        val bytes = readBoundedBody(response)
+        val bytes = readBoundedBody(response, ::invalidRevocationResponse)
         val value = try {
             json.parseToJsonElement(bytes.toString(Charsets.UTF_8)).jsonObject
         } catch (_: Exception) {
@@ -273,7 +325,45 @@ class OkHttpHubPairingGateway internal constructor(
         return SelfRevocationResult(credentialId, revoked = true)
     }
 
-    private fun readBoundedBody(response: Response): ByteArray {
+    private fun parseRotationResponse(
+        response: Response,
+        expectedCredentialId: UUID,
+    ): RotatedHubCredential {
+        if (response.code != HTTP_OK) throw rotationStatusError(response.code)
+        val contentType = response.header("Content-Type")
+        if (contentType?.substringBefore(';')?.trim()?.lowercase() != "application/json") {
+            throw invalidRotationResponse()
+        }
+        val bytes = readBoundedBody(response, ::invalidRotationResponse)
+        val value = try {
+            json.parseToJsonElement(bytes.toString(Charsets.UTF_8)).jsonObject
+        } catch (_: Exception) {
+            throw invalidRotationResponse()
+        }
+        try {
+            value.requireExactKeys(ROTATION_KEYS)
+        } catch (_: SerializationException) {
+            throw invalidRotationResponse()
+        }
+        val credentialId = parseCanonicalUuid(value.requiredString("credentialId"))
+            ?: throw invalidRotationResponse()
+        if (credentialId != expectedCredentialId) throw invalidRotationResponse()
+        val accessToken = value.requiredString("accessToken")
+        if (accessToken.length !in MIN_ACCESS_TOKEN_LENGTH..MAX_ACCESS_TOKEN_LENGTH) {
+            throw invalidRotationResponse()
+        }
+        val rotatedAt = try {
+            Instant.parse(value.requiredString("rotatedAt"))
+        } catch (_: DateTimeParseException) {
+            throw invalidRotationResponse()
+        }
+        return RotatedHubCredential(credentialId, accessToken, rotatedAt)
+    }
+
+    private fun readBoundedBody(
+        response: Response,
+        invalid: () -> HubPairingException,
+    ): ByteArray {
         val source = response.body.source()
         val buffer = Buffer()
         while (buffer.size <= MAX_PAIRING_JSON_BYTES) {
@@ -281,7 +371,7 @@ class OkHttpHubPairingGateway internal constructor(
             val read = source.read(buffer, remaining.coerceAtMost(1_024L))
             if (read == -1L) return buffer.readByteArray()
         }
-        throw invalidResponse()
+        throw invalid()
     }
 
     private fun statusError(status: Int): HubPairingException = when (status) {
@@ -327,6 +417,29 @@ class OkHttpHubPairingGateway internal constructor(
         )
     }
 
+    private fun rotationStatusError(status: Int): HubPairingException = when (status) {
+        401 -> HubPairingException(
+            "rotation_authentication_failed",
+            "The Hub did not accept this paired credential for rotation.",
+        )
+        403 -> HubPairingException(
+            "rotation_forbidden",
+            "The Hub refused paired token rotation.",
+        )
+        409 -> HubPairingException(
+            "rotation_conflict",
+            "The Hub could not verify this credential was current before rotation.",
+        )
+        503 -> HubPairingException(
+            "rotation_unavailable",
+            "The Hub credential store is unavailable for rotation.",
+        )
+        else -> HubPairingException(
+            "rotation_rejected",
+            "The Hub rejected paired token rotation.",
+        )
+    }
+
     private fun invalidChallenge() = HubPairingException(
         "invalid_pairing_payload",
         "Paste a complete, current GOFFY pairing challenge.",
@@ -340,6 +453,11 @@ class OkHttpHubPairingGateway internal constructor(
     private fun invalidRevocationResponse() = HubPairingException(
         "invalid_revocation_response",
         "The Hub returned an invalid revocation response; remote revocation is unverified.",
+    )
+
+    private fun invalidRotationResponse() = HubPairingException(
+        "invalid_rotation_response",
+        "The Hub returned an invalid rotation response; Mac access is disabled until re-pairing.",
     )
 
     private class PairingChallenge(
@@ -395,6 +513,7 @@ class OkHttpHubPairingGateway internal constructor(
         )
         val SUCCESS_KEYS = setOf("credentialId", "accessToken", "createdAt")
         val REVOCATION_KEYS = setOf("credentialId", "revoked")
+        val ROTATION_KEYS = setOf("credentialId", "accessToken", "rotatedAt")
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
         fun strictJson() = Json {

@@ -36,8 +36,9 @@ endpoint substitution and premature LAN trust explicit failure cases, while
 preserving the current USB-loopback-only security model.
 
 This does not implement camera capture, QR decoding, trusted certificate
-onboarding, LAN pairing, or Android-triggered token rotation UX. Hub-side paired
-token rotation is handled by ADR 0018.
+onboarding, LAN pairing, or automatic token rotation schedules. Hub-side paired
+token rotation is handled by ADR 0018; Android manual rotation UX is handled by
+ADR 0019.
 
 ## Rejected alternatives
 

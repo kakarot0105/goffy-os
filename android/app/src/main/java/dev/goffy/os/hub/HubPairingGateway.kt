@@ -13,6 +13,8 @@ interface HubPairingGateway {
 
     suspend fun revokeSelf(config: HubConfig, expectedCredentialId: UUID): SelfRevocationResult
 
+    suspend fun rotateSelf(config: HubConfig, expectedCredentialId: UUID): RotatedHubCredential
+
     fun close()
 }
 
@@ -33,4 +35,14 @@ class IssuedHubCredential(
 ) {
     override fun toString(): String =
         "IssuedHubCredential(credentialId=$credentialId, accessToken=REDACTED, createdAt=$createdAt)"
+}
+
+class RotatedHubCredential(
+    val credentialId: UUID,
+    internal val accessToken: String,
+    val rotatedAt: Instant,
+) {
+    override fun toString(): String =
+        "RotatedHubCredential(credentialId=$credentialId, accessToken=REDACTED, " +
+            "rotatedAt=$rotatedAt)"
 }

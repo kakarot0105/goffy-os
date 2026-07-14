@@ -58,8 +58,9 @@
 - [x] In-process QR bundle redemption smoke verifier
 - [x] Foreground Android QR challenge transfer for USB-loopback pairing bundles
 - [x] Loopback paired-device token rotation API with old-token invalidation
+- [x] Android-triggered paired-token rotation UX and fail-closed recovery policy
 - [ ] Trusted Hub identity onboarding
-- [ ] Android-triggered token rotation UX and recovery policy
+- [ ] Automatic token rotation reminders or schedules after physical validation
 - [ ] Direct Hub/MCP operator audit after stable paired identity and user-visible retrieval
 
 ## Milestones 4-8
