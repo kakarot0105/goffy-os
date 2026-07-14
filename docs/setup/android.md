@@ -174,12 +174,17 @@ Before starting a Moto G physical validation pass, run the readiness verifier:
 ```bash
 .venv/bin/python scripts/verify_moto_g_readiness.py
 .venv/bin/python scripts/verify_moto_g_readiness.py --json
+.venv/bin/python scripts/guide_moto_g_validation.py
+.venv/bin/python scripts/guide_moto_g_validation.py --json
 ```
 
 It combines Android preflight, read-only device diagnostics, fixed localhost Hub
 `/health`, and debug APK presence into one report. It does not run `adb shell`,
 configure `adb reverse`, install the APK, start the Hub, or replace the manual
 phone checklist below.
+The guide adds the USB setup state, bounded manual checklist status, and the next
+safe action to take. It does not execute the USB setup command or control the
+phone UI.
 
 When the readiness report has no blockers except a missing Hub USB reverse, use
 the USB setup runner. It prints the fixed setup plan by default:
