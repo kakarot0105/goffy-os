@@ -170,10 +170,11 @@ def collect_doctor_report(
     root: Path = ROOT,
     module_finder: ModuleFinder = default_module_finder,
     android_collector: AndroidCollector = lambda root: collect_android_checks(root=root),
+    include_python: bool = True,
     include_device: bool = False,
     device_runner: DeviceCommandRunner = default_device_command_runner,
 ) -> DoctorReport:
-    checks = collect_python_checks(module_finder=module_finder)
+    checks = collect_python_checks(module_finder=module_finder) if include_python else []
     android_checks = tuple(android_collector(root))
     checks.extend(
         DoctorCheck(
@@ -446,6 +447,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--repo-root", default=str(ROOT))
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     parser.add_argument(
+        "--android-only",
+        action="store_true",
+        help="Skip Python dev dependency checks and report only Android/device readiness.",
+    )
+    parser.add_argument(
         "--include-device",
         action="store_true",
         help="Also run read-only adb device and USB reverse diagnostics.",
@@ -454,6 +460,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     report = collect_doctor_report(
         root=Path(args.repo_root).resolve(),
+        include_python=not args.android_only,
         include_device=args.include_device,
     )
     print(render_json(report) if args.json else render_text(report))

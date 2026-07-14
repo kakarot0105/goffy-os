@@ -226,4 +226,10 @@ If verification is blocked by local setup, run the read-only setup doctor:
 The doctor redacts repo, home, and absolute toolchain paths, but review output
 before posting it to a public issue.
 
+Android CI keeps preflight, Gradle, and merged-manifest validation as blocking
+gates. If any Android gate fails, CI also runs the setup doctor with
+`--android-only --include-device --json` as a non-blocking diagnostic step so the
+failure log contains focused, redacted Android toolchain, `adb`, and USB reverse
+readiness details.
+
 Read [SECURITY.md](SECURITY.md) before exposing the Hub beyond localhost.

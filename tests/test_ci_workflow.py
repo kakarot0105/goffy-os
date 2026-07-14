@@ -14,6 +14,11 @@ CRITICAL_STEP_NAMES = {
     "Lint, test, and assemble",
     "Verify merged Android manifests",
 }
+ANDROID_DIAGNOSTIC_CONDITION = (
+    "${{ failure() && (steps.android_preflight.conclusion == 'failure' || "
+    "steps.android_gradle.conclusion == 'failure' || "
+    "steps.merged_manifest_security.conclusion == 'failure') }}"
+)
 
 
 def workflow() -> dict[str, Any]:
@@ -53,12 +58,25 @@ def test_android_ci_preflights_before_gradle_and_manifest_security() -> None:
     preflight = step_by_name(steps, "Android preflight")
     gradle = step_by_name(steps, "Lint, test, and assemble")
     manifest_scan = step_by_name(steps, "Verify merged Android manifests")
+    diagnostics = step_by_name(steps, "Setup diagnostics on failure")
 
     assert preflight["run"] == "python3 scripts/android_preflight.py"
+    assert preflight["id"] == "android_preflight"
     assert str(gradle["run"]).startswith("./android/gradlew -p android")
+    assert gradle["id"] == "android_gradle"
     assert manifest_scan["run"] == "python3 scripts/security_scan.py --require-merged-manifests"
+    assert manifest_scan["id"] == "merged_manifest_security"
+    assert (
+        diagnostics["run"]
+        == "python3 scripts/setup_doctor.py --android-only --include-device --json"
+    )
+    assert diagnostics["if"] == ANDROID_DIAGNOSTIC_CONDITION
+    assert diagnostics["continue-on-error"] is True
     assert names.index("Android preflight") < names.index("Lint, test, and assemble")
     assert names.index("Lint, test, and assemble") < names.index("Verify merged Android manifests")
+    assert names.index("Verify merged Android manifests") < names.index(
+        "Setup diagnostics on failure"
+    )
 
     for step in (preflight, gradle, manifest_scan):
         assert_blocking_step(step)

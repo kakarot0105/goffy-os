@@ -43,8 +43,15 @@ jobs:
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2 # v5
       - name: Android preflight
+        id: android_preflight
         run: python3 scripts/android_preflight.py
       - name: Lint, test, and assemble
+        id: android_gradle
         run: ./android/gradlew -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon
       - name: Verify merged Android manifests
+        id: merged_manifest_security
         run: python3 scripts/security_scan.py --require-merged-manifests
+      - name: Setup diagnostics on failure
+        if: ${{ failure() && (steps.android_preflight.conclusion == 'failure' || steps.android_gradle.conclusion == 'failure' || steps.merged_manifest_security.conclusion == 'failure') }}
+        run: python3 scripts/setup_doctor.py --android-only --include-device --json
+        continue-on-error: true

@@ -109,6 +109,29 @@ def test_doctor_report_includes_android_preflight_checks(tmp_path: Path) -> None
     )
 
 
+def test_doctor_report_can_skip_python_checks(tmp_path: Path) -> None:
+    def android_collector(root: Path) -> list[Check]:
+        return [
+            Check(
+                name="JDK",
+                ok=True,
+                detail="ready",
+                remediation="install JDK",
+            )
+        ]
+
+    report = collect_doctor_report(
+        root=tmp_path,
+        module_finder=lambda module: False,
+        android_collector=android_collector,
+        include_python=False,
+    )
+
+    assert report.ok
+    assert [check.category for check in report.checks] == ["android"]
+    assert report.checks[0].name == "JDK"
+
+
 def test_render_text_groups_checks_and_includes_next_step() -> None:
     report = DoctorReport(
         checks=(
@@ -378,7 +401,7 @@ def test_main_returns_zero_for_ready_report(
     monkeypatch.setattr(
         setup_doctor,
         "collect_doctor_report",
-        lambda root, include_device=False: DoctorReport(
+        lambda root, include_python=True, include_device=False: DoctorReport(
             checks=(DoctorCheck("python", "Python runtime", True, "ready", ""),),
             repo_root=root,
         ),
@@ -397,7 +420,7 @@ def test_main_returns_nonzero_for_blocked_report(
     monkeypatch.setattr(
         setup_doctor,
         "collect_doctor_report",
-        lambda root, include_device=False: DoctorReport(
+        lambda root, include_python=True, include_device=False: DoctorReport(
             checks=(DoctorCheck("android", "adb", False, "missing", "install adb"),),
             repo_root=root,
         ),
@@ -413,7 +436,11 @@ def test_main_returns_nonzero_for_blocked_report(
 def test_main_passes_include_device_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[bool] = []
 
-    def collect(root: Path, include_device: bool = False) -> DoctorReport:
+    def collect(
+        root: Path,
+        include_python: bool = True,
+        include_device: bool = False,
+    ) -> DoctorReport:
         calls.append(include_device)
         return DoctorReport(
             checks=(DoctorCheck("python", "Python runtime", True, "ready", ""),),
@@ -424,3 +451,23 @@ def test_main_passes_include_device_flag(monkeypatch: pytest.MonkeyPatch) -> Non
 
     assert main(["--repo-root", "/opt/goffy-test/repo", "--include-device"]) == 0
     assert calls == [True]
+
+
+def test_main_passes_android_only_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[bool] = []
+
+    def collect(
+        root: Path,
+        include_python: bool = True,
+        include_device: bool = False,
+    ) -> DoctorReport:
+        calls.append(include_python)
+        return DoctorReport(
+            checks=(DoctorCheck("android", "JDK", True, "ready", ""),),
+            repo_root=root,
+        )
+
+    monkeypatch.setattr(setup_doctor, "collect_doctor_report", collect)
+
+    assert main(["--repo-root", "/opt/goffy-test/repo", "--android-only"]) == 0
+    assert calls == [False]

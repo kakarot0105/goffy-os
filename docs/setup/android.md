@@ -163,6 +163,12 @@ diagnostics. It reports whether an authorized device is connected and whether
 `tcp:8787` is reversed, but it does not run shell commands on the phone and does
 not print device serials.
 
+Android CI runs the same setup doctor with
+`--android-only --include-device --json` only after an Android gate fails. The
+diagnostic step is non-blocking and appears after the blocking preflight, Gradle,
+and merged-manifest checks so it cannot hide or weaken the original validation
+result.
+
 ## USB localhost debug flow
 
 1. Start the Hub on the Mac in either legacy development mode or the paired mode
