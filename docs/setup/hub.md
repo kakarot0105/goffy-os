@@ -49,36 +49,28 @@ From the same Mac, create one 120-second challenge:
 challenge_json=$(curl -fsS -X POST \
   -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
   http://127.0.0.1:8787/admin/v1/pairing/challenges)
-challenge_id=$(printf '%s' "$challenge_json" | \
-  .venv/bin/python -c 'import json,sys; print(json.load(sys.stdin)["challengeId"])')
-pairing_token=$(printf '%s' "$challenge_json" | \
-  .venv/bin/python -c 'import json,sys; print(json.load(sys.stdin)["pairingToken"])')
 ```
 
-The future guided flow encodes that challenge in a QR code. For the current local
-operator API, redeem it over loopback. The response contains `accessToken` exactly
-once; do not put it in source control, logs, command-line arguments, or screenshots.
+The future guided flow will encode that challenge plus authenticated Hub identity
+in a QR code. The current Android debug app accepts the complete `challenge_json`
+in its password-masked foreground pairing field. Do not redeem the same challenge
+elsewhere first: it is single-use. Do not put it in source control, logs,
+command-line arguments, cloud-synchronized clipboards, or screenshots.
 
 ```bash
-export GOFFY_PAIRING_CHALLENGE_ID="$challenge_id"
-export GOFFY_PAIRING_TOKEN="$pairing_token"
-.venv/bin/python - <<'PY' | curl -fsS -X POST \
-  -H 'Content-Type: application/json' --data-binary @- \
-  http://127.0.0.1:8787/pairing/v1/redeem
-import json, os
-print(json.dumps({
-    "challengeId": os.environ["GOFFY_PAIRING_CHALLENGE_ID"],
-    "pairingToken": os.environ["GOFFY_PAIRING_TOKEN"],
-    "deviceId": "setup-observation-1",
-    "displayName": "Moto G",
-}))
-PY
-unset GOFFY_PAIRING_CHALLENGE_ID GOFFY_PAIRING_TOKEN
+adb reverse tcp:8787 tcp:8787
+printf '%s\n' "$challenge_json"
 ```
 
-Use the returned bearer in Android's existing in-memory debug configuration or an
-MCP client. `deviceId` is descriptive setup metadata; the returned `credentialId`
-is the security principal. List and revoke credentials with the bootstrap token:
+In the debug app, keep `ws://127.0.0.1:8787/ws/v1`, enter the full printed JSON in
+`Pairing challenge JSON`, and tap `Pair phone` before the 120-second expiry. This
+temporary operator-assisted transfer is intentionally not a production onboarding
+flow; use a device-local input path and avoid shared clipboard services. Android
+posts the typed redemption once, encrypts the returned bearer with Android
+Keystore, verifies the stored record, and then shows the link as paired.
+
+`deviceId` is descriptive setup metadata; the returned `credentialId` is the
+security principal. List and revoke credentials with the bootstrap token:
 
 ```bash
 curl -fsS -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
@@ -89,9 +81,12 @@ curl -fsS -X DELETE -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
 
 Revocation closes indexed live WebSocket and MCP sessions before success is
 returned and survives Hub restart. Pending challenges are memory-only and do not.
+Android's `Forget local link` deletes only its encrypted copy and key; it does not
+call this administrator revocation route, so revoke the Mac record separately when
+retiring or losing a phone.
 Paired mode requires a local Hub bind, and all pairing and administration routes
 also reject non-loopback clients. Configured LAN TLS and allowlists do not override
-these guards. Android secure storage, guided QR pairing, rotation, and trusted LAN
+these guards. Guided QR pairing, paired self-revocation, rotation, and trusted LAN
 onboarding are not implemented yet.
 
 ## MCP client

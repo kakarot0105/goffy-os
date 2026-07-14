@@ -62,9 +62,29 @@ include real credentials or unrelated personal data.
   MCP session for that credential and releases its capacity slot. New
   authentication checks the digest store; revoked state survives restart.
 - WebSocket tokens are passed in the `Authorization` header, never in URLs.
-- The Android client still accepts a token through its debug configuration, keeps
-  it in memory only, and excludes it from saved UI state and string representations.
-  Guided QR pairing and secure Android credential storage are not implemented.
+- Android redeems pairing challenges only against a loopback endpoint and never
+  retries redemption. `MainActivity.onStop()` cancels and joins enrollment before
+  local cleanup. The temporary challenge input is foreground-only,
+  password-masked, bounded to 2 KiB, and excluded from saved Compose state,
+  audit rows, URLs, and error text.
+- A returned paired bearer is activated only after one bounded record is encrypted
+  with an API-26 Android Keystore 256-bit AES-GCM key, atomically stored under
+  `noBackupFilesDir`, re-read, decrypted, and exactly verified. The authenticated
+  record binds the exact endpoint, credential ID, descriptive phone ID, bearer,
+  schema version, and creation time.
+- Corrupt, oversized, schema-incompatible, or undecryptable paired state fails
+  closed, deletes the local encrypted record and key, and never falls back to the
+  legacy development credential. Restore performs no network probe or background
+  repair. Backup and device transfer remain disabled for all app data.
+- The legacy manual bearer field is compiled into debug behavior only, remains
+  memory-only, and is excluded from saved UI state and string representations.
+- `Forget local link` cancels and joins foreground enrollment before deleting the
+  encrypted record and Keystore key. It does not revoke the Hub-side digest; the
+  UI states this limitation and bootstrap-admin revocation remains required.
+- The bearer is decrypted into process memory while the active ViewModel owns the
+  Hub connection configuration. Rooted-device/process compromise is outside this
+  pre-alpha storage guarantee. Guided QR transfer, certificate pin onboarding,
+  self-revocation, and token rotation are not implemented.
 - Release Android clients require `wss://`; debug cleartext is limited to
   `localhost` and `127.0.0.1` for the documented USB port-reversal flow.
 - Automatic reconnect occurs only before an invocation is sent. Sent requests

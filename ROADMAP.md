@@ -50,6 +50,9 @@
 - [x] Persistent, user-visible Android audit trail for terminal tasks
 - [x] Resumable MCP list-change notifications
 - [x] Loopback bootstrap pairing with stable, revocable paired-device credentials
+- [x] Foreground Android pairing redemption with Keystore-backed restart restore
+- [ ] Guided QR challenge transfer and trusted Hub identity onboarding
+- [ ] Paired-device self-revocation and token rotation
 - [ ] Direct Hub/MCP operator audit after stable paired identity and user-visible retrieval
 
 ## Milestones 4-8

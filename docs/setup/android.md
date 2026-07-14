@@ -68,9 +68,17 @@ review both published checksums during any wrapper upgrade.
 - Cancelling a pending note approval guarantees no tool invocation. Once the
   approved SQLite transaction starts, cancellation is requested but rollback is
   not guaranteed; the timeline states that limitation rather than claiming success.
-- The bearer token is entered at runtime, sent only in the `Authorization`
-  header, and kept in memory only. It is not placed in the URL, saved state, or
-  stringified config output.
+- A paired bearer is returned once through foreground loopback redemption, stored
+  as one bounded Android Keystore AES-GCM record under `noBackupFilesDir`, and
+  activated only after read-back verification. Challenge/token material is not
+  placed in URLs, saved Compose state, audit rows, or stringified output.
+- Corrupt or undecryptable paired state is removed and visibly disables Mac
+  authority. Restore performs no network probe, polling, or background repair.
+- Pairing is canceled when the Activity leaves the foreground; any local partial
+  record is removed after the enrollment job finishes, with no automatic retry.
+- `Forget local link` deletes the phone copy and key after joining any canceled
+  enrollment. It does not revoke the Hub record; use the Mac administrator route.
+- Manual development bearer entry remains debug-only and memory-only.
 
 ## Android audit trail
 
@@ -98,12 +106,13 @@ Android persists terminal task history in the same visible timeline.
 Performance assessment: the audit path is a tiny bounded SQLite read at startup
 and one write per terminal task on the existing IO dispatcher. There is no
 polling or WorkManager, so this slice stays within GOFFY LITE expectations for
-4 GB devices. Explicit clear controls and cryptographic tamper evidence remain
-future work.
+4 GB devices. Paired restore adds one bounded file read and Keystore decrypt; pair
+and forget add one tiny atomic write/delete. No model or background service loads.
 
 ## USB localhost debug flow
 
-1. Start the Hub on the Mac with a development token:
+1. Start the Hub on the Mac in either legacy development mode or the paired mode
+   documented in [Hub setup](hub.md). Paired mode is recommended for restart tests.
 
    ```bash
    python3 -m venv .venv
@@ -121,9 +130,12 @@ future work.
    ```
 
 4. Install and run the debug app from Android Studio or with the debug APK.
-5. In the app, configure the Hub endpoint as `ws://127.0.0.1:8787/ws/v1`, then
-   enter the legacy development bearer or the one-time returned paired bearer.
-6. Submit `Show my Mac status` or `Check my Mac status`.
+5. For paired mode, create a challenge on the Mac, enter the complete challenge
+   JSON in the app's password-masked field, and tap `Pair phone` within 120 seconds.
+   Do not redeem the challenge elsewhere or use a cloud-synchronized clipboard.
+   For legacy mode, enter the development bearer in the debug-only field.
+6. Submit `Show my Mac status` or `Check my Mac status`, restart the app, and run
+   it again without re-entering the paired bearer.
 
 The task timeline should show an authenticated compatible MAC capability before
 accepted tool progress. A Hub using GOFFY protocol `0.1.0`, a missing tool, or a
@@ -139,6 +151,12 @@ device pairing exist.
 The USB localhost flow is implemented in software, but the full physical Moto G
 verification pass is still incomplete. Do not treat Milestone 1 as hardware
 verified yet.
+
+For the pairing slice, verify that restart restores `PAIRED`, an expired or altered
+challenge saves nothing, and `Forget local link` leaves the app unpaired after a
+second restart. Then list credentials on the Mac and confirm local forget did not
+claim remote revocation; revoke that record with the bootstrap-admin route. Record
+the Moto G Android version and any Keystore or OEM process-restart failure.
 
 The battery slice is also software-verified only. On a device, run the app
 without configuring a Hub, submit `Show my battery status`, and confirm the

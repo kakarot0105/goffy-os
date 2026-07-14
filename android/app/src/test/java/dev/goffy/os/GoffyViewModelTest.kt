@@ -9,7 +9,13 @@ import dev.goffy.os.audit.ClosedTerminalAuditRecord
 import dev.goffy.os.audit.TerminalAuditPhase
 import dev.goffy.os.audit.TerminalAuditStore
 import dev.goffy.os.hub.HubConfig
+import dev.goffy.os.hub.HubCredentialLoadResult
+import dev.goffy.os.hub.HubCredentialStore
+import dev.goffy.os.hub.HubEndpoint
 import dev.goffy.os.hub.HubGateway
+import dev.goffy.os.hub.HubPairingGateway
+import dev.goffy.os.hub.IssuedHubCredential
+import dev.goffy.os.hub.StoredHubCredential
 import dev.goffy.os.phone.DefaultPhoneToolGateway
 import dev.goffy.os.phone.FlashlightSource
 import dev.goffy.os.phone.PhoneToolGateway
@@ -86,6 +92,145 @@ class GoffyViewModelTest {
         assertNull(viewModel.uiState.value.timeline.activeTaskId)
         assertEquals(1, gateway.requests.size)
         assertFalse(viewModel.uiState.value.toString().contains(token))
+    }
+
+    @Test
+    fun restoredPairedCredentialReactivatesMacFlowWithoutExposingBearer() = runTest(dispatcher) {
+        val stored = storedCredential()
+        val credentialStore = RecordingCredentialStore(HubCredentialLoadResult.Loaded(stored))
+        val gateway = FakeHubGateway { flowOf(*successfulEvents().toTypedArray()) }
+        val viewModel = createViewModel(gateway, credentialStore = credentialStore)
+
+        advanceUntilIdle()
+        viewModel.submitCommand("Show my Mac status")
+        advanceUntilIdle()
+
+        assertEquals(HubLinkState.PAIRED, viewModel.uiState.value.hubLinkState)
+        assertEquals(TaskPhase.VERIFIED, viewModel.uiState.value.timeline.entries.single().phase)
+        assertEquals(1, gateway.requests.size)
+        assertFalse(viewModel.uiState.value.toString().contains(token))
+    }
+
+    @Test
+    fun pairingActivatesOnlyAfterCredentialPersistenceIsVerified() = runTest(dispatcher) {
+        val pairingGateway = RecordingPairingGateway()
+        val credentialStore = RecordingCredentialStore()
+        val viewModel = createViewModel(
+            FakeHubGateway { flowOf() },
+            pairingGateway = pairingGateway,
+            credentialStore = credentialStore,
+        )
+        advanceUntilIdle()
+
+        viewModel.pairHub(endpoint, "secret challenge payload")
+        advanceUntilIdle()
+
+        assertEquals(HubLinkState.PAIRED, viewModel.uiState.value.hubLinkState)
+        assertEquals(endpoint, viewModel.uiState.value.hubEndpoint)
+        assertEquals(1, pairingGateway.calls)
+        assertEquals(1, credentialStore.saves)
+        assertFalse(viewModel.uiState.value.toString().contains(token))
+        assertFalse(viewModel.uiState.value.toString().contains("secret challenge payload"))
+    }
+
+    @Test
+    fun persistenceFailureLeavesPairingDisabledAndVisible() = runTest(dispatcher) {
+        val credentialStore = RecordingCredentialStore(failSaves = true)
+        val viewModel = createViewModel(
+            FakeHubGateway { flowOf() },
+            pairingGateway = RecordingPairingGateway(),
+            credentialStore = credentialStore,
+        )
+        advanceUntilIdle()
+
+        viewModel.pairHub(endpoint, "secret challenge payload")
+        advanceUntilIdle()
+
+        assertEquals(HubLinkState.DEGRADED, viewModel.uiState.value.hubLinkState)
+        assertFalse(viewModel.uiState.value.hubConfigured)
+        assertTrue(viewModel.uiState.value.linkError.orEmpty().contains("not activated"))
+        assertFalse(viewModel.uiState.value.toString().contains(token))
+    }
+
+    @Test
+    fun leavingForegroundCancelsPairingAndClearsAnyPartialLocalAuthority() = runTest(dispatcher) {
+        val credentialStore = RecordingCredentialStore()
+        val viewModel = createViewModel(
+            FakeHubGateway { flowOf() },
+            pairingGateway = BlockingPairingGateway(),
+            credentialStore = credentialStore,
+        )
+        advanceUntilIdle()
+        viewModel.pairHub(endpoint, "secret challenge payload")
+        runCurrent()
+
+        viewModel.cancelForegroundPairing()
+        advanceUntilIdle()
+
+        assertEquals(HubLinkState.UNPAIRED, viewModel.uiState.value.hubLinkState)
+        assertFalse(viewModel.uiState.value.hubConfigured)
+        assertEquals(1, credentialStore.clears)
+        assertTrue(viewModel.uiState.value.linkError.orEmpty().contains("left the foreground"))
+    }
+
+    @Test
+    fun forgetRemovesPersistedAuthorityAndCancelsActiveMacTask() = runTest(dispatcher) {
+        val credentialStore = RecordingCredentialStore(
+            HubCredentialLoadResult.Loaded(storedCredential()),
+        )
+        val gateway = FakeHubGateway {
+            flow {
+                emit(ExecutionEvent.Starting(1))
+                awaitCancellation()
+            }
+        }
+        val viewModel = createViewModel(gateway, credentialStore = credentialStore)
+        advanceUntilIdle()
+        viewModel.submitCommand("Show my Mac status")
+        runCurrent()
+
+        viewModel.forgetHub()
+        advanceUntilIdle()
+
+        assertEquals(1, credentialStore.clears)
+        assertEquals(HubLinkState.UNPAIRED, viewModel.uiState.value.hubLinkState)
+        assertFalse(viewModel.uiState.value.hubConfigured)
+        assertEquals(TaskPhase.CANCELLED, viewModel.uiState.value.timeline.entries.single().phase)
+    }
+
+    @Test
+    fun corruptCredentialRestoreFailsClosedWithoutDevelopmentFallback() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val viewModel = createViewModel(
+            gateway,
+            credentialStore = RecordingCredentialStore(HubCredentialLoadResult.Corrupt),
+        )
+
+        advanceUntilIdle()
+        viewModel.submitCommand("Show my Mac status")
+        advanceUntilIdle()
+
+        assertEquals(HubLinkState.DEGRADED, viewModel.uiState.value.hubLinkState)
+        assertTrue(gateway.requests.isEmpty())
+        assertEquals(TaskPhase.FAILED, viewModel.uiState.value.timeline.entries.single().phase)
+    }
+
+    @Test
+    fun releasePolicyRejectsManualBearerConfiguration() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val viewModel = createViewModel(
+            gateway,
+            allowDevelopmentTokenConfiguration = false,
+        )
+        advanceUntilIdle()
+
+        assertFalse(viewModel.configureHub("wss://hub.example/ws/v1", token))
+        viewModel.submitCommand("Show my Mac status")
+        advanceUntilIdle()
+
+        assertTrue(gateway.requests.isEmpty())
+        assertFalse(viewModel.uiState.value.developmentTokenAllowed)
+        assertTrue(viewModel.uiState.value.linkError.orEmpty().contains("debug builds"))
     }
 
     @Test
@@ -208,8 +353,8 @@ class GoffyViewModelTest {
         viewModel.submitCommand("Show my Mac status")
         advanceUntilIdle()
 
-        assertTrue(gateway.requests.isEmpty())
-        assertFalse(viewModel.uiState.value.hubConfigured)
+        assertEquals(1, gateway.requests.size)
+        assertTrue(viewModel.uiState.value.hubConfigured)
         assertEquals(2, auditStore.upserts.size)
         assertTrue(auditStore.upserts.all { it.executionTarget == ExecutionTarget.MAC })
         assertTrue(auditStore.upserts.all { it.toolName == "mac.system_info" })
@@ -474,7 +619,10 @@ class GoffyViewModelTest {
             flashlightSource = fakeFlashlightSource(),
             readDispatcher = dispatcher,
         ),
+        pairingGateway: HubPairingGateway = RecordingPairingGateway(),
+        credentialStore: HubCredentialStore = RecordingCredentialStore(),
         approvalTtlMillis: Long = 60_000,
+        allowDevelopmentTokenConfiguration: Boolean = true,
         nowMillis: () -> Long = System::currentTimeMillis,
         auditStore: TerminalAuditStore = RecordingAuditStore(),
     ): GoffyViewModel {
@@ -486,21 +634,35 @@ class GoffyViewModelTest {
         )
         return GoffyViewModel(
             gateway = gateway,
+            pairingGateway = pairingGateway,
+            credentialStore = credentialStore,
             phoneGateway = phoneGateway,
             codec = GoffyProtocolCodec(
                 now = { Instant.parse("2026-07-13T16:00:00Z") },
                 nextMessageId = { protocolMessageIds.removeFirst() },
             ),
             allowInsecureLoopback = true,
+            allowDevelopmentTokenConfiguration = allowDevelopmentTokenConfiguration,
             defaultEndpoint = endpoint,
             deviceId = "goffy-android-test",
+            deviceDisplayName = "Moto G",
             nextTaskId = { UUID.fromString("22222222-2222-4222-8222-222222222222") },
             approvalTtlMillis = approvalTtlMillis,
             nowMillis = nowMillis,
             auditStore = auditStore,
             auditDispatcher = dispatcher,
+            credentialDispatcher = dispatcher,
         )
     }
+
+    private fun storedCredential(): StoredHubCredential = StoredHubCredential.create(
+        endpoint = endpoint,
+        credentialId = UUID.fromString("55555555-5555-4555-8555-555555555555"),
+        deviceId = "goffy-android-test",
+        accessToken = "$token-xx",
+        createdAt = Instant.parse("2026-07-13T16:00:00Z"),
+        allowInsecureLoopback = true,
+    )
 
     private fun batteryAuditRecord(): ClosedTerminalAuditRecord = ClosedTerminalAuditRecord(
         taskId = UUID.fromString("44444444-4444-4444-8444-444444444444"),
@@ -664,5 +826,59 @@ class GoffyViewModelTest {
         }
 
         override fun close() = Unit
+    }
+
+    private class RecordingPairingGateway : HubPairingGateway {
+        var calls = 0
+
+        override suspend fun redeem(
+            endpoint: HubEndpoint,
+            challengeJson: String,
+            deviceId: String,
+            displayName: String,
+        ): IssuedHubCredential {
+            calls += 1
+            return IssuedHubCredential(
+                UUID.fromString("55555555-5555-4555-8555-555555555555"),
+                "test-token-that-is-long-enough-xx",
+                Instant.parse("2026-07-13T16:00:00Z"),
+            )
+        }
+
+        override fun close() = Unit
+    }
+
+    private class BlockingPairingGateway : HubPairingGateway {
+        override suspend fun redeem(
+            endpoint: HubEndpoint,
+            challengeJson: String,
+            deviceId: String,
+            displayName: String,
+        ): IssuedHubCredential = awaitCancellation()
+
+        override fun close() = Unit
+    }
+
+    private class RecordingCredentialStore(
+        initial: HubCredentialLoadResult = HubCredentialLoadResult.Empty,
+        private val failSaves: Boolean = false,
+    ) : HubCredentialStore {
+        private var loaded = initial
+        var saves = 0
+        var clears = 0
+
+        override fun load(): HubCredentialLoadResult = loaded
+
+        override fun save(credential: StoredHubCredential): StoredHubCredential {
+            saves += 1
+            if (failSaves) error("simulated credential persistence failure")
+            loaded = HubCredentialLoadResult.Loaded(credential)
+            return credential
+        }
+
+        override fun clear() {
+            clears += 1
+            loaded = HubCredentialLoadResult.Empty
+        }
     }
 }

@@ -51,11 +51,11 @@ bearers. Pairing survives Hub restart only after redemption; pending challenges
 are intentionally discarded. Each authentication performs one bounded local
 SQLite lookup off the event loop, comparing at most 32 digests.
 
-The Android app does not yet drive these routes or persist the returned bearer.
-Until Android secure storage and a guided QR exchange ship, paired mode is a Hub
-operator API and the documented legacy USB token flow remains available only when
-the pairing database is not configured. This is not MCP OAuth and does not yet
-provide token rotation, trusted LAN pairing, or direct Hub/MCP operator audit.
+Android now redeems the challenge and persists the returned bearer through the
+separate boundary accepted in ADR 0014. Challenge transfer is still operator-assisted
+until guided QR exchange ships. This is not MCP OAuth and does not yet provide
+token rotation, paired self-revocation, trusted LAN pairing, or direct Hub/MCP
+operator audit.
 
 ## Rejected alternatives
 

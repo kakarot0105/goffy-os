@@ -7,10 +7,10 @@ tools are the capability boundary.
 
 > Status: Milestone 3 MCP core in progress. The current repo implements five
 > offline PHONE actions, a discovery-gated SAFE Mac action, an official MCP
-> Streamable HTTP boundary, stable Hub paired-device credentials, and a persistent
-> user-visible Android audit trail
+> Streamable HTTP boundary, stable Hub paired-device credentials, Keystore-backed
+> Android pairing restore, and a persistent user-visible Android audit trail
 > for the newest 50 terminal tasks. MCP tool-list changes now stream with
-> bounded, session-local reconnect replay. Android guided pairing, physical Moto G
+> bounded, session-local reconnect replay. Guided QR pairing, physical Moto G
 > verification, direct Hub/MCP operator audit, and trusted LAN operation remain open.
 
 ## Current vertical slice
@@ -36,6 +36,8 @@ tools are the capability boundary.
 - Bounded, fail-closed Hub tool-health checks
 - Authenticated MCP tool-list change notifications with bounded reconnect replay
 - Explicit loopback pairing with digest-only, revocable per-device Hub credentials
+- Foreground Android challenge redemption with API-26 Keystore AES-GCM storage,
+  verified restart restore, and local forget
 - Allowlisted, read-only `SAFE mac.system_info` tool
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
@@ -79,7 +81,9 @@ can still authenticate previously issued active credentials. Never commit a real
 token. The default command above is legacy USB development mode. To enable
 stable paired identity, configure the explicit state path and follow
 [Hub setup](docs/setup/hub.md). Pairing remains loopback-only and trusted LAN use
-is still unsupported.
+is still unsupported. Android can now redeem the complete challenge JSON through
+the foreground Hub card over USB loopback and restores the encrypted credential
+after restart; QR transfer and remote self-revocation remain open.
 With the Hub running, verify the official MCP path in another terminal:
 
 ```bash
@@ -152,8 +156,13 @@ while valid restored rows remain visible with a discarded-row count. None of
 these failures rewrites the execution verdict, and GOFFY performs no polling,
 WorkManager retry, or background repair.
 Android backup and device transfer are disabled for app data; uninstall removes
-the records. Explicit clear controls, cryptographic tamper evidence, and direct
-Hub/MCP operator audit remain future work.
+the records. The paired Hub bearer is stored separately as one bounded AES-GCM
+record in `noBackupFilesDir`; its 256-bit key remains non-exportable in Android
+Keystore. A write is activated only after read-back verification. Corrupt or
+undecryptable state is deleted and visibly disables Mac access. `Forget local
+link` removes the phone copy and key but does not revoke the corresponding Hub
+record; use the Mac bootstrap-admin route for revocation. Direct Hub/MCP operator
+audit remains future work.
 
 This is an Android application layer, not a flashable replacement ROM. A custom
 ROM remains a later hardware-specific project after the agent runtime is proven.

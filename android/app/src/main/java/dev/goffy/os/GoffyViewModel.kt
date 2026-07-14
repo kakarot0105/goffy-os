@@ -14,8 +14,16 @@ import dev.goffy.os.audit.TerminalAuditStore
 import dev.goffy.os.audit.toClosedTerminalAuditRecord
 import dev.goffy.os.hub.HubConfig
 import dev.goffy.os.hub.HubConfigurationException
+import dev.goffy.os.hub.HubCredentialLoadResult
+import dev.goffy.os.hub.HubCredentialStore
+import dev.goffy.os.hub.HubEndpoint
 import dev.goffy.os.hub.HubGateway
+import dev.goffy.os.hub.HubPairingException
+import dev.goffy.os.hub.HubPairingGateway
+import dev.goffy.os.hub.AndroidHubCredentialStore
 import dev.goffy.os.hub.OkHttpHubGateway
+import dev.goffy.os.hub.OkHttpHubPairingGateway
+import dev.goffy.os.hub.StoredHubCredential
 import dev.goffy.os.phone.AndroidBatteryStatusSource
 import dev.goffy.os.phone.AndroidDeviceInfoSource
 import dev.goffy.os.phone.AndroidFlashlightSource
@@ -49,19 +57,29 @@ import kotlinx.coroutines.withContext
 
 class GoffyViewModel internal constructor(
     private val gateway: HubGateway,
+    private val pairingGateway: HubPairingGateway,
+    private val credentialStore: HubCredentialStore,
     private val phoneGateway: PhoneToolGateway,
     private val codec: GoffyProtocolCodec,
     private val allowInsecureLoopback: Boolean,
+    private val allowDevelopmentTokenConfiguration: Boolean,
     private val defaultEndpoint: String,
-    private val deviceId: String,
+    deviceId: String,
+    private val deviceDisplayName: String,
     private val nextTaskId: () -> UUID,
     private val approvalTtlMillis: Long = DEFAULT_APPROVAL_TTL_MILLIS,
     private val nowMillis: () -> Long = System::currentTimeMillis,
     private val auditStore: TerminalAuditStore = NoOpTerminalAuditStore,
     private val auditDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val credentialDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     constructor(context: Context) : this(
         gateway = OkHttpHubGateway(),
+        pairingGateway = OkHttpHubPairingGateway(),
+        credentialStore = AndroidHubCredentialStore(
+            context,
+            allowInsecureLoopback = BuildConfig.DEBUG,
+        ),
         phoneGateway = DefaultPhoneToolGateway(
             batteryStatusSource = AndroidBatteryStatusSource(context),
             deviceInfoSource = AndroidDeviceInfoSource(),
@@ -71,23 +89,85 @@ class GoffyViewModel internal constructor(
         ),
         codec = GoffyProtocolCodec(),
         allowInsecureLoopback = BuildConfig.DEBUG,
+        allowDevelopmentTokenConfiguration = BuildConfig.DEBUG,
         defaultEndpoint = if (BuildConfig.DEBUG) DEBUG_HUB_ENDPOINT else RELEASE_HUB_ENDPOINT_HINT,
         deviceId = "goffy-android-${UUID.randomUUID()}",
+        deviceDisplayName = android.os.Build.MODEL
+            .filterNot { it.code < 0x20 || it.code == 0x7F }
+            .take(80)
+            .ifBlank { "GOFFY Android" },
         nextTaskId = UUID::randomUUID,
         auditStore = AndroidSqliteTerminalAuditStore(context),
     )
 
-    private val mutableUiState = MutableStateFlow(GoffyUiState(hubEndpoint = defaultEndpoint))
+    private val mutableUiState = MutableStateFlow(
+        GoffyUiState(
+            hubEndpoint = defaultEndpoint,
+            developmentTokenAllowed = allowDevelopmentTokenConfiguration,
+        ),
+    )
     val uiState: StateFlow<GoffyUiState> = mutableUiState.asStateFlow()
 
     private var hubConfig: HubConfig? = null
+    private var deviceId: String = deviceId
     private var activeJob: Job? = null
+    private var linkJob: Job? = null
+    private var linkRevision = 0L
     private var pendingExecution: PendingPhoneExecution? = null
     private var approvalExpiryJob: Job? = null
 
     init {
         require(approvalTtlMillis > 0) { "approvalTtlMillis must be positive" }
+        restoreHubCredential()
         observeTerminalAudit()
+    }
+
+    private fun restoreHubCredential() {
+        val revision = linkRevision
+        linkJob = viewModelScope.launch {
+            val loaded = try {
+                withContext(credentialDispatcher) { credentialStore.load() }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                if (revision == linkRevision) {
+                    mutableUiState.value = mutableUiState.value.hubRestoreFailed(
+                        "The local Hub credential store is unavailable. Mac access is disabled.",
+                    )
+                }
+                return@launch
+            }
+            if (revision != linkRevision) return@launch
+            when (loaded) {
+                HubCredentialLoadResult.Empty -> {
+                    mutableUiState.value = mutableUiState.value.hubRestoreEmpty()
+                }
+                HubCredentialLoadResult.Corrupt -> {
+                    hubConfig = null
+                    mutableUiState.value = mutableUiState.value.hubRestoreFailed(
+                        "The saved Hub credential was unreadable and has been removed. Pair again.",
+                    )
+                }
+                is HubCredentialLoadResult.Loaded -> {
+                    try {
+                        hubConfig = loaded.credential.toHubConfig(allowInsecureLoopback)
+                        deviceId = loaded.credential.deviceId
+                        mutableUiState.value = mutableUiState.value.hubConfigured(
+                            loaded.credential.endpoint,
+                            persistent = true,
+                        )
+                    } catch (_: Exception) {
+                        hubConfig = null
+                        runCatching {
+                            withContext(credentialDispatcher) { credentialStore.clear() }
+                        }
+                        mutableUiState.value = mutableUiState.value.hubRestoreFailed(
+                            "The saved Hub credential was invalid and has been removed. Pair again.",
+                        )
+                    }
+                }
+            }
+        }
     }
 
     private fun observeTerminalAudit() {
@@ -131,10 +211,17 @@ class GoffyViewModel internal constructor(
     }
 
     fun configureHub(endpoint: String, bearerToken: String): Boolean {
+        if (!allowDevelopmentTokenConfiguration) {
+            mutableUiState.value = mutableUiState.value.hubConfigurationRejected(
+                "Manual bearer entry is available only in debug builds.",
+            )
+            return false
+        }
+        ++linkRevision
+        linkJob?.cancel()
         val config = try {
             HubConfig.create(endpoint, bearerToken, allowInsecureLoopback)
         } catch (error: HubConfigurationException) {
-            hubConfig = null
             mutableUiState.value = mutableUiState.value.hubConfigurationRejected(
                 error.message ?: "Hub configuration is invalid",
             )
@@ -145,10 +232,111 @@ class GoffyViewModel internal constructor(
         return true
     }
 
+    fun pairHub(endpoint: String, challengeJson: String) {
+        if (mutableUiState.value.linkOperationInProgress) return
+        if (mutableUiState.value.hubConfigured) {
+            mutableUiState.value = mutableUiState.value.hubConfigurationRejected(
+                "Forget the current local link before pairing a different Mac.",
+            )
+            return
+        }
+        val parsedEndpoint = try {
+            HubEndpoint.create(endpoint, allowInsecureLoopback)
+        } catch (error: HubConfigurationException) {
+            mutableUiState.value = mutableUiState.value.hubConfigurationRejected(
+                error.message ?: "Hub endpoint is invalid.",
+            )
+            return
+        }
+
+        val revision = ++linkRevision
+        mutableUiState.value = mutableUiState.value.hubPairingStarted(parsedEndpoint.webSocketUrl)
+        linkJob = viewModelScope.launch {
+            try {
+                val issued = pairingGateway.redeem(
+                    parsedEndpoint,
+                    challengeJson,
+                    deviceId,
+                    deviceDisplayName,
+                )
+                val candidate = StoredHubCredential.create(
+                    endpoint = parsedEndpoint.webSocketUrl,
+                    credentialId = issued.credentialId,
+                    deviceId = deviceId,
+                    accessToken = issued.accessToken,
+                    createdAt = issued.createdAt,
+                    allowInsecureLoopback = allowInsecureLoopback,
+                )
+                val persisted = withContext(credentialDispatcher) {
+                    credentialStore.save(candidate)
+                }
+                if (revision != linkRevision) return@launch
+                hubConfig = persisted.toHubConfig(allowInsecureLoopback)
+                deviceId = persisted.deviceId
+                mutableUiState.value = mutableUiState.value.hubConfigured(
+                    persisted.endpoint,
+                    persistent = true,
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: HubPairingException) {
+                if (revision == linkRevision) {
+                    mutableUiState.value = mutableUiState.value.hubPairingRejected(
+                        error.message ?: "Pairing failed safely.",
+                    )
+                }
+            } catch (_: Exception) {
+                if (revision == linkRevision) {
+                    hubConfig = null
+                    mutableUiState.value = mutableUiState.value.hubRestoreFailed(
+                        "Pairing could not be stored and was not activated. Revoke any stale " +
+                            "credential on the Mac, then create a new challenge.",
+                    )
+                }
+            }
+        }
+    }
+
     fun forgetHub() {
+        ++linkRevision
+        val previousLinkJob = linkJob
+        previousLinkJob?.cancel()
         cancelActiveTask()
         hubConfig = null
-        mutableUiState.value = mutableUiState.value.forgetHub(defaultEndpoint, nowMillis())
+        mutableUiState.value = mutableUiState.value.hubForgetStarted(nowMillis())
+        linkJob = viewModelScope.launch {
+            try {
+                previousLinkJob?.join()
+                withContext(credentialDispatcher) { credentialStore.clear() }
+                mutableUiState.value = mutableUiState.value.forgetHub(defaultEndpoint, nowMillis())
+            } catch (_: Exception) {
+                mutableUiState.value = mutableUiState.value.hubRestoreFailed(
+                    "Mac access is disabled, but local credential deletion could not be fully verified.",
+                )
+            }
+        }
+    }
+
+    fun cancelForegroundPairing() {
+        if (mutableUiState.value.hubLinkState != HubLinkState.PAIRING) return
+        ++linkRevision
+        val enrollmentJob = linkJob
+        enrollmentJob?.cancel()
+        hubConfig = null
+        mutableUiState.value = mutableUiState.value.hubPairingRejected(
+            "Pairing stopped when GOFFY left the foreground. Revoke any newly listed " +
+                "credential on the Mac before trying again.",
+        )
+        linkJob = viewModelScope.launch {
+            enrollmentJob?.join()
+            try {
+                withContext(credentialDispatcher) { credentialStore.clear() }
+            } catch (_: Exception) {
+                mutableUiState.value = mutableUiState.value.hubRestoreFailed(
+                    "Pairing stopped, but local credential cleanup could not be fully verified.",
+                )
+            }
+        }
     }
 
     fun submitCommand(command: String) {
@@ -382,9 +570,11 @@ class GoffyViewModel internal constructor(
     }
 
     override fun onCleared() {
+        linkJob?.cancel()
         approvalExpiryJob?.cancel()
         auditStore.close()
         phoneGateway.close()
+        pairingGateway.close()
         gateway.close()
         super.onCleared()
     }

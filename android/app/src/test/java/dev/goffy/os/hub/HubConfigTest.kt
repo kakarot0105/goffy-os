@@ -26,6 +26,16 @@ class HubConfigTest {
         assertEquals("ws://localhost:8787/ws/v1", localhost.endpoint)
         assertEquals("ws://127.0.0.1:8787/ws/v1", ipv4.endpoint)
         assertFalse(secure.toString().contains(token))
+
+        val pairingEndpoint = HubEndpoint.create(
+            "ws://127.0.0.1:8787/ws/v1",
+            allowInsecureLoopback = true,
+        )
+        assertEquals(
+            "http://127.0.0.1:8787/pairing/v1/redeem",
+            pairingEndpoint.pairingRedemptionUrl,
+        )
+        assertFalse(HubEndpoint.create("wss://hub.example/ws/v1", false).isLoopback)
     }
 
     @Test

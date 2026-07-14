@@ -98,8 +98,9 @@ fun GoffyApp(viewModel: GoffyViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var command by remember { mutableStateOf("") }
     var endpoint by rememberSaveable(state.hubEndpoint) { mutableStateOf(state.hubEndpoint) }
+    var pairingChallenge by remember { mutableStateOf("") }
     var bearerToken by remember { mutableStateOf("") }
-    var showLinkSetup by rememberSaveable { mutableStateOf(!state.hubConfigured) }
+    var showLinkSetup by remember(state.hubConfigured) { mutableStateOf(!state.hubConfigured) }
 
     MaterialTheme(colorScheme = GoffyColors) {
         Surface(modifier = Modifier.fillMaxSize(), color = Void) {
@@ -107,10 +108,14 @@ fun GoffyApp(viewModel: GoffyViewModel) {
                 state = state,
                 command = command,
                 endpoint = endpoint,
+                pairingChallenge = pairingChallenge,
                 bearerToken = bearerToken,
                 showLinkSetup = showLinkSetup,
                 onCommandChange = { command = it.take(MAX_COMMAND_LENGTH) },
                 onEndpointChange = { endpoint = it.take(MAX_ENDPOINT_LENGTH) },
+                onPairingChallengeChange = {
+                    pairingChallenge = it.take(MAX_PAIRING_CHALLENGE_LENGTH)
+                },
                 onBearerTokenChange = { bearerToken = it.take(MAX_TOKEN_LENGTH) },
                 onToggleLinkSetup = { showLinkSetup = !showLinkSetup },
                 onConfigureHub = {
@@ -119,7 +124,13 @@ fun GoffyApp(viewModel: GoffyViewModel) {
                         showLinkSetup = false
                     }
                 },
+                onPairHub = {
+                    val challenge = pairingChallenge
+                    pairingChallenge = ""
+                    viewModel.pairHub(endpoint, challenge)
+                },
                 onForgetHub = {
+                    pairingChallenge = ""
                     bearerToken = ""
                     viewModel.forgetHub()
                     showLinkSetup = true
@@ -141,13 +152,16 @@ private fun GoffyHomeScreen(
     state: GoffyUiState,
     command: String,
     endpoint: String,
+    pairingChallenge: String,
     bearerToken: String,
     showLinkSetup: Boolean,
     onCommandChange: (String) -> Unit,
     onEndpointChange: (String) -> Unit,
+    onPairingChallengeChange: (String) -> Unit,
     onBearerTokenChange: (String) -> Unit,
     onToggleLinkSetup: () -> Unit,
     onConfigureHub: () -> Unit,
+    onPairHub: () -> Unit,
     onForgetHub: () -> Unit,
     onSubmit: () -> Unit,
     onCancel: () -> Unit,
@@ -175,12 +189,15 @@ private fun GoffyHomeScreen(
         HubLinkSection(
             state = state,
             endpoint = endpoint,
+            pairingChallenge = pairingChallenge,
             bearerToken = bearerToken,
             showSetup = showLinkSetup,
             onEndpointChange = onEndpointChange,
+            onPairingChallengeChange = onPairingChallengeChange,
             onBearerTokenChange = onBearerTokenChange,
             onToggleSetup = onToggleLinkSetup,
             onConfigure = onConfigureHub,
+            onPair = onPairHub,
             onForget = onForgetHub,
         )
         Spacer(Modifier.height(16.dp))
@@ -337,12 +354,15 @@ private fun StatusCard(label: String, value: String, accent: Color, modifier: Mo
 private fun HubLinkSection(
     state: GoffyUiState,
     endpoint: String,
+    pairingChallenge: String,
     bearerToken: String,
     showSetup: Boolean,
     onEndpointChange: (String) -> Unit,
+    onPairingChallengeChange: (String) -> Unit,
     onBearerTokenChange: (String) -> Unit,
     onToggleSetup: () -> Unit,
     onConfigure: () -> Unit,
+    onPair: () -> Unit,
     onForget: () -> Unit,
 ) {
     Column(
@@ -361,7 +381,16 @@ private fun HubLinkSection(
             Column(modifier = Modifier.weight(1f)) {
                 Label(stringResource(R.string.hub_link_title))
                 Text(
-                    text = if (state.hubConfigured) state.hubEndpoint else stringResource(R.string.hub_not_configured),
+                    text = when (state.hubLinkState) {
+                        HubLinkState.LOADING -> stringResource(R.string.hub_loading)
+                        HubLinkState.PAIRING -> stringResource(R.string.hub_pairing)
+                        HubLinkState.FORGETTING -> stringResource(R.string.hub_forgetting)
+                        HubLinkState.DEGRADED -> stringResource(R.string.hub_degraded)
+                        HubLinkState.UNPAIRED -> stringResource(R.string.hub_not_configured)
+                        HubLinkState.PAIRED,
+                        HubLinkState.DEVELOPMENT,
+                        -> state.hubEndpoint
+                    },
                     color = if (state.hubConfigured) Signal else Mist,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
@@ -381,26 +410,42 @@ private fun HubLinkSection(
                 color = Mist,
                 fontSize = 12.sp,
             )
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = endpoint,
-                onValueChange = onEndpointChange,
-                label = { Text(stringResource(R.string.hub_endpoint_label)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                colors = goffyTextFieldColors(),
-            )
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(
-                value = bearerToken,
-                onValueChange = onBearerTokenChange,
-                label = { Text(stringResource(R.string.hub_token_label)) },
-                singleLine = true,
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                modifier = Modifier.fillMaxWidth(),
-                colors = goffyTextFieldColors(),
-            )
+            if (!state.hubConfigured) {
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = endpoint,
+                    onValueChange = onEndpointChange,
+                    label = { Text(stringResource(R.string.hub_endpoint_label)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = goffyTextFieldColors(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = pairingChallenge,
+                    onValueChange = onPairingChallengeChange,
+                    label = { Text(stringResource(R.string.hub_pairing_challenge_label)) },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = goffyTextFieldColors(),
+                    minLines = 2,
+                    maxLines = 3,
+                )
+                if (state.developmentTokenAllowed) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = bearerToken,
+                        onValueChange = onBearerTokenChange,
+                        label = { Text(stringResource(R.string.hub_token_label)) },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = goffyTextFieldColors(),
+                    )
+                }
+            }
             state.linkError?.let { error ->
                 Spacer(Modifier.height(8.dp))
                 Text(error, color = Warning, fontSize = 12.sp)
@@ -417,12 +462,36 @@ private fun HubLinkSection(
                     }
                     Spacer(Modifier.width(8.dp))
                 }
-                Button(
-                    onClick = onConfigure,
-                    enabled = endpoint.isNotBlank() && bearerToken.isNotBlank() && !state.isBusy,
-                    colors = ButtonDefaults.buttonColors(containerColor = Signal, contentColor = Void),
-                ) {
-                    Text(stringResource(R.string.configure_hub), fontWeight = FontWeight.Bold)
+                if (!state.hubConfigured) {
+                    Button(
+                        onClick = onPair,
+                        enabled = endpoint.isNotBlank() &&
+                            pairingChallenge.isNotBlank() &&
+                            !state.isBusy &&
+                            !state.linkOperationInProgress,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Signal,
+                            contentColor = Void,
+                        ),
+                    ) {
+                        Text(stringResource(R.string.pair_hub), fontWeight = FontWeight.Bold)
+                    }
+                }
+                if (state.developmentTokenAllowed && !state.hubConfigured) {
+                    Spacer(Modifier.width(8.dp))
+                    Button(
+                        onClick = onConfigure,
+                        enabled = endpoint.isNotBlank() &&
+                            bearerToken.isNotBlank() &&
+                            !state.isBusy &&
+                            !state.linkOperationInProgress,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Line,
+                            contentColor = Bone,
+                        ),
+                    ) {
+                        Text(stringResource(R.string.configure_hub), fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -822,4 +891,5 @@ private fun goffyTextFieldColors() = OutlinedTextFieldDefaults.colors(
 private const val MAX_COMMAND_LENGTH = 2_000
 private const val MAX_ENDPOINT_LENGTH = 2_048
 private const val MAX_TOKEN_LENGTH = 4_096
+private const val MAX_PAIRING_CHALLENGE_LENGTH = 2_048
 private const val MAX_NOTE_PREVIEW_LENGTH = 256

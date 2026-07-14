@@ -3,18 +3,24 @@ package dev.goffy.os
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.runtime.remember
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.ViewModelProvider
 
 class MainActivity : ComponentActivity() {
+    private lateinit var goffyViewModel: GoffyViewModel
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        goffyViewModel = ViewModelProvider(
+            this,
+            GoffyViewModel.Factory(applicationContext),
+        )[GoffyViewModel::class.java]
         setContent {
-            val factory = remember { GoffyViewModel.Factory(applicationContext) }
-            val goffyViewModel: GoffyViewModel = viewModel(
-                factory = factory,
-            )
             GoffyApp(goffyViewModel)
         }
+    }
+
+    override fun onStop() {
+        goffyViewModel.cancelForegroundPairing()
+        super.onStop()
     }
 }
