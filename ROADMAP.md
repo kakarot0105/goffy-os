@@ -22,6 +22,7 @@
 - [x] Explicit-confirmation Moto G USB reverse/install setup runner
 - [x] Redacted Moto G physical smoke evidence recorder
 - [x] Read-only Moto G physical validation guide
+- [x] Local Moto G validation bundle collector
 - [ ] GOFFY home shell verified on the Moto G physical device
 
 ## Milestone 1: First end-to-end action - in progress

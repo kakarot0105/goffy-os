@@ -176,6 +176,8 @@ Before starting a Moto G physical validation pass, run the readiness verifier:
 .venv/bin/python scripts/verify_moto_g_readiness.py --json
 .venv/bin/python scripts/guide_moto_g_validation.py
 .venv/bin/python scripts/guide_moto_g_validation.py --json
+.venv/bin/python scripts/collect_moto_g_validation_bundle.py
+.venv/bin/python scripts/collect_moto_g_validation_bundle.py --json
 ```
 
 It combines Android preflight, read-only device diagnostics, fixed localhost Hub
@@ -184,7 +186,11 @@ configure `adb reverse`, install the APK, start the Hub, or replace the manual
 phone checklist below.
 The guide adds the USB setup state, bounded manual checklist status, and the next
 safe action to take. It does not execute the USB setup command or control the
-phone UI.
+phone UI. The bundle collector writes local `.goffy-validation/moto-g-...`
+artifacts containing guide, smoke, and manifest JSON/text plus SHA-256 hashes for
+evidence artifacts. It is read-only for the phone and refuses to overwrite a
+timestamped bundle unless `--force` is passed against a previously marked GOFFY
+validation bundle directory.
 
 When the readiness report has no blockers except a missing Hub USB reverse, use
 the USB setup runner. It prints the fixed setup plan by default:
@@ -218,6 +224,17 @@ After the manual phone checks pass, record redacted evidence:
   --timeline-recorded pass \
   --restart-restored pass \
   --json
+```
+
+To package the same evidence for review:
+
+```bash
+.venv/bin/python scripts/collect_moto_g_validation_bundle.py \
+  --app-launched pass \
+  --command-submitted pass \
+  --mac-status-displayed pass \
+  --timeline-recorded pass \
+  --restart-restored pass
 ```
 
 The recorder is read-only. It captures readiness, USB setup state, the debug APK
