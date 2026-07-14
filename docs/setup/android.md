@@ -147,6 +147,17 @@ validation. On a machine without Android tooling, use `--allow-missing-android`
 only to verify non-Android work while keeping the Android blocker visible in the
 report.
 
+If the local environment is not ready, run the read-only setup doctor for a
+grouped human report or JSON that can be attached to an issue:
+
+```bash
+.venv/bin/python scripts/setup_doctor.py
+.venv/bin/python scripts/setup_doctor.py --json
+```
+
+The doctor redacts repo, home, and absolute toolchain paths, but review output
+before posting it to a public issue.
+
 ## USB localhost debug flow
 
 1. Start the Hub on the Mac in either legacy development mode or the paired mode

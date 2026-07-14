@@ -215,4 +215,14 @@ JDK/SDK/adb prerequisites are present.
 Use `--allow-missing-android` only when you intentionally want the Python/Hub
 checks to pass while Android Gradle remains blocked by local tooling.
 
+If verification is blocked by local setup, run the read-only setup doctor:
+
+```bash
+.venv/bin/python scripts/setup_doctor.py
+.venv/bin/python scripts/setup_doctor.py --json
+```
+
+The doctor redacts repo, home, and absolute toolchain paths, but review output
+before posting it to a public issue.
+
 Read [SECURITY.md](SECURITY.md) before exposing the Hub beyond localhost.
