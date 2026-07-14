@@ -6,6 +6,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
+from goffy_hub.identity import identity_path_for_credential_database
+
 LOCAL_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 
 
@@ -80,6 +82,12 @@ class HubSettings(BaseModel):
             f"{scheme}://localhost:{self.port}",
             f"{scheme}://[::1]:{self.port}",
         ]
+
+    @property
+    def resolved_hub_identity_path(self) -> Path | None:
+        if self.pairing_database_path is None:
+            return None
+        return identity_path_for_credential_database(self.pairing_database_path)
 
     @classmethod
     def from_environment(cls) -> HubSettings:

@@ -13,9 +13,10 @@ tools are the capability boundary.
 > bounded, session-local reconnect replay. Paired phones can now forget locally
 > and ask the Hub once to revoke or rotate the exact matching credential over
 > loopback. The Hub now emits a versioned USB-loopback pairing bundle, and Android
-> can scan that bundle through a foreground-only QR pairing panel. Physical Moto G
-> verification, automatic rotation scheduling, direct Hub/MCP operator audit, and
-> trusted LAN operation remain open.
+> can scan that bundle through a foreground-only QR pairing panel. The Hub also
+> persists a loopback-only identity fingerprint for future pinning. Physical
+> Moto G verification, automatic rotation scheduling, direct Hub/MCP operator
+> audit, Android-pinned Hub identity, and trusted LAN operation remain open.
 
 ## Current vertical slice
 
@@ -46,6 +47,8 @@ tools are the capability boundary.
   replay rejection, and token rotation
 - Loopback paired-token rotation API with old-token invalidation and live-session
   termination
+- Loopback-admin Hub identity fingerprint endpoint backed by an owner-only local
+  identity file
 - Foreground Android challenge redemption with API-26 Keystore AES-GCM storage,
   verified restart restore, paired self-revocation, and manual paired-token
   rotation

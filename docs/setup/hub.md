@@ -43,6 +43,21 @@ The Hub creates the database with mode `0600`. It stores only bearer digests and
 bounded metadata. The configured bootstrap token now has pairing-admin scope only;
 it cannot call `/ws/v1` or `/mcp`.
 
+The Hub also creates `hub-identity.json` in the same state directory with
+owner-only permissions. This file contains local identity material used to derive
+a stable fingerprint for future Android pinning. Inspect the public identity from
+the Mac only through loopback bootstrap administration:
+
+```bash
+curl -fsS -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
+  http://127.0.0.1:8787/admin/v1/hub-identity
+```
+
+The response is no-store and contains `schemaVersion`, `hubId`, `fingerprint`,
+`createdAt`, `verifiedBy`, and `trustedLanSupported=false`. It does not expose
+the private identity seed and does not mean LAN trust or certificate pinning is
+ready.
+
 Before using a physical phone, run the in-process smoke verifier. It creates a
 temporary local Hub app, mints a bundle, validates the QR payload, redeems the
 challenge once, verifies replay rejection, rotates the paired bearer, confirms

@@ -13,6 +13,7 @@ from pydantic.alias_generators import to_camel
 from goffy_hub.auth import SAFE_TOOL_SCOPE, CredentialAuthenticator
 from goffy_hub.connections import WebSocketConnectionRegistry
 from goffy_hub.credentials import CredentialStore
+from goffy_hub.identity import HubIdentityStore
 from goffy_hub.mcp_server import build_mcp_runtime
 from goffy_hub.pairing import PairingService
 from goffy_hub.pairing_api import build_pairing_router
@@ -80,6 +81,11 @@ def create_app(
         if resolved_settings.pairing_database_path is not None
         else None
     )
+    hub_identity_path = resolved_settings.resolved_hub_identity_path
+    hub_identity_store = (
+        HubIdentityStore(hub_identity_path) if hub_identity_path is not None else None
+    )
+    hub_identity = hub_identity_store.load_or_create() if hub_identity_store is not None else None
     authenticator = CredentialAuthenticator(resolved_settings, credential_store)
     pairing_service = (
         PairingService(
@@ -116,10 +122,14 @@ def create_app(
     app.state.tool_health_monitor = tool_health_monitor
     app.state.authenticator = authenticator
     app.state.credential_store = credential_store
+    app.state.hub_identity_store = hub_identity_store
+    app.state.hub_identity = hub_identity
     app.state.pairing_service = pairing_service
     app.state.websocket_connections = websocket_connections
 
     if pairing_service is not None:
+        if hub_identity is None:
+            raise RuntimeError("paired mode requires a Hub identity")
 
         async def revoke_live_access(credential_id: UUID) -> None:
             await asyncio.gather(
@@ -131,6 +141,7 @@ def create_app(
             build_pairing_router(
                 authenticator,
                 pairing_service,
+                hub_identity,
                 on_revoke=revoke_live_access,
             )
         )

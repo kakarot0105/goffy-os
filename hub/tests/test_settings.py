@@ -125,6 +125,15 @@ def test_pairing_database_path_must_be_absolute() -> None:
         HubSettings(pairing_database_path=Path("relative.sqlite3"))
 
 
+def test_hub_identity_path_is_derived_only_in_paired_mode(tmp_path: Path) -> None:
+    database_path = tmp_path / "state" / "credentials.sqlite3"
+
+    assert HubSettings().resolved_hub_identity_path is None
+    assert HubSettings(pairing_database_path=database_path).resolved_hub_identity_path == (
+        tmp_path / "state" / "hub-identity.json"
+    )
+
+
 @pytest.mark.parametrize("value", [29, 301])
 def test_pairing_challenge_ttl_is_bounded(value: int) -> None:
     with pytest.raises(ValidationError):

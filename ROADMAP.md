@@ -71,6 +71,7 @@
 - [x] Foreground Android QR challenge transfer for USB-loopback pairing bundles
 - [x] Loopback paired-device token rotation API with old-token invalidation
 - [x] Android-triggered paired-token rotation UX and fail-closed recovery policy
+- [x] Stable loopback Hub identity fingerprint for future trust onboarding
 - [ ] Trusted Hub identity onboarding
 - [ ] Automatic token rotation reminders or schedules after physical validation
 - [ ] Direct Hub/MCP operator audit after stable paired identity and user-visible retrieval

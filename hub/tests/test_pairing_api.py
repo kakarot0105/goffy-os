@@ -121,12 +121,21 @@ def test_pairing_routes_are_absent_until_database_is_explicitly_configured() -> 
             "/admin/v1/pairing/challenges",
             headers=BOOTSTRAP_HEADERS,
         )
+        identity_response = client.get(
+            "/admin/v1/hub-identity",
+            headers=BOOTSTRAP_HEADERS,
+        )
 
     assert response.status_code == 404
+    assert identity_response.status_code == 404
 
 
 def test_pairing_admin_and_redemption_are_loopback_only(tmp_path: Path) -> None:
     with pairing_client(tmp_path, client_host="192.0.2.10") as client:
+        identity_response = client.get(
+            "/admin/v1/hub-identity",
+            headers=BOOTSTRAP_HEADERS,
+        )
         admin_response = client.post(
             "/admin/v1/pairing/challenges",
             headers=BOOTSTRAP_HEADERS,
@@ -161,6 +170,7 @@ def test_pairing_admin_and_redemption_are_loopback_only(tmp_path: Path) -> None:
             headers={"Authorization": "Bearer paired-token-that-is-long-enough"},
         )
 
+    assert identity_response.status_code == 403
     assert admin_response.status_code == 403
     assert bundle_response.status_code == 403
     assert redemption_response.status_code == 403
@@ -230,6 +240,70 @@ def test_pairing_bundle_contains_loopback_identity_and_redeemable_challenge(
         },
     }
     assert redemption_response.status_code == 201
+
+
+def test_admin_hub_identity_is_stable_no_store_and_never_exposes_seed(
+    tmp_path: Path,
+) -> None:
+    with pairing_client(tmp_path) as client:
+        missing = client.get("/admin/v1/hub-identity")
+        first_response = client.get(
+            "/admin/v1/hub-identity",
+            headers=BOOTSTRAP_HEADERS,
+        )
+        second_response = client.get(
+            "/admin/v1/hub-identity",
+            headers=BOOTSTRAP_HEADERS,
+        )
+        _credential_id, access_token = pair_device(client)
+        paired_response = client.get(
+            "/admin/v1/hub-identity",
+            headers=paired_headers(access_token),
+        )
+
+    assert missing.status_code == 401
+    assert first_response.status_code == 200
+    assert first_response.headers["cache-control"] == "no-store"
+    assert first_response.headers["pragma"] == "no-cache"
+    assert first_response.json() == second_response.json()
+    assert first_response.json() == {
+        "schemaVersion": "goffy.hub.identity.v1",
+        "hubId": first_response.json()["hubId"],
+        "fingerprint": first_response.json()["fingerprint"],
+        "createdAt": first_response.json()["createdAt"],
+        "verifiedBy": "loopback_admin_session",
+        "trustedLanSupported": False,
+    }
+    assert first_response.json()["fingerprint"].startswith("sha256:")
+    assert "identitySeed" not in first_response.text
+    assert "pairingToken" not in first_response.text
+    assert paired_response.status_code == 403
+    assert paired_response.json()["detail"]["code"] == "insufficient_scope"
+
+
+def test_admin_hub_identity_survives_app_restart(tmp_path: Path) -> None:
+    settings = HubSettings(
+        auth_token=SecretStr(BOOTSTRAP_TOKEN),
+        pairing_database_path=tmp_path / "state" / "credentials.sqlite3",
+    )
+
+    with TestClient(
+        create_app(settings),
+        base_url="http://127.0.0.1:8787",
+        client=("127.0.0.1", 50_000),
+    ) as client:
+        first_response = client.get("/admin/v1/hub-identity", headers=BOOTSTRAP_HEADERS)
+
+    with TestClient(
+        create_app(settings),
+        base_url="http://127.0.0.1:8787",
+        client=("127.0.0.1", 50_000),
+    ) as client:
+        second_response = client.get("/admin/v1/hub-identity", headers=BOOTSTRAP_HEADERS)
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert second_response.json() == first_response.json()
 
 
 def test_pairing_bundle_rejects_non_loopback_host_header(tmp_path: Path) -> None:

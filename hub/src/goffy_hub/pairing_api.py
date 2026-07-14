@@ -22,6 +22,7 @@ from goffy_hub.credentials import (
     InvalidCredentialMetadataError,
     PairedCredential,
 )
+from goffy_hub.identity import HUB_IDENTITY_SCHEMA_VERSION, HubIdentity, HubIdentitySchemaVersion
 from goffy_hub.pairing import (
     InvalidPairingChallengeError,
     PairingAttemptLimitError,
@@ -54,7 +55,16 @@ class PairingChallengeResponse(PairingApiModel):
 class PairingBundleHubIdentity(PairingApiModel):
     mode: Literal["usb_loopback"]
     verified_by: Literal["loopback_admin_session"]
-    trusted_lan_supported: bool
+    trusted_lan_supported: Literal[False]
+
+
+class HubIdentityResponse(PairingApiModel):
+    schema_version: HubIdentitySchemaVersion
+    hub_id: UUID
+    fingerprint: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    created_at: datetime
+    verified_by: Literal["loopback_admin_session"]
+    trusted_lan_supported: Literal[False]
 
 
 class PairingBundleResponse(PairingApiModel):
@@ -108,10 +118,24 @@ class RevocationResponse(PairingApiModel):
 def build_pairing_router(
     authenticator: CredentialAuthenticator,
     pairing_service: PairingService,
+    hub_identity: HubIdentity,
     *,
     on_revoke: RevokeCallback,
 ) -> APIRouter:
     router = APIRouter()
+
+    @router.get(
+        "/admin/v1/hub-identity",
+        response_model=HubIdentityResponse,
+        response_model_by_alias=True,
+    )
+    async def read_hub_identity(
+        request: Request,
+        response: Response,
+    ) -> HubIdentityResponse:
+        await _require_loopback_admin(request, authenticator)
+        _prevent_secret_caching(response)
+        return _hub_identity_response(hub_identity)
 
     @router.post(
         "/admin/v1/pairing/challenges",
@@ -384,6 +408,17 @@ def _credential_response(credential: PairedCredential) -> PairedCredentialRespon
         display_name=credential.display_name,
         created_at=credential.created_at,
         revoked_at=credential.revoked_at,
+    )
+
+
+def _hub_identity_response(hub_identity: HubIdentity) -> HubIdentityResponse:
+    return HubIdentityResponse(
+        schema_version=HUB_IDENTITY_SCHEMA_VERSION,
+        hub_id=hub_identity.hub_id,
+        fingerprint=hub_identity.fingerprint,
+        created_at=hub_identity.created_at,
+        verified_by="loopback_admin_session",
+        trusted_lan_supported=False,
     )
 
 

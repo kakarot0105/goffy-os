@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from ipaddress import ip_address
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
@@ -61,10 +61,14 @@ def pairing_bundle_url(hub_url: str) -> str:
 
 
 def read_bounded_response(response: Any) -> bytes:
-    data = response.read(MAX_BUNDLE_BYTES + 1)
+    data = cast(bytes, response.read(MAX_BUNDLE_BYTES + 1))
     if len(data) > MAX_BUNDLE_BYTES:
         raise PairingQrError("Hub pairing bundle response is too large.")
     return data
+
+
+def default_urlopen(request: Request, timeout: float) -> Any:
+    return urlopen(request, timeout=timeout)  # noqa: S310 - request URL is loopback-guarded.
 
 
 def fetch_pairing_bundle(
@@ -72,7 +76,7 @@ def fetch_pairing_bundle(
     token: str,
     *,
     timeout: float = TIMEOUT_SECONDS,
-    opener: UrlOpen = urlopen,
+    opener: UrlOpen = default_urlopen,
 ) -> Mapping[str, Any]:
     if not token:
         raise PairingQrError("Set GOFFY_HUB_TOKEN or pass --token.")
@@ -185,7 +189,7 @@ def create_pairing_qr(
     token: str,
     output: Path,
     force: bool,
-    opener: UrlOpen = urlopen,
+    opener: UrlOpen = default_urlopen,
 ) -> PairingQrArtifact:
     bundle = fetch_pairing_bundle(hub_url, token, opener=opener)
     payload = canonical_bundle_payload(bundle)

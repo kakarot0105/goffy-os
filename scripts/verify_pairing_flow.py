@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,20 +15,16 @@ from goffy_hub.app import create_app
 from goffy_hub.settings import HubSettings
 from goffy_protocol import MCP_PROTOCOL_VERSION
 
-try:
-    from scripts.create_pairing_qr import (
-        canonical_bundle_payload,
-        svg_qr,
-        validate_pairing_bundle,
-        write_private_text,
-    )
-except ModuleNotFoundError:
-    from create_pairing_qr import (  # type: ignore[no-redef]
-        canonical_bundle_payload,
-        svg_qr,
-        validate_pairing_bundle,
-        write_private_text,
-    )
+ROOT = Path(__file__).resolve().parents[1]
+if __package__ in {None, ""} and str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.create_pairing_qr import (  # noqa: E402
+    canonical_bundle_payload,
+    svg_qr,
+    validate_pairing_bundle,
+    write_private_text,
+)
 
 BOOTSTRAP_TOKEN = "local-pairing-smoke-bootstrap-token"  # noqa: S105
 BOOTSTRAP_HEADERS = {"Authorization": f"Bearer {BOOTSTRAP_TOKEN}"}
@@ -38,6 +35,7 @@ class PairingSmokeResult:
     credential_id: str
     bundle_payload_bytes: int
     output: Path | None
+    identity_status: int
     replay_status: int
     rotation_status: int
     old_token_status: int
@@ -100,8 +98,37 @@ def initialize_mcp_response(client: TestClient, access_token: str) -> Any:
 
 def verify_pairing_flow(output: Path | None = None, force: bool = False) -> PairingSmokeResult:
     with tempfile.TemporaryDirectory(prefix="goffy-pairing-smoke-") as temporary_directory:
-        database_path = Path(temporary_directory) / "credentials.sqlite3"
+        database_path = Path(temporary_directory).resolve() / "credentials.sqlite3"
         with create_smoke_app(database_path) as client:
+            identity_response = client.get("/admin/v1/hub-identity", headers=BOOTSTRAP_HEADERS)
+            require_status(identity_response, 200, "Hub identity retrieval")
+            require_no_store(identity_response, "Hub identity retrieval")
+            identity = identity_response.json()
+            expected_identity_keys = {
+                "schemaVersion",
+                "hubId",
+                "fingerprint",
+                "createdAt",
+                "verifiedBy",
+                "trustedLanSupported",
+            }
+            if (
+                set(identity) != expected_identity_keys
+                or identity["schemaVersion"] != "goffy.hub.identity.v1"
+                or not isinstance(identity["fingerprint"], str)
+                or not identity["fingerprint"].startswith("sha256:")
+                or identity["trustedLanSupported"]
+                or "identitySeed" in identity_response.text
+            ):
+                raise PairingSmokeError("Hub identity response is invalid")
+            repeated_identity_response = client.get(
+                "/admin/v1/hub-identity",
+                headers=BOOTSTRAP_HEADERS,
+            )
+            require_status(repeated_identity_response, 200, "repeated Hub identity retrieval")
+            if repeated_identity_response.json() != identity:
+                raise PairingSmokeError("Hub identity was not stable during the smoke run")
+
             bundle_response = client.post(
                 "/admin/v1/pairing/bundles",
                 headers=BOOTSTRAP_HEADERS,
@@ -173,6 +200,7 @@ def verify_pairing_flow(output: Path | None = None, force: bool = False) -> Pair
                 credential_id=credential["credentialId"],
                 bundle_payload_bytes=len(payload.encode("utf-8")),
                 output=output,
+                identity_status=identity_response.status_code,
                 replay_status=replay_response.status_code,
                 rotation_status=rotation_response.status_code,
                 old_token_status=old_token_response.status_code,
@@ -188,6 +216,7 @@ def result_json(result: PairingSmokeResult) -> str:
             "credentialId": result.credential_id,
             "bundlePayloadBytes": result.bundle_payload_bytes,
             "qrOutput": str(result.output) if result.output is not None else None,
+            "identityStatus": result.identity_status,
             "replayStatus": result.replay_status,
             "rotationStatus": result.rotation_status,
             "oldTokenStatus": result.old_token_status,

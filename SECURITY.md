@@ -39,6 +39,12 @@ include real credentials or unrelated personal data.
   `goffy.pairing.bundle.v1` QR payload shape. The Hub creates them only through
   loopback bootstrap administration, requires a loopback Host header, marks them
   no-store, and declares `trustedLanSupported=false`.
+- In paired mode, the Hub creates an owner-only `hub-identity.json` file next to
+  the pairing credential database. `GET /admin/v1/hub-identity` is loopback-only,
+  bootstrap-admin-only, no-store, and returns only a stable Hub ID, SHA-256
+  fingerprint, creation timestamp, and `trustedLanSupported=false`. It never
+  exposes the private identity seed and does not implement LAN trust, certificate
+  pinning, or remote identity proof.
 - `scripts/create_pairing_qr.py` creates local operator QR artifacts only from an
   HTTP loopback Hub URL, sends the bootstrap token in an `Authorization` header,
   validates the returned bundle shape, and writes the SVG with owner-only file

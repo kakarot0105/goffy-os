@@ -12,7 +12,8 @@
 | --- | --- | --- |
 | Unauthenticated tool use | Fail-closed bearer check on every `/ws/v1` connection and `/mcp` request; paired mode gives each credential a stable principal, removes tool scope from bootstrap admin, and can rotate a paired bearer over loopback through a confirmed Android foreground action | MCP authorization profile and automatic rotation scheduling |
 | Token leakage | Bearer in header only; Hub stores only a domain-separated digest; Android stores one endpoint-bound AES-GCM record under `noBackupFilesDir` with a non-exportable Keystore key; pairing/error/state strings are redacted; QR transfer stores no frame and only fills the bounded foreground bundle field; rotation replaces the stored digest, closes live sessions, and activates locally only after encrypted read-back verification | Runtime-memory hardening and rooted-device assessment |
-| Pairing replay or credential farming | Loopback-only bootstrap creation, versioned no-store USB-loopback pairing bundles, local owner-only QR SVG generation, foreground QR transfer, and Android redemption; 256-bit memory-only challenges; 120-second TTL; single-use lock; three pending and five-failure caps; 2 KiB strict bodies; Android never retries and cancels enrollment when its Activity stops | Device-aware rate limits and trusted identity onboarding |
+| Pairing replay or credential farming | Loopback-only bootstrap creation, versioned no-store USB-loopback pairing bundles, local owner-only QR SVG generation, foreground QR transfer, and Android redemption; 256-bit memory-only challenges; 120-second TTL; single-use lock; three pending and five-failure caps; 2 KiB strict bodies; Android never retries and cancels enrollment when its Activity stops | Device-aware rate limits and Android-pinned trusted identity onboarding |
+| Hub identity substitution | Paired mode creates an owner-only local Hub identity seed and exposes only a stable SHA-256 fingerprint through loopback bootstrap administration with no-store headers and `trustedLanSupported=false` | Android pinning, certificate/public-key proof, and trusted LAN onboarding |
 | Android credential corruption or substitution | AES-GCM authenticates the exact endpoint and full versioned record; read-back gates activation; malformed/decrypt-failed state deletes the record and key and disables Mac authority | Physical API-26 Keystore failure matrix and recovery diagnostics |
 | Misleading local forget | Foreground enrollment is canceled and joined before local record/key deletion; paired links make one authenticated loopback self-revocation request for the exact authenticated Hub principal; UI distinguishes verified Hub revocation from unverified offline or ambiguous outcomes | Physical process-failure testing |
 | Stale access after revocation | Revoked state persists before indexed live WebSocket and MCP sessions terminate; new auth rechecks the store | Real-network race and process-failure testing |
@@ -53,10 +54,11 @@
 
 Paired credentials are not MCP OAuth. Neither transport is approved for LAN use,
 and pairing delivery is loopback-only. Android secure local storage, a versioned
-USB-loopback pairing bundle, foreground QR scanning, paired self-revocation, and
-manual Android paired token rotation are implemented for the USB loopback slice,
-but there is no trusted certificate provisioning, automatic rotation scheduling,
-device-aware request rate limiting, server-side cancellation, or direct Hub/MCP
-operator audit yet.
+USB-loopback pairing bundle, foreground QR scanning, paired self-revocation,
+manual Android paired token rotation, and a loopback-admin Hub identity
+fingerprint are implemented for the USB loopback slice, but there is no trusted
+certificate provisioning, Android identity pinning, automatic rotation
+scheduling, device-aware request rate limiting, server-side cancellation, or
+direct Hub/MCP operator audit yet.
 The Android audit trail is local-only, redacted, bounded, display-only on
 restore, and still lacks explicit clear controls and cryptographic tamper evidence.
