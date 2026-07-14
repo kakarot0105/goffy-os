@@ -70,7 +70,8 @@ posts the typed redemption once, encrypts the returned bearer with Android
 Keystore, verifies the stored record, and then shows the link as paired.
 
 `deviceId` is descriptive setup metadata; the returned `credentialId` is the
-security principal. List and revoke credentials with the bootstrap token:
+security principal. List credentials or perform administrator revocation with the
+bootstrap token:
 
 ```bash
 curl -fsS -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
@@ -81,13 +82,15 @@ curl -fsS -X DELETE -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
 
 Revocation closes indexed live WebSocket and MCP sessions before success is
 returned and survives Hub restart. Pending challenges are memory-only and do not.
-Android's `Forget local link` deletes only its encrypted copy and key; it does not
-call this administrator revocation route, so revoke the Mac record separately when
-retiring or losing a phone.
+Android's `Forget link` deletes its encrypted copy and key first, then calls the
+paired self-revocation route once when the link is paired. A verified response
+means the Hub revoked that exact authenticated credential. If the phone reports
+remote revocation as unverified, or if the phone is lost, use the administrator
+route above from the Mac and inspect the credential list.
 Paired mode requires a local Hub bind, and all pairing and administration routes
 also reject non-loopback clients. Configured LAN TLS and allowlists do not override
-these guards. Guided QR pairing, paired self-revocation, rotation, and trusted LAN
-onboarding are not implemented yet.
+these guards. Guided QR pairing, token rotation, and trusted LAN onboarding are
+not implemented yet.
 
 ## MCP client
 

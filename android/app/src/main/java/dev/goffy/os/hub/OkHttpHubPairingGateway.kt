@@ -90,6 +90,58 @@ class OkHttpHubPairingGateway internal constructor(
         }
     }
 
+    override suspend fun revokeSelf(
+        config: HubConfig,
+        expectedCredentialId: UUID,
+    ): SelfRevocationResult {
+        if (!config.isLoopback) {
+            throw HubPairingException(
+                "revocation_loopback_required",
+                "Paired self-revocation currently requires the USB loopback link.",
+            )
+        }
+        val request = Request.Builder()
+            .url(config.selfRevocationUrl)
+            .header("Accept", "application/json")
+            .header("Authorization", config.authorizationHeaderValue)
+            .delete()
+            .build()
+
+        return suspendCancellableCoroutine { continuation ->
+            val call = client.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(
+                object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        if (continuation.isActive) {
+                            continuation.resumeWithException(
+                                HubPairingException(
+                                    "revocation_transport_failed",
+                                    "The Hub could not be reached to verify revocation.",
+                                ),
+                            )
+                        }
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        response.use {
+                            if (!continuation.isActive) return
+                            try {
+                                continuation.resume(
+                                    parseRevocationResponse(response, expectedCredentialId),
+                                )
+                            } catch (error: HubPairingException) {
+                                continuation.resumeWithException(error)
+                            } catch (_: Exception) {
+                                continuation.resumeWithException(invalidRevocationResponse())
+                            }
+                        }
+                    }
+                },
+            )
+        }
+    }
+
     override fun close() {
         client.dispatcher.cancelAll()
         client.connectionPool.evictAll()
@@ -168,6 +220,34 @@ class OkHttpHubPairingGateway internal constructor(
         return IssuedHubCredential(credentialId, wire.accessToken, createdAt)
     }
 
+    private fun parseRevocationResponse(
+        response: Response,
+        expectedCredentialId: UUID,
+    ): SelfRevocationResult {
+        if (response.code != HTTP_OK) throw revocationStatusError(response.code)
+        val contentType = response.header("Content-Type")
+        if (contentType?.substringBefore(';')?.trim()?.lowercase() != "application/json") {
+            throw invalidRevocationResponse()
+        }
+        val bytes = readBoundedBody(response)
+        val value = try {
+            json.parseToJsonElement(bytes.toString(Charsets.UTF_8)).jsonObject
+        } catch (_: Exception) {
+            throw invalidRevocationResponse()
+        }
+        try {
+            value.requireExactKeys(REVOCATION_KEYS)
+        } catch (_: SerializationException) {
+            throw invalidRevocationResponse()
+        }
+        val credentialId = parseCanonicalUuid(value.requiredString("credentialId"))
+            ?: throw invalidRevocationResponse()
+        if (credentialId != expectedCredentialId || !value.requiredBoolean("revoked")) {
+            throw invalidRevocationResponse()
+        }
+        return SelfRevocationResult(credentialId, revoked = true)
+    }
+
     private fun readBoundedBody(response: Response): ByteArray {
         val source = response.body.source()
         val buffer = Buffer()
@@ -199,6 +279,29 @@ class OkHttpHubPairingGateway internal constructor(
         else -> HubPairingException("pairing_rejected", "The Hub rejected this pairing request.")
     }
 
+    private fun revocationStatusError(status: Int): HubPairingException = when (status) {
+        401 -> HubPairingException(
+            "revocation_authentication_failed",
+            "The Hub did not accept this paired credential for revocation.",
+        )
+        403 -> HubPairingException(
+            "revocation_forbidden",
+            "The Hub refused paired self-revocation.",
+        )
+        409 -> HubPairingException(
+            "revocation_not_active",
+            "The Hub could not verify that this paired credential was active.",
+        )
+        503 -> HubPairingException(
+            "revocation_unavailable",
+            "The Hub credential store is unavailable for revocation.",
+        )
+        else -> HubPairingException(
+            "revocation_rejected",
+            "The Hub rejected paired self-revocation.",
+        )
+    }
+
     private fun invalidChallenge() = HubPairingException(
         "invalid_pairing_payload",
         "Paste a complete, current GOFFY pairing challenge.",
@@ -207,6 +310,11 @@ class OkHttpHubPairingGateway internal constructor(
     private fun invalidResponse() = HubPairingException(
         "invalid_pairing_response",
         "The Hub returned an invalid pairing response; no credential was saved.",
+    )
+
+    private fun invalidRevocationResponse() = HubPairingException(
+        "invalid_revocation_response",
+        "The Hub returned an invalid revocation response; remote revocation is unverified.",
     )
 
     private class PairingChallenge(
@@ -239,6 +347,7 @@ class OkHttpHubPairingGateway internal constructor(
 
     private companion object {
         const val HTTP_CREATED = 201
+        const val HTTP_OK = 200
         const val MAX_PAIRING_JSON_BYTES = 2_048
         const val MIN_PAIRING_TOKEN_LENGTH = 32
         const val MAX_PAIRING_TOKEN_LENGTH = 128
@@ -248,6 +357,7 @@ class OkHttpHubPairingGateway internal constructor(
         val DEVICE_ID_REGEX = Regex("^[A-Za-z0-9._:-]{1,64}$")
         val CHALLENGE_KEYS = setOf("challengeId", "pairingToken", "expiresAt")
         val SUCCESS_KEYS = setOf("credentialId", "accessToken", "createdAt")
+        val REVOCATION_KEYS = setOf("credentialId", "revoked")
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
         fun strictJson() = Json {
@@ -273,12 +383,23 @@ class OkHttpHubPairingGateway internal constructor(
             return primitive.content
         }
 
+        fun JsonObject.requiredBoolean(name: String): Boolean {
+            val primitive = get(name) as? JsonPrimitive
+                ?: throw SerializationException("missing JSON Boolean")
+            if (primitive.isString || primitive.content !in setOf("true", "false")) {
+                throw SerializationException("JSON value must be a Boolean")
+            }
+            return primitive.content == "true"
+        }
+
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(10, TimeUnit.SECONDS)
             .callTimeout(20, TimeUnit.SECONDS)
             .retryOnConnectionFailure(false)
+            .followRedirects(false)
+            .followSslRedirects(false)
             .build()
     }
 }

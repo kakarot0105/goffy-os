@@ -10,8 +10,10 @@ tools are the capability boundary.
 > Streamable HTTP boundary, stable Hub paired-device credentials, Keystore-backed
 > Android pairing restore, and a persistent user-visible Android audit trail
 > for the newest 50 terminal tasks. MCP tool-list changes now stream with
-> bounded, session-local reconnect replay. Guided QR pairing, physical Moto G
-> verification, direct Hub/MCP operator audit, and trusted LAN operation remain open.
+> bounded, session-local reconnect replay. Paired phones can now forget locally
+> and ask the Hub once to revoke the exact matching credential over loopback.
+> Guided QR pairing, physical Moto G verification, direct Hub/MCP operator audit,
+> token rotation, and trusted LAN operation remain open.
 
 ## Current vertical slice
 
@@ -37,7 +39,7 @@ tools are the capability boundary.
 - Authenticated MCP tool-list change notifications with bounded reconnect replay
 - Explicit loopback pairing with digest-only, revocable per-device Hub credentials
 - Foreground Android challenge redemption with API-26 Keystore AES-GCM storage,
-  verified restart restore, and local forget
+  verified restart restore, and paired self-revocation
 - Allowlisted, read-only `SAFE mac.system_info` tool
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
@@ -83,7 +85,7 @@ stable paired identity, configure the explicit state path and follow
 [Hub setup](docs/setup/hub.md). Pairing remains loopback-only and trusted LAN use
 is still unsupported. Android can now redeem the complete challenge JSON through
 the foreground Hub card over USB loopback and restores the encrypted credential
-after restart; QR transfer and remote self-revocation remain open.
+after restart; QR transfer and token rotation remain open.
 With the Hub running, verify the official MCP path in another terminal:
 
 ```bash
@@ -159,10 +161,11 @@ Android backup and device transfer are disabled for app data; uninstall removes
 the records. The paired Hub bearer is stored separately as one bounded AES-GCM
 record in `noBackupFilesDir`; its 256-bit key remains non-exportable in Android
 Keystore. A write is activated only after read-back verification. Corrupt or
-undecryptable state is deleted and visibly disables Mac access. `Forget local
-link` removes the phone copy and key but does not revoke the corresponding Hub
-record; use the Mac bootstrap-admin route for revocation. Direct Hub/MCP operator
-audit remains future work.
+undecryptable state is deleted and visibly disables Mac access. `Forget link`
+removes the phone copy first; paired links then make exactly one authenticated
+loopback self-revocation request for the stored credential ID. If the Hub cannot
+verify it, the phone reports local deletion with remote revocation unverified.
+Direct Hub/MCP operator audit remains future work.
 
 This is an Android application layer, not a flashable replacement ROM. A custom
 ROM remains a later hardware-specific project after the agent runtime is proven.

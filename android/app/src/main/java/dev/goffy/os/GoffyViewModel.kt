@@ -109,6 +109,7 @@ class GoffyViewModel internal constructor(
     val uiState: StateFlow<GoffyUiState> = mutableUiState.asStateFlow()
 
     private var hubConfig: HubConfig? = null
+    private var pairedCredentialId: UUID? = null
     private var deviceId: String = deviceId
     private var activeJob: Job? = null
     private var linkJob: Job? = null
@@ -144,6 +145,7 @@ class GoffyViewModel internal constructor(
                 }
                 HubCredentialLoadResult.Corrupt -> {
                     hubConfig = null
+                    pairedCredentialId = null
                     mutableUiState.value = mutableUiState.value.hubRestoreFailed(
                         "The saved Hub credential was unreadable and has been removed. Pair again.",
                     )
@@ -151,6 +153,7 @@ class GoffyViewModel internal constructor(
                 is HubCredentialLoadResult.Loaded -> {
                     try {
                         hubConfig = loaded.credential.toHubConfig(allowInsecureLoopback)
+                        pairedCredentialId = loaded.credential.credentialId
                         deviceId = loaded.credential.deviceId
                         mutableUiState.value = mutableUiState.value.hubConfigured(
                             loaded.credential.endpoint,
@@ -158,6 +161,7 @@ class GoffyViewModel internal constructor(
                         )
                     } catch (_: Exception) {
                         hubConfig = null
+                        pairedCredentialId = null
                         runCatching {
                             withContext(credentialDispatcher) { credentialStore.clear() }
                         }
@@ -228,6 +232,7 @@ class GoffyViewModel internal constructor(
             return false
         }
         hubConfig = config
+        pairedCredentialId = null
         mutableUiState.value = mutableUiState.value.hubConfigured(config.endpoint)
         return true
     }
@@ -240,6 +245,7 @@ class GoffyViewModel internal constructor(
             )
             return
         }
+        pairedCredentialId = null
         val parsedEndpoint = try {
             HubEndpoint.create(endpoint, allowInsecureLoopback)
         } catch (error: HubConfigurationException) {
@@ -272,6 +278,7 @@ class GoffyViewModel internal constructor(
                 }
                 if (revision != linkRevision) return@launch
                 hubConfig = persisted.toHubConfig(allowInsecureLoopback)
+                pairedCredentialId = persisted.credentialId
                 deviceId = persisted.deviceId
                 mutableUiState.value = mutableUiState.value.hubConfigured(
                     persisted.endpoint,
@@ -288,6 +295,7 @@ class GoffyViewModel internal constructor(
             } catch (_: Exception) {
                 if (revision == linkRevision) {
                     hubConfig = null
+                    pairedCredentialId = null
                     mutableUiState.value = mutableUiState.value.hubRestoreFailed(
                         "Pairing could not be stored and was not activated. Revoke any stale " +
                             "credential on the Mac, then create a new challenge.",
@@ -298,20 +306,77 @@ class GoffyViewModel internal constructor(
     }
 
     fun forgetHub() {
+        val previousConfig = hubConfig
+        val previousCredentialId = pairedCredentialId
+        val wasPaired = mutableUiState.value.hubLinkState == HubLinkState.PAIRED &&
+            previousConfig != null &&
+            previousCredentialId != null
         ++linkRevision
         val previousLinkJob = linkJob
         previousLinkJob?.cancel()
         cancelActiveTask()
         hubConfig = null
+        pairedCredentialId = null
         mutableUiState.value = mutableUiState.value.hubForgetStarted(nowMillis())
         linkJob = viewModelScope.launch {
-            try {
-                previousLinkJob?.join()
+            previousLinkJob?.join()
+            val localCleared = try {
                 withContext(credentialDispatcher) { credentialStore.clear() }
-                mutableUiState.value = mutableUiState.value.forgetHub(defaultEndpoint, nowMillis())
+                true
+            } catch (error: CancellationException) {
+                throw error
             } catch (_: Exception) {
-                mutableUiState.value = mutableUiState.value.hubRestoreFailed(
-                    "Mac access is disabled, but local credential deletion could not be fully verified.",
+                false
+            }
+            val remoteVerified = if (wasPaired) {
+                try {
+                    pairingGateway.revokeSelf(previousConfig, previousCredentialId)
+                    true
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: HubPairingException) {
+                    false
+                } catch (_: Exception) {
+                    false
+                }
+            } else {
+                null
+            }
+
+            mutableUiState.value = when {
+                localCleared && remoteVerified == true -> mutableUiState.value.forgetHub(
+                    defaultEndpoint = defaultEndpoint,
+                    notice = HubLinkNotice(
+                        "Hub revocation verified; local credential removed.",
+                        warning = false,
+                    ),
+                    terminalAtEpochMillis = nowMillis(),
+                )
+                localCleared && remoteVerified == false -> mutableUiState.value.forgetHub(
+                    defaultEndpoint = defaultEndpoint,
+                    notice = HubLinkNotice(
+                        "Local credential removed; Hub revocation was not verified. Revoke from Mac.",
+                        warning = true,
+                    ),
+                    terminalAtEpochMillis = nowMillis(),
+                )
+                localCleared -> mutableUiState.value.forgetHub(
+                    defaultEndpoint = defaultEndpoint,
+                    notice = HubLinkNotice(
+                        "Debug Hub link removed from this phone.",
+                        warning = false,
+                    ),
+                    terminalAtEpochMillis = nowMillis(),
+                )
+                remoteVerified == true -> mutableUiState.value.hubForgetVerificationFailed(
+                    defaultEndpoint = defaultEndpoint,
+                    message = "Hub revocation was verified, but local credential deletion could not be fully verified. Clear app data before relaunching.",
+                    terminalAtEpochMillis = nowMillis(),
+                )
+                else -> mutableUiState.value.hubForgetVerificationFailed(
+                    defaultEndpoint = defaultEndpoint,
+                    message = "Current Mac access is disabled, but local credential deletion could not be fully verified. Clear app data before relaunching.",
+                    terminalAtEpochMillis = nowMillis(),
                 )
             }
         }
@@ -323,6 +388,7 @@ class GoffyViewModel internal constructor(
         val enrollmentJob = linkJob
         enrollmentJob?.cancel()
         hubConfig = null
+        pairedCredentialId = null
         mutableUiState.value = mutableUiState.value.hubPairingRejected(
             "Pairing stopped when GOFFY left the foreground. Revoke any newly listed " +
                 "credential on the Mac before trying again.",

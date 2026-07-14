@@ -28,9 +28,9 @@ include real credentials or unrelated personal data.
   `/ws/v1` or `/mcp`.
 - Paired mode rejects a non-local Hub bind even if LAN mode, TLS files, and MCP
   allowlists are configured. Paired tool credentials are local-only in this slice.
-- Pairing challenge creation, redemption, credential listing, and revocation are
-  loopback-only even when LAN binding guards are configured. Challenge creation
-  also requires bootstrap administration.
+- Pairing challenge creation, redemption, credential listing, administrator
+  revocation, and paired self-revocation are loopback-only even when LAN binding
+  guards are configured. Challenge creation also requires bootstrap administration.
 - Challenges are memory-only, random, one-time, 120 seconds by default, capped at
   three pending entries, and invalidated after five failed attempts. Redemption
   JSON is capped at 2 KiB, validation errors never echo secret input, and
@@ -78,13 +78,18 @@ include real credentials or unrelated personal data.
   repair. Backup and device transfer remain disabled for all app data.
 - The legacy manual bearer field is compiled into debug behavior only, remains
   memory-only, and is excluded from saved UI state and string representations.
-- `Forget local link` cancels and joins foreground enrollment before deleting the
-  encrypted record and Keystore key. It does not revoke the Hub-side digest; the
-  UI states this limitation and bootstrap-admin revocation remains required.
+- `Forget link` cancels and joins foreground enrollment before deleting the
+  encrypted record and Keystore key. For paired links, Android then makes exactly
+  one loopback `DELETE /pairing/v1/self` request authenticated by the stored
+  bearer. The Hub derives the target credential ID from the authenticated
+  principal, persists revocation, terminates indexed live WebSocket and MCP
+  sessions, and returns the revoked credential ID. Android treats any lost,
+  mismatched, false, or error response as remote revocation unverified; it does
+  not retry an ambiguous DELETE.
 - The bearer is decrypted into process memory while the active ViewModel owns the
   Hub connection configuration. Rooted-device/process compromise is outside this
   pre-alpha storage guarantee. Guided QR transfer, certificate pin onboarding,
-  self-revocation, and token rotation are not implemented.
+  and token rotation are not implemented.
 - Release Android clients require `wss://`; debug cleartext is limited to
   `localhost` and `127.0.0.1` for the documented USB port-reversal flow.
 - Automatic reconnect occurs only before an invocation is sent. Sent requests

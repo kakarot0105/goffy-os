@@ -148,11 +148,16 @@ def test_pairing_admin_and_redemption_are_loopback_only(tmp_path: Path) -> None:
             "/admin/v1/credentials/30303030-3030-4030-8030-303030303030",
             headers=BOOTSTRAP_HEADERS,
         )
+        self_revoke_response = client.delete(
+            "/pairing/v1/self",
+            headers={"Authorization": "Bearer paired-token-that-is-long-enough"},
+        )
 
     assert admin_response.status_code == 403
     assert redemption_response.status_code == 403
     assert list_response.status_code == 403
     assert revoke_response.status_code == 403
+    assert self_revoke_response.status_code == 403
     assert admin_response.json()["detail"]["code"] == "loopback_required"
     assert redemption_response.json()["detail"]["code"] == "loopback_required"
 
@@ -192,6 +197,41 @@ def test_pairing_requires_bootstrap_admin_and_rejects_paired_admin_access(
     assert missing.status_code == 401
     assert paired.status_code == 403
     assert paired.json()["detail"]["code"] == "insufficient_scope"
+
+
+def test_self_revocation_requires_the_paired_principal_and_targets_only_itself(
+    tmp_path: Path,
+) -> None:
+    with pairing_client(tmp_path) as client:
+        first_id, first_token = pair_device(client, device_id="observation-1")
+        second_id, second_token = pair_device(client, device_id="observation-2")
+
+        missing = client.delete("/pairing/v1/self")
+        bootstrap = client.delete("/pairing/v1/self", headers=BOOTSTRAP_HEADERS)
+        revoked = client.delete("/pairing/v1/self", headers=paired_headers(first_token))
+        repeated = client.delete("/pairing/v1/self", headers=paired_headers(first_token))
+        second_access = client.post(
+            "/mcp",
+            json=initialize_request(),
+            headers={
+                **paired_headers(second_token),
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+            },
+        )
+        listed = client.get("/admin/v1/credentials", headers=BOOTSTRAP_HEADERS)
+
+    assert missing.status_code == 401
+    assert bootstrap.status_code == 403
+    assert bootstrap.json()["detail"]["code"] == "paired_principal_required"
+    assert revoked.status_code == 200
+    assert revoked.headers["cache-control"] == "no-store"
+    assert revoked.json() == {"credentialId": first_id, "revoked": True}
+    assert repeated.status_code == 401
+    assert second_access.status_code == 200
+    by_id = {item["credentialId"]: item for item in listed.json()["credentials"]}
+    assert by_id[first_id]["revokedAt"] is not None
+    assert by_id[second_id]["revokedAt"] is None
 
 
 def test_invalid_pairing_request_is_bounded_and_never_echoes_token(tmp_path: Path) -> None:
@@ -323,10 +363,7 @@ def test_revocation_closes_live_websocket_and_mcp_session(tmp_path: Path) -> Non
             "/ws/v1",
             headers=paired_headers(access_token),
         ) as socket:
-            revoked = client.delete(
-                f"/admin/v1/credentials/{credential_id}",
-                headers=BOOTSTRAP_HEADERS,
-            )
+            revoked = client.delete("/pairing/v1/self", headers=paired_headers(access_token))
             with pytest.raises(WebSocketDisconnect) as websocket_error:
                 socket.receive_text()
 
@@ -451,6 +488,10 @@ def test_runtime_credential_store_failure_fails_closed_without_secret_echo(
                 "displayName": "Second phone",
             },
         )
+        self_revoked = client.delete(
+            "/pairing/v1/self",
+            headers=paired_headers(access_token),
+        )
 
     assert health.status_code == 200
     assert health.json()["toolAccess"] == "disabled"
@@ -460,4 +501,5 @@ def test_runtime_credential_store_failure_fails_closed_without_secret_echo(
     assert listed.status_code == 503
     assert revoked.status_code == 503
     assert redeemed.status_code == 503
-    assert access_token not in listed.text + revoked.text + redeemed.text
+    assert self_revoked.status_code == 401
+    assert access_token not in listed.text + revoked.text + redeemed.text + self_revoked.text

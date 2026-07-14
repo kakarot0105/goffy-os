@@ -11,8 +11,15 @@ interface HubPairingGateway {
         displayName: String,
     ): IssuedHubCredential
 
+    suspend fun revokeSelf(config: HubConfig, expectedCredentialId: UUID): SelfRevocationResult
+
     fun close()
 }
+
+data class SelfRevocationResult(
+    val credentialId: UUID,
+    val revoked: Boolean,
+)
 
 class HubPairingException(
     val code: String,

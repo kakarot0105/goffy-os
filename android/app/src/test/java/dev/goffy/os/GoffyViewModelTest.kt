@@ -13,8 +13,10 @@ import dev.goffy.os.hub.HubCredentialLoadResult
 import dev.goffy.os.hub.HubCredentialStore
 import dev.goffy.os.hub.HubEndpoint
 import dev.goffy.os.hub.HubGateway
+import dev.goffy.os.hub.HubPairingException
 import dev.goffy.os.hub.HubPairingGateway
 import dev.goffy.os.hub.IssuedHubCredential
+import dev.goffy.os.hub.SelfRevocationResult
 import dev.goffy.os.hub.StoredHubCredential
 import dev.goffy.os.phone.DefaultPhoneToolGateway
 import dev.goffy.os.phone.FlashlightSource
@@ -178,13 +180,18 @@ class GoffyViewModelTest {
         val credentialStore = RecordingCredentialStore(
             HubCredentialLoadResult.Loaded(storedCredential()),
         )
+        val pairingGateway = RecordingPairingGateway()
         val gateway = FakeHubGateway {
             flow {
                 emit(ExecutionEvent.Starting(1))
                 awaitCancellation()
             }
         }
-        val viewModel = createViewModel(gateway, credentialStore = credentialStore)
+        val viewModel = createViewModel(
+            gateway,
+            pairingGateway = pairingGateway,
+            credentialStore = credentialStore,
+        )
         advanceUntilIdle()
         viewModel.submitCommand("Show my Mac status")
         runCurrent()
@@ -193,9 +200,84 @@ class GoffyViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, credentialStore.clears)
+        assertEquals(1, pairingGateway.revocationCalls)
+        assertEquals(storedCredential().credentialId, pairingGateway.revokedCredentialIds.single())
         assertEquals(HubLinkState.UNPAIRED, viewModel.uiState.value.hubLinkState)
         assertFalse(viewModel.uiState.value.hubConfigured)
+        assertEquals(false, viewModel.uiState.value.linkNotice?.warning)
+        assertTrue(viewModel.uiState.value.linkNotice?.message.orEmpty().contains("verified"))
         assertEquals(TaskPhase.CANCELLED, viewModel.uiState.value.timeline.entries.single().phase)
+    }
+
+    @Test
+    fun forgetRemovesLocalAuthorityWhenHubSelfRevocationIsUnverified() = runTest(dispatcher) {
+        val credentialStore = RecordingCredentialStore(
+            HubCredentialLoadResult.Loaded(storedCredential()),
+        )
+        val pairingGateway = RecordingPairingGateway(failRevocation = true)
+        val viewModel = createViewModel(
+            FakeHubGateway { flowOf() },
+            pairingGateway = pairingGateway,
+            credentialStore = credentialStore,
+        )
+        advanceUntilIdle()
+
+        viewModel.forgetHub()
+        advanceUntilIdle()
+
+        assertEquals(1, credentialStore.clears)
+        assertEquals(1, pairingGateway.revocationCalls)
+        assertEquals(HubLinkState.UNPAIRED, viewModel.uiState.value.hubLinkState)
+        assertFalse(viewModel.uiState.value.hubConfigured)
+        assertEquals(true, viewModel.uiState.value.linkNotice?.warning)
+        assertTrue(viewModel.uiState.value.linkNotice?.message.orEmpty().contains("not verified"))
+    }
+
+    @Test
+    fun forgetReportsDegradedWhenLocalCredentialClearCannotBeVerified() = runTest(dispatcher) {
+        val credentialStore = RecordingCredentialStore(
+            initial = HubCredentialLoadResult.Loaded(storedCredential()),
+            failClears = true,
+        )
+        val pairingGateway = RecordingPairingGateway()
+        val viewModel = createViewModel(
+            FakeHubGateway { flowOf() },
+            pairingGateway = pairingGateway,
+            credentialStore = credentialStore,
+        )
+        advanceUntilIdle()
+
+        viewModel.forgetHub()
+        advanceUntilIdle()
+
+        assertEquals(1, credentialStore.clears)
+        assertEquals(1, pairingGateway.revocationCalls)
+        assertEquals(HubLinkState.DEGRADED, viewModel.uiState.value.hubLinkState)
+        assertFalse(viewModel.uiState.value.hubConfigured)
+        assertTrue(viewModel.uiState.value.linkError.orEmpty().contains("local credential deletion"))
+        assertNull(viewModel.uiState.value.linkNotice)
+    }
+
+    @Test
+    fun forgetDevelopmentLinkDoesNotAttemptPairedSelfRevocation() = runTest(dispatcher) {
+        val credentialStore = RecordingCredentialStore()
+        val pairingGateway = RecordingPairingGateway()
+        val viewModel = createViewModel(
+            FakeHubGateway { flowOf() },
+            pairingGateway = pairingGateway,
+            credentialStore = credentialStore,
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.configureHub(endpoint, token))
+        viewModel.forgetHub()
+        advanceUntilIdle()
+
+        assertEquals(1, credentialStore.clears)
+        assertEquals(0, pairingGateway.revocationCalls)
+        assertEquals(HubLinkState.UNPAIRED, viewModel.uiState.value.hubLinkState)
+        assertEquals(false, viewModel.uiState.value.linkNotice?.warning)
+        assertTrue(viewModel.uiState.value.linkNotice?.message.orEmpty().contains("Debug"))
     }
 
     @Test
@@ -828,8 +910,12 @@ class GoffyViewModelTest {
         override fun close() = Unit
     }
 
-    private class RecordingPairingGateway : HubPairingGateway {
+    private class RecordingPairingGateway(
+        private val failRevocation: Boolean = false,
+    ) : HubPairingGateway {
         var calls = 0
+        var revocationCalls = 0
+        val revokedCredentialIds = mutableListOf<UUID>()
 
         override suspend fun redeem(
             endpoint: HubEndpoint,
@@ -845,6 +931,21 @@ class GoffyViewModelTest {
             )
         }
 
+        override suspend fun revokeSelf(
+            config: HubConfig,
+            expectedCredentialId: UUID,
+        ): SelfRevocationResult {
+            revocationCalls += 1
+            revokedCredentialIds += expectedCredentialId
+            if (failRevocation) {
+                throw HubPairingException(
+                    "simulated_revocation_failure",
+                    "Simulated revocation failure.",
+                )
+            }
+            return SelfRevocationResult(expectedCredentialId, revoked = true)
+        }
+
         override fun close() = Unit
     }
 
@@ -856,12 +957,18 @@ class GoffyViewModelTest {
             displayName: String,
         ): IssuedHubCredential = awaitCancellation()
 
+        override suspend fun revokeSelf(
+            config: HubConfig,
+            expectedCredentialId: UUID,
+        ): SelfRevocationResult = error("self-revocation should not run while pairing is blocked")
+
         override fun close() = Unit
     }
 
     private class RecordingCredentialStore(
         initial: HubCredentialLoadResult = HubCredentialLoadResult.Empty,
         private val failSaves: Boolean = false,
+        private val failClears: Boolean = false,
     ) : HubCredentialStore {
         private var loaded = initial
         var saves = 0
@@ -878,6 +985,7 @@ class GoffyViewModelTest {
 
         override fun clear() {
             clears += 1
+            if (failClears) error("simulated credential clear failure")
             loaded = HubCredentialLoadResult.Empty
         }
     }

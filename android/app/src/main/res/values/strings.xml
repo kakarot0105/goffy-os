@@ -11,7 +11,7 @@
     <string name="connection_connected">CONNECTED</string>
     <string name="hub_link_title">SECURE HUB LINK</string>
     <string name="hub_not_configured">NOT CONFIGURED</string>
-    <string name="hub_link_security_note">Paste a current challenge while USB port reversal is active. The bearer is Keystore-encrypted and excluded from backup. Local forget does not revoke the Mac record.</string>
+    <string name="hub_link_security_note">Paste a current challenge while USB port reversal is active. The bearer is Keystore-encrypted and excluded from backup. Forget removes the phone copy first, then verifies Hub revocation when paired.</string>
     <string name="hub_loading">LOADING LOCAL LINK</string>
     <string name="hub_pairing">PAIRING IN FOREGROUND</string>
     <string name="hub_forgetting">REMOVING LOCAL LINK</string>
@@ -21,7 +21,12 @@
     <string name="hub_token_label">Development bearer token</string>
     <string name="pair_hub">Pair phone</string>
     <string name="configure_hub">Debug link</string>
-    <string name="forget_hub">Forget local link</string>
+    <string name="forget_hub">Forget link</string>
+    <string name="forget_hub_title">Revoke this phone?</string>
+    <string name="forget_hub_paired_explanation">GOFFY will remove the local credential first, then ask the Hub once to revoke this exact paired phone. If the Hub is offline, local Mac access stops but remote revocation is unverified.</string>
+    <string name="forget_hub_debug_explanation">GOFFY will remove this debug link from the phone. Debug bearer links are not paired Hub records, so there is no remote revocation step.</string>
+    <string name="forget_hub_confirm">Revoke and forget</string>
+    <string name="forget_hub_cancel">Keep link</string>
     <string name="edit_link_setup">Edit</string>
     <string name="hide_link_setup">Hide</string>
     <string name="target_label">EXECUTION TARGET</string>

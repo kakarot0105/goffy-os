@@ -36,6 +36,7 @@ data class GoffyUiState(
     val hubLinkState: HubLinkState = HubLinkState.LOADING,
     val hubEndpoint: String,
     val linkError: String? = null,
+    val linkNotice: HubLinkNotice? = null,
     val developmentTokenAllowed: Boolean = false,
     val pendingApproval: PendingApproval? = null,
     val auditPersistence: AuditPersistenceState = AuditPersistenceState.LOADING,
@@ -56,31 +57,37 @@ data class GoffyUiState(
         hubLinkState = if (persistent) HubLinkState.PAIRED else HubLinkState.DEVELOPMENT,
         hubEndpoint = endpoint,
         linkError = null,
+        linkNotice = null,
     )
 
     fun hubConfigurationRejected(message: String): GoffyUiState = copy(
         linkError = message.take(MAX_ERROR_LENGTH),
+        linkNotice = null,
     )
 
     fun hubRestoreEmpty(): GoffyUiState = copy(
         hubLinkState = HubLinkState.UNPAIRED,
         linkError = null,
+        linkNotice = null,
     )
 
     fun hubRestoreFailed(message: String): GoffyUiState = copy(
         hubLinkState = HubLinkState.DEGRADED,
         linkError = message.take(MAX_ERROR_LENGTH),
+        linkNotice = null,
     )
 
     fun hubPairingStarted(endpoint: String): GoffyUiState = copy(
         hubLinkState = HubLinkState.PAIRING,
         hubEndpoint = endpoint,
         linkError = null,
+        linkNotice = null,
     )
 
     fun hubPairingRejected(message: String): GoffyUiState = copy(
         hubLinkState = HubLinkState.UNPAIRED,
         linkError = message.take(MAX_ERROR_LENGTH),
+        linkNotice = null,
     )
 
     fun hubForgetStarted(
@@ -89,18 +96,35 @@ data class GoffyUiState(
         macConnection = MacConnectionState.DISCONNECTED,
         hubLinkState = HubLinkState.FORGETTING,
         linkError = null,
+        linkNotice = null,
         timeline = timeline.cancelActive(terminalAtEpochMillis),
         pendingApproval = null,
     )
 
     fun forgetHub(
         defaultEndpoint: String,
+        notice: HubLinkNotice,
         terminalAtEpochMillis: Long = System.currentTimeMillis(),
     ): GoffyUiState = copy(
         macConnection = MacConnectionState.DISCONNECTED,
         hubLinkState = HubLinkState.UNPAIRED,
         hubEndpoint = defaultEndpoint,
         linkError = null,
+        linkNotice = notice.bounded(),
+        timeline = timeline.cancelActive(terminalAtEpochMillis),
+        pendingApproval = null,
+    )
+
+    fun hubForgetVerificationFailed(
+        defaultEndpoint: String,
+        message: String,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): GoffyUiState = copy(
+        macConnection = MacConnectionState.DISCONNECTED,
+        hubLinkState = HubLinkState.DEGRADED,
+        hubEndpoint = defaultEndpoint,
+        linkError = message.take(MAX_ERROR_LENGTH),
+        linkNotice = null,
         timeline = timeline.cancelActive(terminalAtEpochMillis),
         pendingApproval = null,
     )
@@ -250,8 +274,18 @@ data class GoffyUiState(
 
     private companion object {
         const val MAX_ERROR_LENGTH = 256
+        const val MAX_NOTICE_LENGTH = 256
     }
+
+    private fun HubLinkNotice.bounded(): HubLinkNotice = copy(
+        message = message.take(MAX_NOTICE_LENGTH),
+    )
 }
+
+data class HubLinkNotice(
+    val message: String,
+    val warning: Boolean,
+)
 
 data class PendingApproval(
     val taskId: UUID,

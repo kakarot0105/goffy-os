@@ -7,12 +7,14 @@ import java.util.Locale
 class HubEndpoint private constructor(
     val webSocketUrl: String,
     internal val pairingRedemptionUrl: String,
+    internal val selfRevocationUrl: String,
     internal val isLoopback: Boolean,
 ) {
     companion object {
         private const val MAX_ENDPOINT_LENGTH = 2_048
         private const val HUB_PATH = "/ws/v1"
         private const val PAIRING_PATH = "/pairing/v1/redeem"
+        private const val SELF_REVOCATION_PATH = "/pairing/v1/self"
 
         fun create(endpoint: String, allowInsecureLoopback: Boolean): HubEndpoint {
             if (endpoint.isEmpty() || endpoint.length > MAX_ENDPOINT_LENGTH) {
@@ -61,7 +63,16 @@ class HubEndpoint private constructor(
             val httpScheme = if (scheme == "wss") "https" else "http"
             val pairingUrl = URI(httpScheme, null, uri.host, uri.port, PAIRING_PATH, null, null)
                 .toASCIIString()
-            return HubEndpoint(endpoint, pairingUrl, isLoopbackHost)
+            val selfRevocationUrl = URI(
+                httpScheme,
+                null,
+                uri.host,
+                uri.port,
+                SELF_REVOCATION_PATH,
+                null,
+                null,
+            ).toASCIIString()
+            return HubEndpoint(endpoint, pairingUrl, selfRevocationUrl, isLoopbackHost)
         }
     }
 

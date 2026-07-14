@@ -123,6 +123,146 @@ class OkHttpHubPairingGatewayTest {
         gateway.close()
     }
 
+    @Test
+    fun revokesSelfWithExactTypedRequestAndBearerHeader() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(jsonResponse(200, "{\"credentialId\":\"$CREDENTIAL_ID\",\"revoked\":true}"))
+            val gateway = OkHttpHubPairingGateway(OkHttpClient())
+            val config = HubConfig.create(
+                server.url("/ws/v1").toString().replaceFirst("http://", "ws://"),
+                ACCESS_TOKEN,
+                allowInsecureLoopback = true,
+            )
+
+            val result = gateway.revokeSelf(config, UUID.fromString(CREDENTIAL_ID))
+            val request = server.takeRequest()
+
+            assertEquals("/pairing/v1/self", request.url.encodedPath)
+            assertNull(request.url.query)
+            assertEquals("DELETE", request.method)
+            assertEquals("Bearer $ACCESS_TOKEN", request.headers["Authorization"])
+            assertEquals(0, request.bodySize)
+            assertEquals(UUID.fromString(CREDENTIAL_ID), result.credentialId)
+            assertTrue(result.revoked)
+            gateway.close()
+        }
+    }
+
+    @Test
+    fun rejectsMismatchedRevocationResponsesWithoutRetrying() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(jsonResponse(200, "{\"credentialId\":\"$OTHER_CREDENTIAL_ID\",\"revoked\":true}"))
+            val gateway = OkHttpHubPairingGateway(OkHttpClient())
+            val config = HubConfig.create(
+                server.url("/ws/v1").toString().replaceFirst("http://", "ws://"),
+                ACCESS_TOKEN,
+                allowInsecureLoopback = true,
+            )
+
+            val failure = runCatching {
+                gateway.revokeSelf(config, UUID.fromString(CREDENTIAL_ID))
+            }.exceptionOrNull()
+
+            assertTrue(failure is HubPairingException)
+            assertEquals("invalid_revocation_response", (failure as HubPairingException).code)
+            assertEquals(1, server.requestCount)
+            gateway.close()
+        }
+    }
+
+    @Test
+    fun rejectsFalseRevocationResponsesWithoutRetrying() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(jsonResponse(200, "{\"credentialId\":\"$CREDENTIAL_ID\",\"revoked\":false}"))
+            val gateway = OkHttpHubPairingGateway(OkHttpClient())
+            val config = HubConfig.create(
+                server.url("/ws/v1").toString().replaceFirst("http://", "ws://"),
+                ACCESS_TOKEN,
+                allowInsecureLoopback = true,
+            )
+
+            val failure = runCatching {
+                gateway.revokeSelf(config, UUID.fromString(CREDENTIAL_ID))
+            }.exceptionOrNull()
+
+            assertTrue(failure is HubPairingException)
+            assertEquals("invalid_revocation_response", (failure as HubPairingException).code)
+            assertEquals(1, server.requestCount)
+            gateway.close()
+        }
+    }
+
+    @Test
+    fun mapsRevocationErrorsWithoutReadingOrEchoingSecretBodies() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(jsonResponse(401, "{\"detail\":\"$ACCESS_TOKEN\"}"))
+            val gateway = OkHttpHubPairingGateway(OkHttpClient())
+            val config = HubConfig.create(
+                server.url("/ws/v1").toString().replaceFirst("http://", "ws://"),
+                ACCESS_TOKEN,
+                allowInsecureLoopback = true,
+            )
+
+            val failure = runCatching {
+                gateway.revokeSelf(config, UUID.fromString(CREDENTIAL_ID))
+            }.exceptionOrNull()
+
+            assertTrue(failure is HubPairingException)
+            assertEquals("revocation_authentication_failed", (failure as HubPairingException).code)
+            assertFalse(failure.message.orEmpty().contains(ACCESS_TOKEN))
+            assertFalse(failure.toString().contains(ACCESS_TOKEN))
+            assertEquals(1, server.requestCount)
+            gateway.close()
+        }
+    }
+
+    @Test
+    fun defaultClientDoesNotFollowRevocationRedirects() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(
+                MockResponse.Builder()
+                    .code(307)
+                    .addHeader("Location", server.url("/redirected").toString())
+                    .build(),
+            )
+            val gateway = OkHttpHubPairingGateway()
+            val config = HubConfig.create(
+                server.url("/ws/v1").toString().replaceFirst("http://", "ws://"),
+                ACCESS_TOKEN,
+                allowInsecureLoopback = true,
+            )
+
+            val failure = runCatching {
+                gateway.revokeSelf(config, UUID.fromString(CREDENTIAL_ID))
+            }.exceptionOrNull()
+
+            assertTrue(failure is HubPairingException)
+            assertEquals("revocation_rejected", (failure as HubPairingException).code)
+            assertEquals(1, server.requestCount)
+            assertEquals("/pairing/v1/self", server.takeRequest().url.encodedPath)
+            gateway.close()
+        }
+    }
+
+    @Test
+    fun refusesPairedSelfRevocationAgainstNonLoopbackEndpoints() = runTest {
+        val gateway = OkHttpHubPairingGateway(OkHttpClient())
+        val config = HubConfig.create("wss://hub.example/ws/v1", ACCESS_TOKEN, false)
+
+        val failure = runCatching {
+            gateway.revokeSelf(config, UUID.fromString(CREDENTIAL_ID))
+        }.exceptionOrNull()
+
+        assertTrue(failure is HubPairingException)
+        assertEquals("revocation_loopback_required", (failure as HubPairingException).code)
+        gateway.close()
+    }
+
     private fun endpoint(server: MockWebServer): HubEndpoint = HubEndpoint.create(
         server.url("/ws/v1").toString().replaceFirst("http://", "ws://"),
         allowInsecureLoopback = true,
@@ -137,6 +277,7 @@ class OkHttpHubPairingGatewayTest {
     private companion object {
         const val CHALLENGE_ID = "11111111-1111-4111-8111-111111111111"
         const val CREDENTIAL_ID = "22222222-2222-4222-8222-222222222222"
+        const val OTHER_CREDENTIAL_ID = "33333333-3333-4333-8333-333333333333"
         const val PAIRING_TOKEN = "pairing-token-abcdefghijklmnopqrstuvwxyz0123456789"
         const val ACCESS_TOKEN = "paired-access-token-abcdefghijklmnopqrstuvwxyz0123456789"
         const val CHALLENGE_JSON =

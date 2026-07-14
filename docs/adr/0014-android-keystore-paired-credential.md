@@ -34,9 +34,10 @@ flow must remain lightweight and foreground-only.
 - Treat a missing record as unpaired. Treat malformed, oversized, unsupported, or
   undecryptable state as degraded: delete the ciphertext and key, disable Mac
   authority, and require a new challenge.
-- Define the current `Forget local link` action as phone-local deletion. Cancel and
-  join any enrollment first, delete ciphertext and key, verify local absence, and
-  state clearly that bootstrap-admin revocation is still required on the Mac.
+- Define the original `Forget local link` action as phone-local deletion. Cancel
+  and join any enrollment first, delete ciphertext and key, verify local absence,
+  and state clearly that bootstrap-admin revocation is still required on the Mac.
+  ADR 0015 supersedes this limitation with paired self-revocation.
 - Keep manual bearer entry available only in debug builds and memory-only.
 
 ## Consequences
@@ -48,8 +49,8 @@ and one tiny atomic write. This remains compatible with GOFFY LITE and API 26.
 The decrypted bearer remains in the active ViewModel's process memory because the
 current WebSocket gateway requires a `HubConfig`; Keystore protects data at rest,
 not a rooted or compromised process. Physical Moto G Keystore behavior, guided QR
-transfer, trusted Hub certificate/public-key onboarding, self-revocation, and token
-rotation remain open.
+transfer, trusted Hub certificate/public-key onboarding, and token rotation remain
+open.
 
 ## Rejected alternatives
 
@@ -58,8 +59,8 @@ rotation remain open.
   API-26 behavior explicit without another runtime dependency.
 - Add pairing to `/ws/v1`: ADR 0013 intentionally keeps enrollment separate from
   tool execution.
-- Add paired self-revocation in this increment: it requires a new Hub authority and
-  offline reconciliation contract; the UI therefore says local forget instead.
+- Add paired self-revocation in this increment: it required a new Hub authority and
+  offline reconciliation contract, so it is recorded separately in ADR 0015.
 - Enable LAN pairing with the current challenge: the phone cannot authenticate Hub
   identity until certificate or public-key pin onboarding exists.
 

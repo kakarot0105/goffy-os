@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -101,9 +102,23 @@ fun GoffyApp(viewModel: GoffyViewModel) {
     var pairingChallenge by remember { mutableStateOf("") }
     var bearerToken by remember { mutableStateOf("") }
     var showLinkSetup by remember(state.hubConfigured) { mutableStateOf(!state.hubConfigured) }
+    var showForgetConfirmation by remember { mutableStateOf(false) }
 
     MaterialTheme(colorScheme = GoffyColors) {
         Surface(modifier = Modifier.fillMaxSize(), color = Void) {
+            if (showForgetConfirmation) {
+                ForgetHubDialog(
+                    paired = state.hubLinkState == HubLinkState.PAIRED,
+                    onConfirm = {
+                        showForgetConfirmation = false
+                        pairingChallenge = ""
+                        bearerToken = ""
+                        viewModel.forgetHub()
+                        showLinkSetup = true
+                    },
+                    onDismiss = { showForgetConfirmation = false },
+                )
+            }
             GoffyHomeScreen(
                 state = state,
                 command = command,
@@ -129,12 +144,7 @@ fun GoffyApp(viewModel: GoffyViewModel) {
                     pairingChallenge = ""
                     viewModel.pairHub(endpoint, challenge)
                 },
-                onForgetHub = {
-                    pairingChallenge = ""
-                    bearerToken = ""
-                    viewModel.forgetHub()
-                    showLinkSetup = true
-                },
+                onForgetHub = { showForgetConfirmation = true },
                 onSubmit = {
                     viewModel.submitCommand(command)
                     command = ""
@@ -145,6 +155,48 @@ fun GoffyApp(viewModel: GoffyViewModel) {
             )
         }
     }
+}
+
+@Composable
+private fun ForgetHubDialog(
+    paired: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.forget_hub_title)) },
+        text = {
+            Text(
+                stringResource(
+                    if (paired) {
+                        R.string.forget_hub_paired_explanation
+                    } else {
+                        R.string.forget_hub_debug_explanation
+                    },
+                ),
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Warning,
+                    contentColor = Void,
+                ),
+            ) {
+                Text(stringResource(R.string.forget_hub_confirm), fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.forget_hub_cancel), color = Signal)
+            }
+        },
+        containerColor = Panel,
+        titleContentColor = Bone,
+        textContentColor = Mist,
+    )
 }
 
 @Composable
@@ -449,6 +501,14 @@ private fun HubLinkSection(
             state.linkError?.let { error ->
                 Spacer(Modifier.height(8.dp))
                 Text(error, color = Warning, fontSize = 12.sp)
+            }
+            state.linkNotice?.let { notice ->
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    notice.message,
+                    color = if (notice.warning) Warning else Signal,
+                    fontSize = 12.sp,
+                )
             }
             Spacer(Modifier.height(10.dp))
             Row(

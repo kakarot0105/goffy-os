@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 from pydantic.alias_generators import to_camel
 
-from goffy_hub.auth import PAIRING_ADMIN_SCOPE, CredentialAuthenticator
+from goffy_hub.auth import PAIRING_ADMIN_SCOPE, CredentialAuthenticator, PrincipalKind
 from goffy_hub.credentials import (
     CredentialCapacityError,
     CredentialStoreError,
@@ -175,6 +175,33 @@ def build_pairing_router(
         return PairedCredentialListResponse(
             credentials=[_credential_response(credential) for credential in credentials]
         )
+
+    @router.delete(
+        "/pairing/v1/self",
+        response_model=RevocationResponse,
+        response_model_by_alias=True,
+    )
+    async def revoke_own_paired_credential(
+        request: Request,
+        response: Response,
+    ) -> RevocationResponse:
+        _require_loopback(request)
+        principal = await authenticator.authenticate_header(request.headers.get("authorization"))
+        if principal is None:
+            raise _api_error(401, "authentication_required", "Paired authentication required.")
+        if principal.kind is not PrincipalKind.PAIRED or principal.credential_id is None:
+            raise _api_error(403, "paired_principal_required", "Paired authentication required.")
+
+        credential_id = principal.credential_id
+        try:
+            revoked = await pairing_service.revoke(credential_id)
+        except CredentialStoreError as error:
+            raise _credential_store_unavailable() from error
+        if revoked is None:
+            raise _api_error(409, "credential_not_active", "Paired credential is not active.")
+        await on_revoke(credential_id)
+        _prevent_secret_caching(response)
+        return RevocationResponse(credential_id=credential_id, revoked=True)
 
     @router.delete(
         "/admin/v1/credentials/{credential_id}",

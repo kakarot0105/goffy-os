@@ -76,8 +76,11 @@ review both published checksums during any wrapper upgrade.
   authority. Restore performs no network probe, polling, or background repair.
 - Pairing is canceled when the Activity leaves the foreground; any local partial
   record is removed after the enrollment job finishes, with no automatic retry.
-- `Forget local link` deletes the phone copy and key after joining any canceled
-  enrollment. It does not revoke the Hub record; use the Mac administrator route.
+- `Forget link` deletes the phone copy and key after joining any canceled
+  enrollment. Paired links then make one loopback self-revocation request to the
+  Hub. The UI reports whether Hub revocation was verified or remains unverified.
+  If local credential deletion itself cannot be verified, GOFFY enters a degraded
+  state and tells the operator to clear app data before relaunching.
 - Manual development bearer entry remains debug-only and memory-only.
 
 ## Android audit trail
@@ -152,11 +155,14 @@ The USB localhost flow is implemented in software, but the full physical Moto G
 verification pass is still incomplete. Do not treat Milestone 1 as hardware
 verified yet.
 
-For the pairing slice, verify that restart restores `PAIRED`, an expired or altered
-challenge saves nothing, and `Forget local link` leaves the app unpaired after a
-second restart. Then list credentials on the Mac and confirm local forget did not
-claim remote revocation; revoke that record with the bootstrap-admin route. Record
-the Moto G Android version and any Keystore or OEM process-restart failure.
+For the pairing slice, verify that restart restores `PAIRED`, an expired or
+altered challenge saves nothing, and `Forget link` first shows an explicit
+confirmation. With the Hub reachable over `adb reverse`, confirm the app reports
+verified Hub revocation and remains unpaired after a second restart. Then list
+credentials on the Mac and confirm that credential has a revocation timestamp. Run
+one offline pass with the Hub stopped: the app should still remove local authority
+and report remote revocation as unverified. Record the Moto G Android version and
+any Keystore, self-revocation, or OEM process-restart failure.
 
 The battery slice is also software-verified only. On a device, run the app
 without configuring a Hub, submit `Show my battery status`, and confirm the
