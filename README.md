@@ -243,4 +243,21 @@ It reuses the Android/device setup checks, probes only the fixed localhost Hub
 health endpoint, and confirms a debug APK is present. It does not configure
 `adb reverse`, install an APK, start the Hub, or prove the manual phone checklist.
 
+To prepare the USB path when the only remaining readiness blocker is Hub USB
+reverse, use the Moto G USB setup runner. It is plan-only by default:
+
+```bash
+.venv/bin/python scripts/run_moto_g_usb_setup.py
+.venv/bin/python scripts/run_moto_g_usb_setup.py --json
+```
+
+The runner mutates phone state only with both `--execute` and
+`--confirm-device-mutation`. That mode runs only fixed `adb reverse tcp:8787
+tcp:8787` and `adb install -r .../app-debug.apk` commands after readiness gates
+pass. It verifies the reverse before installing the APK. It does not run
+`adb shell`, launch GOFFY, enter commands, or bypass the manual phone checklist.
+Mutating mode uses only the Android SDK `platform-tools/adb` resolved from the
+configured SDK root and only installs the debug APK from this checked-out GOFFY
+repository. PATH `adb` and alternate `--repo-root` values are plan-only.
+
 Read [SECURITY.md](SECURITY.md) before exposing the Hub beyond localhost.

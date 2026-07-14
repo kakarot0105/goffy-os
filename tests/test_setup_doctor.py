@@ -332,6 +332,33 @@ def test_device_checks_accept_authorized_device_and_reverse(
     assert "ABC123" not in rendered
 
 
+def test_device_checks_can_use_explicit_adb_without_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    explicit_adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    seen: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        setup_doctor,
+        "discover_adb_path",
+        lambda: pytest.fail("explicit adb path should skip discovery"),
+    )
+
+    def runner(command: Sequence[str], root: Path, timeout: int) -> DeviceCommandResult:
+        seen.append(tuple(command))
+        if tuple(command)[1:] == ("devices", "-l"):
+            return DeviceCommandResult(0, "List of devices attached\nABC123 device\n", "")
+        return DeviceCommandResult(0, "ABC123 tcp:8787 tcp:8787\n", "")
+
+    checks = collect_device_checks(root=tmp_path, runner=runner, adb=explicit_adb)
+
+    assert all(check.ok for check in checks)
+    assert seen == [
+        (str(explicit_adb), "devices", "-l"),
+        (str(explicit_adb), "reverse", "--list"),
+    ]
+
+
 def test_device_checks_reject_unauthorized_device(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

@@ -181,6 +181,28 @@ It combines Android preflight, read-only device diagnostics, fixed localhost Hub
 configure `adb reverse`, install the APK, start the Hub, or replace the manual
 phone checklist below.
 
+When the readiness report has no blockers except a missing Hub USB reverse, use
+the USB setup runner. It prints the fixed setup plan by default:
+
+```bash
+.venv/bin/python scripts/run_moto_g_usb_setup.py
+.venv/bin/python scripts/run_moto_g_usb_setup.py --json
+```
+
+To actually mutate the connected phone, both flags are required:
+
+```bash
+.venv/bin/python scripts/run_moto_g_usb_setup.py --execute --confirm-device-mutation
+```
+
+Execution runs only `adb reverse tcp:8787 tcp:8787`, verifies the reverse, and
+then runs `adb install -r` against the debug APK. It never runs `adb shell`,
+launches the app, taps the UI, types `Show my Mac status`, starts the Hub, or
+broadens the ADB command surface.
+Mutating mode uses only the Android SDK `platform-tools/adb` resolved from the
+configured SDK root and only installs the debug APK from this checked-out GOFFY
+repository. PATH `adb` and alternate `--repo-root` values remain plan-only.
+
 ## USB localhost debug flow
 
 1. Start the Hub on the Mac in either legacy development mode or the paired mode
@@ -195,7 +217,8 @@ phone checklist below.
 
 2. On the Moto G, enable Developer options and USB debugging, then connect the
    device by USB and approve only the computer fingerprint you recognize.
-3. Reverse the Hub port from the host to the phone:
+3. Reverse the Hub port from the host to the phone manually or by using the USB
+   setup runner above:
 
    ```bash
    adb reverse tcp:8787 tcp:8787
@@ -207,7 +230,8 @@ phone checklist below.
    .venv/bin/python scripts/setup_doctor.py --include-device
    ```
 
-4. Install and run the debug app from Android Studio or with the debug APK.
+4. Install the debug app from Android Studio, the USB setup runner, or the debug
+   APK, then launch it manually on the phone.
 5. For paired mode, create a pairing QR SVG on the Mac:
 
    ```bash

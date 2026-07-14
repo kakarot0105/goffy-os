@@ -273,9 +273,10 @@ def collect_device_checks(
     root: Path = ROOT,
     runner: DeviceCommandRunner = default_device_command_runner,
     timeout_seconds: int = 5,
+    adb: Path | None = None,
 ) -> list[DoctorCheck]:
-    adb = discover_adb_path()
-    if adb is None:
+    resolved_adb = adb if adb is not None else discover_adb_path()
+    if resolved_adb is None:
         return [
             DoctorCheck(
                 category="device",
@@ -286,7 +287,7 @@ def collect_device_checks(
             )
         ]
 
-    device_result = runner((str(adb), "devices", "-l"), root, timeout_seconds)
+    device_result = runner((str(resolved_adb), "devices", "-l"), root, timeout_seconds)
     if device_result.timed_out:
         return [
             DoctorCheck(
@@ -330,7 +331,7 @@ def collect_device_checks(
     if authorized_count == 0:
         return checks
 
-    reverse_result = runner((str(adb), "reverse", "--list"), root, timeout_seconds)
+    reverse_result = runner((str(resolved_adb), "reverse", "--list"), root, timeout_seconds)
     if reverse_result.timed_out:
         checks.append(
             DoctorCheck(
