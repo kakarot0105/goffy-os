@@ -88,6 +88,7 @@ def test_mcp_environment_allowlists_are_parsed(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setenv("GOFFY_MCP_ALLOWED_ORIGINS", "https://goffy.local:8787")
     monkeypatch.setenv("GOFFY_MCP_MAX_CONCURRENT_CALLS", "3")
     monkeypatch.setenv("GOFFY_MCP_MAX_ACTIVE_SESSIONS", "4")
+    monkeypatch.setenv("GOFFY_OPERATOR_AUDIT_MAX_EVENTS", "128")
     monkeypatch.setenv("GOFFY_TOOL_HEALTH_TIMEOUT_SECONDS", "2")
     monkeypatch.setenv("GOFFY_TOOL_HEALTH_INTERVAL_SECONDS", "45")
     pairing_database = Path("/Users/test/.goffy/credentials.sqlite3")
@@ -100,6 +101,7 @@ def test_mcp_environment_allowlists_are_parsed(monkeypatch: pytest.MonkeyPatch) 
     assert settings.mcp_allowed_origins == ("https://goffy.local:8787",)
     assert settings.mcp_max_concurrent_calls == 3
     assert settings.mcp_max_active_sessions == 4
+    assert settings.operator_audit_max_events == 128
     assert settings.tool_health_timeout_seconds == 2
     assert settings.tool_health_interval_seconds == 45
     assert settings.pairing_database_path == pairing_database
@@ -138,3 +140,8 @@ def test_hub_identity_path_is_derived_only_in_paired_mode(tmp_path: Path) -> Non
 def test_pairing_challenge_ttl_is_bounded(value: int) -> None:
     with pytest.raises(ValidationError):
         HubSettings(pairing_challenge_ttl_seconds=value)
+
+
+def test_operator_audit_max_events_is_bounded() -> None:
+    with pytest.raises(ValidationError):
+        HubSettings(operator_audit_max_events=15)

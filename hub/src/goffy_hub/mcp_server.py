@@ -45,9 +45,11 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from goffy_hub.auth import (
     HUB_ISSUER,
     SAFE_TOOL_SCOPE,
+    AuthenticatedPrincipal,
     CredentialAuthenticator,
     paired_client_id,
 )
+from goffy_hub.operator_audit import OperatorAuditLog
 from goffy_hub.registry import (
     ToolArgumentsError,
     ToolExecutionError,
@@ -494,6 +496,8 @@ def build_mcp_runtime(
     settings: HubSettings,
     registry: ToolRegistry,
     authenticator: CredentialAuthenticator,
+    *,
+    audit_log: OperatorAuditLog | None = None,
 ) -> McpRuntime:
     adapter = RegistryMcpAdapter(
         registry,
@@ -570,6 +574,8 @@ def build_mcp_runtime(
     application = _ExactMcpEndpoint(
         authenticated_application,
         security_settings=security_settings,
+        authenticator=authenticator,
+        audit_log=audit_log,
     )
     return McpRuntime(
         server=server,
@@ -648,9 +654,13 @@ class _ExactMcpEndpoint:
         application: ASGIApp,
         *,
         security_settings: TransportSecuritySettings,
+        authenticator: CredentialAuthenticator,
+        audit_log: OperatorAuditLog | None,
     ) -> None:
         self._application = application
         self._transport_security = TransportSecurityMiddleware(security_settings)
+        self._authenticator = authenticator
+        self._audit_log = audit_log
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "websocket":
@@ -671,13 +681,79 @@ class _ExactMcpEndpoint:
             await security_error(scope, receive, send)
             return
         if scope.get("method") not in {"GET", "POST", "DELETE"}:
+            await self._record_mcp_audit(
+                scope,
+                principal=None,
+                outcome="rejected",
+                detail_code="status:405",
+            )
             await PlainTextResponse(
                 "Method not allowed",
                 status_code=405,
                 headers={"Allow": "GET, POST, DELETE"},
             )(scope, receive, send)
             return
-        await self._application(scope, receive, send)
+        response_status: int | None = None
+
+        async def audit_send(message: Message) -> None:
+            nonlocal response_status
+            if message["type"] == "http.response.start":
+                response_status = int(message["status"])
+            await send(message)
+
+        try:
+            await self._application(scope, receive, audit_send)
+        except Exception:
+            principal = await self._authenticate_for_audit(scope)
+            await self._record_mcp_audit(
+                scope,
+                principal=principal,
+                outcome="failed",
+                detail_code="exception",
+            )
+            raise
+        principal = await self._authenticate_for_audit(scope)
+        status_code = response_status or 0
+        await self._record_mcp_audit(
+            scope,
+            principal=principal,
+            outcome="succeeded" if 200 <= status_code < 400 else "rejected",
+            detail_code=f"status:{status_code}",
+        )
+
+    async def _authenticate_for_audit(self, scope: Scope) -> AuthenticatedPrincipal | None:
+        connection = HTTPConnection(scope)
+        return await self._authenticator.authenticate_header(
+            connection.headers.get("authorization")
+        )
+
+    async def _record_mcp_audit(
+        self,
+        scope: Scope,
+        *,
+        principal: AuthenticatedPrincipal | None,
+        outcome: str,
+        detail_code: str,
+    ) -> None:
+        if self._audit_log is None:
+            return
+        self._audit_log.record(
+            source="mcp",
+            action=_http_audit_action(scope.get("method")),
+            outcome=outcome,
+            principal_kind=principal.kind.value if principal else "none",
+            credential_id=principal.credential_id if principal else None,
+            detail_code=detail_code,
+        )
+
+
+def _http_audit_action(method: object) -> str:
+    if not isinstance(method, str):
+        return "http.other"
+    normalized = method.lower()
+    if normalized in {"get", "post", "delete"}:
+        return f"http.{normalized}"
+    return "http.other"
 
 
 class _BoundedHttpMessageMiddleware:

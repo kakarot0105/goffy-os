@@ -13,6 +13,7 @@ from pydantic.alias_generators import to_camel
 from goffy_hub.auth import (
     BEARER_PREFIX,
     PAIRING_ADMIN_SCOPE,
+    AuthenticatedPrincipal,
     CredentialAuthenticator,
     PrincipalKind,
 )
@@ -23,6 +24,7 @@ from goffy_hub.credentials import (
     PairedCredential,
 )
 from goffy_hub.identity import HUB_IDENTITY_SCHEMA_VERSION, HubIdentity, HubIdentitySchemaVersion
+from goffy_hub.operator_audit import OperatorAuditLog
 from goffy_hub.pairing import (
     InvalidPairingChallengeError,
     PairingAttemptLimitError,
@@ -126,6 +128,7 @@ def build_pairing_router(
     hub_identity: HubIdentity,
     *,
     on_revoke: RevokeCallback,
+    audit_log: OperatorAuditLog | None = None,
 ) -> APIRouter:
     router = APIRouter()
 
@@ -138,8 +141,15 @@ def build_pairing_router(
         request: Request,
         response: Response,
     ) -> HubIdentityResponse:
-        await _require_loopback_admin(request, authenticator)
+        principal = await _require_loopback_admin(request, authenticator)
         _prevent_secret_caching(response)
+        _audit(
+            audit_log,
+            source="pairing",
+            action="hub_identity.read",
+            outcome="succeeded",
+            principal=principal,
+        )
         return _hub_identity_response(hub_identity)
 
     @router.post(
@@ -152,9 +162,16 @@ def build_pairing_router(
         request: Request,
         response: Response,
     ) -> PairingChallengeResponse:
-        await _require_loopback_admin(request, authenticator)
+        principal = await _require_loopback_admin(request, authenticator)
         challenge = await _begin_pairing_challenge(pairing_service)
         _prevent_secret_caching(response)
+        _audit(
+            audit_log,
+            source="pairing",
+            action="challenge.created",
+            outcome="succeeded",
+            principal=principal,
+        )
         return challenge
 
     @router.post(
@@ -167,10 +184,17 @@ def build_pairing_router(
         request: Request,
         response: Response,
     ) -> PairingBundleResponse:
-        await _require_loopback_admin(request, authenticator)
+        principal = await _require_loopback_admin(request, authenticator)
         hub_endpoint = _websocket_endpoint_from_request(request)
         challenge = await _begin_pairing_challenge(pairing_service)
         _prevent_secret_caching(response)
+        _audit(
+            audit_log,
+            source="pairing",
+            action="bundle.created",
+            outcome="succeeded",
+            principal=principal,
+        )
         return PairingBundleResponse(
             bundle_version=PAIRING_BUNDLE_VERSION,
             hub_endpoint=hub_endpoint,
@@ -237,6 +261,14 @@ def build_pairing_router(
             ) from error
 
         _prevent_secret_caching(response)
+        _audit(
+            audit_log,
+            source="pairing",
+            action="challenge.redeemed",
+            outcome="succeeded",
+            principal=None,
+            credential_id=issued.credential.credential_id,
+        )
         return PairingSuccessResponse(
             credential_id=issued.credential.credential_id,
             access_token=issued.access_token,
@@ -250,11 +282,19 @@ def build_pairing_router(
         response_model_by_alias=True,
     )
     async def list_paired_credentials(request: Request) -> PairedCredentialListResponse:
-        await _require_loopback_admin(request, authenticator)
+        principal = await _require_loopback_admin(request, authenticator)
         try:
             credentials = await pairing_service.list_credentials()
         except CredentialStoreError as error:
             raise _credential_store_unavailable() from error
+        _audit(
+            audit_log,
+            source="pairing",
+            action="credentials.list",
+            outcome="succeeded",
+            principal=principal,
+            detail_code=f"count:{len(credentials)}",
+        )
         return PairedCredentialListResponse(
             credentials=[_credential_response(credential) for credential in credentials]
         )
@@ -269,7 +309,10 @@ def build_pairing_router(
         response: Response,
     ) -> RevocationResponse:
         _require_loopback(request)
-        credential_id = await _require_paired_credential_id(request, authenticator)
+        principal = await _require_paired_principal(request, authenticator)
+        credential_id = principal.credential_id
+        if credential_id is None:
+            raise _api_error(403, "paired_principal_required", "Paired authentication required.")
         try:
             revoked = await pairing_service.revoke(credential_id)
         except CredentialStoreError as error:
@@ -278,6 +321,14 @@ def build_pairing_router(
             raise _api_error(409, "credential_not_active", "Paired credential is not active.")
         await on_revoke(credential_id)
         _prevent_secret_caching(response)
+        _audit(
+            audit_log,
+            source="pairing",
+            action="credential.self_revoke",
+            outcome="succeeded",
+            principal=principal,
+            credential_id=credential_id,
+        )
         return RevocationResponse(credential_id=credential_id, revoked=True)
 
     @router.post(
@@ -291,7 +342,10 @@ def build_pairing_router(
         response: Response,
     ) -> TokenRotationResponse:
         _require_loopback(request)
-        credential_id = await _require_paired_credential_id(request, authenticator)
+        principal = await _require_paired_principal(request, authenticator)
+        credential_id = principal.credential_id
+        if credential_id is None:
+            raise _api_error(403, "paired_principal_required", "Paired authentication required.")
         current_token = _bearer_token_from_request(request)
         if current_token is None:
             raise _api_error(401, "authentication_required", "Paired authentication required.")
@@ -309,6 +363,14 @@ def build_pairing_router(
 
         await on_revoke(credential_id)
         _prevent_secret_caching(response)
+        _audit(
+            audit_log,
+            source="pairing",
+            action="credential.rotate",
+            outcome="succeeded",
+            principal=principal,
+            credential_id=credential_id,
+        )
         return TokenRotationResponse(
             credential_id=rotated.credential.credential_id,
             access_token=rotated.access_token,
@@ -324,7 +386,7 @@ def build_pairing_router(
         request: Request,
         credential_id: UUID,
     ) -> RevocationResponse:
-        await _require_loopback_admin(request, authenticator)
+        principal = await _require_loopback_admin(request, authenticator)
         try:
             revoked = await pairing_service.revoke(credential_id)
         except CredentialStoreError as error:
@@ -332,21 +394,29 @@ def build_pairing_router(
         if revoked is None:
             raise _api_error(404, "credential_not_found", "Active credential was not found.")
         await on_revoke(credential_id)
+        _audit(
+            audit_log,
+            source="pairing",
+            action="credential.admin_revoke",
+            outcome="succeeded",
+            principal=principal,
+            credential_id=credential_id,
+        )
         return RevocationResponse(credential_id=credential_id, revoked=True)
 
     return router
 
 
-async def _require_paired_credential_id(
+async def _require_paired_principal(
     request: Request,
     authenticator: CredentialAuthenticator,
-) -> UUID:
+) -> AuthenticatedPrincipal:
     principal = await authenticator.authenticate_header(request.headers.get("authorization"))
     if principal is None:
         raise _api_error(401, "authentication_required", "Paired authentication required.")
     if principal.kind is not PrincipalKind.PAIRED or principal.credential_id is None:
         raise _api_error(403, "paired_principal_required", "Paired authentication required.")
-    return principal.credential_id
+    return principal
 
 
 def _bearer_token_from_request(request: Request) -> str | None:
@@ -359,13 +429,14 @@ def _bearer_token_from_request(request: Request) -> str | None:
 async def _require_loopback_admin(
     request: Request,
     authenticator: CredentialAuthenticator,
-) -> None:
+) -> AuthenticatedPrincipal:
     _require_loopback(request)
     principal = await authenticator.authenticate_header(request.headers.get("authorization"))
     if principal is None:
         raise _api_error(401, "authentication_required", "Bootstrap authentication required.")
     if not principal.has_scope(PAIRING_ADMIN_SCOPE):
         raise _api_error(403, "insufficient_scope", "Bootstrap administrator scope required.")
+    return principal
 
 
 def _require_loopback(request: Request) -> None:
@@ -410,6 +481,28 @@ def _credential_response(credential: PairedCredential) -> PairedCredentialRespon
         display_name=credential.display_name,
         created_at=credential.created_at,
         revoked_at=credential.revoked_at,
+    )
+
+
+def _audit(
+    audit_log: OperatorAuditLog | None,
+    *,
+    source: str,
+    action: str,
+    outcome: str,
+    principal: AuthenticatedPrincipal | None,
+    credential_id: UUID | None = None,
+    detail_code: str | None = None,
+) -> None:
+    if audit_log is None:
+        return
+    audit_log.record(
+        source=source,
+        action=action,
+        outcome=outcome,
+        principal_kind=principal.kind.value if principal else "none",
+        credential_id=credential_id or (principal.credential_id if principal else None),
+        detail_code=detail_code,
     )
 
 

@@ -132,6 +132,10 @@ def test_pairing_routes_are_absent_until_database_is_explicitly_configured() -> 
 
 def test_pairing_admin_and_redemption_are_loopback_only(tmp_path: Path) -> None:
     with pairing_client(tmp_path, client_host="192.0.2.10") as client:
+        audit_response = client.get(
+            "/admin/v1/audit/events",
+            headers=BOOTSTRAP_HEADERS,
+        )
         identity_response = client.get(
             "/admin/v1/hub-identity",
             headers=BOOTSTRAP_HEADERS,
@@ -170,6 +174,7 @@ def test_pairing_admin_and_redemption_are_loopback_only(tmp_path: Path) -> None:
             headers={"Authorization": "Bearer paired-token-that-is-long-enough"},
         )
 
+    assert audit_response.status_code == 403
     assert identity_response.status_code == 403
     assert admin_response.status_code == 403
     assert bundle_response.status_code == 403
@@ -248,6 +253,78 @@ def test_pairing_bundle_contains_loopback_identity_and_redeemable_challenge(
     assert redemption_response.status_code == 201
     assert redemption_response.json()["hubIdentity"] == bundle["hubIdentity"]
     assert "identitySeed" not in redemption_response.text
+
+
+def test_operator_audit_records_pairing_and_mcp_without_secrets(tmp_path: Path) -> None:
+    with pairing_client(tmp_path) as client:
+        missing_auth = client.get("/admin/v1/audit/events")
+        bundle_response = client.post(
+            "/admin/v1/pairing/bundles",
+            headers=BOOTSTRAP_HEADERS,
+        )
+        bundle = bundle_response.json()
+        redemption_response = client.post(
+            "/pairing/v1/redeem",
+            json={
+                "challengeId": bundle["challenge"]["challengeId"],
+                "pairingToken": bundle["challenge"]["pairingToken"],
+                "deviceId": "audit-observation-1",
+                "displayName": "Moto G",
+            },
+        )
+        access_token = redemption_response.json()["accessToken"]
+        mcp_response = client.post(
+            "/mcp",
+            json=initialize_request(),
+            headers={
+                **paired_headers(access_token),
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+            },
+        )
+        audit_response = client.get(
+            "/admin/v1/audit/events?limit=20",
+            headers=BOOTSTRAP_HEADERS,
+        )
+        repeated_audit_response = client.get(
+            "/admin/v1/audit/events?limit=20",
+            headers=BOOTSTRAP_HEADERS,
+        )
+
+    assert missing_auth.status_code == 401
+    assert bundle_response.status_code == 201
+    assert redemption_response.status_code == 201
+    assert mcp_response.status_code == 200
+    assert audit_response.status_code == 200
+    assert repeated_audit_response.status_code == 200
+    assert audit_response.headers["cache-control"] == "no-store"
+    assert audit_response.headers["pragma"] == "no-cache"
+    assert access_token not in audit_response.text
+    assert bundle["challenge"]["pairingToken"] not in audit_response.text
+    events = audit_response.json()["events"]
+    assert [event["sequence"] for event in events] == sorted(
+        (event["sequence"] for event in events),
+        reverse=True,
+    )
+    action_pairs = {(event["source"], event["action"]) for event in events}
+    assert ("pairing", "bundle.created") in action_pairs
+    assert ("pairing", "challenge.redeemed") in action_pairs
+    assert ("mcp", "http.post") in action_pairs
+    assert all(
+        set(event)
+        == {
+            "sequence",
+            "recordedAt",
+            "source",
+            "action",
+            "outcome",
+            "principalKind",
+            "credentialId",
+            "detailCode",
+        }
+        for event in events
+    )
+    assert repeated_audit_response.json()["events"] == events
 
 
 def test_admin_hub_identity_is_stable_no_store_and_never_exposes_seed(

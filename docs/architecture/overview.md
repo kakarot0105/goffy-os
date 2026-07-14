@@ -26,6 +26,7 @@ Official MCP client -> authenticated POST /mcp -> MCP SDK -> same ToolRegistry
                                                         ^
 bounded health monitor -> sealed registry availability -'
 terminal task reducer -> app-private Android audit SQLite (50 max, terminal-only, redacted)
+Hub operator audit -> bounded in-memory control-plane events (pairing / WebSocket / MCP)
 ```
 
 All routes emit the same typed preparation, progress, result, error, and
@@ -64,42 +65,45 @@ approval state, active work, and execution authority are not revived.
    public-key Hub proof and LAN trust remain future trust-boundary work.
 9. Credential revocation persists before indexed live WebSocket and MCP sessions
    are terminated. New requests recheck the digest store.
-10. GOFFY protocol, MCP metadata, and tool contract versions are checked separately.
-11. Remote discovery only confirms or disables a locally known tool. It never adds
+10. Hub operator audit records only bounded control-plane metadata and is exposed
+    through loopback bootstrap administration. It is volatile and diagnostic, not
+    persistent forensic evidence.
+11. GOFFY protocol, MCP metadata, and tool contract versions are checked separately.
+12. Remote discovery only confirms or disables a locally known tool. It never adds
    a route, permission, or executable capability.
-12. The Hub consumes discovery on one invocation attempt and currently registers
+13. The Hub consumes discovery on one invocation attempt and currently registers
    only SAFE read-only, non-destructive, idempotent, closed-world Mac tools with
    closed object schemas.
-13. Fixed gateways allow only the documented typed tool names; no command-string capability exists.
-14. The PHONE registry is sorted, immutable, size-bounded, and uses closed MCP-shaped
+14. Fixed gateways allow only the documented typed tool names; no command-string capability exists.
+15. The PHONE registry is sorted, immutable, size-bounded, and uses closed MCP-shaped
    schemas. It cannot execute tools or grant approval.
-15. The router sources PHONE permission from the registry, and the gateway rechecks
+16. The router sources PHONE permission from the registry, and the gateway rechecks
     compiled name, target, permission, typed arguments, and timeout before source access.
-16. The battery source is read once, requires no permission, and must return a percentage from 0 through 100.
-17. Device info contains four display fields and excludes stable device, network, account, and build identifiers.
-18. Mutating PHONE tools require an exact-task, exact-tool, exact-arguments,
+17. The battery source is read once, requires no permission, and must return a percentage from 0 through 100.
+18. Device info contains four display fields and excludes stable device, network, account, and build identifiers.
+19. Mutating PHONE tools require an exact-task, exact-tool, exact-arguments,
    expiring, single-use approval.
-19. Terminal-task audit rows are written only after `UNVERIFIED`, `VERIFIED`,
+20. Terminal-task audit rows are written only after `UNVERIFIED`, `VERIFIED`,
     `FAILED`, or `CANCELLED`; process death before then leaves no synthetic
     success row.
-20. Audit retention is bounded to the newest 50 rows and stores only closed
+21. Audit retention is bounded to the newest 50 rows and stores only closed
     metadata, not raw commands, arguments, results, device info, approval text,
     or free-form summaries.
-21. Restored audit entries are result-free, display-only terminal cards. They
+22. Restored audit entries are result-free, display-only terminal cards. They
     cannot revive pending approval, active execution, or authority.
-22. Audit read/write/corrupt-row failure degrades the audit badge without
+23. Audit read/write/corrupt-row failure degrades the audit badge without
     rewriting the task verdict and without background retry.
-23. Flashlight success requires a matching CameraManager callback and releases the
+24. Flashlight success requires a matching CameraManager callback and releases the
    callback immediately; it never opens an image stream.
-24. A typed result carries data; a separate verification event is the success boundary.
-25. Local cancel stops the active coroutine; MAC cancellation does not guarantee Hub-side termination.
-26. The Hub rejects duplicate message IDs within a connection and applies the
+25. A typed result carries data; a separate verification event is the success boundary.
+26. Local cancel stops the active coroutine; MAC cancellation does not guarantee Hub-side termination.
+27. The Hub rejects duplicate message IDs within a connection and applies the
     configured message-size limit in both transport directions.
-27. `/mcp` validates exact Host and Origin allowlists, bearer authentication,
+28. `/mcp` validates exact Host and Origin allowlists, bearer authentication,
     message bounds, and concurrency before registry execution.
-28. The Hub seals registry definitions before serving. Health probes can only
+29. The Hub seals registry definitions before serving. Health probes can only
     remove or restore those definitions and cannot mutate their policy metadata.
-29. Health never grants authority: clients see only compiled definitions that pass
+30. Health never grants authority: clients see only compiled definitions that pass
     their current bounded probe. Admission validates availability and arguments
     before `accepted`; later health changes block new calls, not admitted work.
 
@@ -111,6 +115,8 @@ read only after a matching user command. Terminal-task audit persistence is
 bounded to the newest 50 SQLite rows, read on startup, and written once on the
 existing IO dispatcher after terminal state; there is no polling, WorkManager,
 or background retry. Hub operations are asynchronous and timeout-bounded.
+Hub operator audit appends tiny closed metadata events to a bounded in-memory
+deque and performs no disk I/O, body capture, polling, or background upload.
 
 Hub health checks are Mac-side only: one startup pass, then a 30-second default
 sleep between passes, at most four concurrent probes, and a five-second maximum

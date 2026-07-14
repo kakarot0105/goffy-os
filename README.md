@@ -15,8 +15,10 @@ tools are the capability boundary.
 > loopback. The Hub now emits a versioned USB-loopback pairing bundle with its
 > public loopback identity fingerprint, and Android can scan that bundle through
 > a foreground-only QR pairing panel, reject bundles without the fingerprint, and
-> restore the pinned identity from encrypted paired credentials. Physical Moto G
-> verification, automatic rotation scheduling, direct Hub/MCP operator audit,
+> restore the pinned identity from encrypted paired credentials. The Hub also
+> keeps a bounded in-memory operator audit for pairing, WebSocket, and MCP
+> control-plane events. Physical Moto G verification, automatic rotation
+> scheduling, persistent/tamper-evident Hub audit with Android retrieval,
 > certificate-backed Hub identity proof, and trusted LAN operation remain open.
 
 ## Current vertical slice
@@ -57,6 +59,8 @@ tools are the capability boundary.
   rotation
 - Foreground-only Android QR scanner for pairing bundles, with no image storage
   or automatic pairing after scan
+- Bounded, loopback-admin Hub operator audit event retrieval for pairing,
+  WebSocket, and MCP control-plane activity
 - Allowlisted, read-only `SAFE mac.system_info` tool
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
@@ -200,7 +204,14 @@ verify it, the phone reports local deletion with remote revocation unverified.
 work, asks the Hub once to rotate the credential, and activates the new bearer
 only after encrypted read-back verification. Ambiguous rotation or storage
 failure disables Mac access and requires re-pairing.
-Direct Hub/MCP operator audit remains future work.
+The Hub keeps a bounded in-memory operator audit for pairing, WebSocket, and MCP
+control-plane events. It exposes newest-first events only to loopback bootstrap
+administrators at `GET /admin/v1/audit/events`, returns no-store responses, and
+stores closed metadata such as source, action, outcome, principal kind,
+credential ID, and bounded detail codes. It does not store tokens, pairing
+tokens, request bodies, command text, tool outputs, or free-form summaries.
+Persistent, tamper-evident storage and Android-side retrieval remain future
+work.
 The QR scanner exists only in the visible pairing setup panel, requests the
 normal Android `CAMERA` permission from that action, decodes QR codes only, saves
 no frame, and only fills the existing pairing-bundle field. The user still has to

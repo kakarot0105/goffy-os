@@ -74,6 +74,16 @@ include real credentials or unrelated personal data.
   and 8 KiB per structured output.
 - MCP execution defaults to two concurrent calls with a bounded one-second queue.
   Registry tool timeouts remain authoritative after admission.
+- The Hub keeps a bounded in-memory operator audit for pairing, WebSocket, and
+  MCP control-plane events. `GET /admin/v1/audit/events` is loopback-only,
+  bootstrap-admin-only, no-store, newest-first, and limited to 256 returned rows.
+  Stored fields are closed metadata only: sequence, timestamp, source, action,
+  outcome, principal kind, optional credential ID, and bounded detail code.
+- The Hub operator audit never stores bearer tokens, pairing tokens, request
+  bodies, command text, typed arguments, tool outputs, stack traces, free-form
+  summaries, or arbitrary header values. Retention is bounded by
+  `GOFFY_OPERATOR_AUDIT_MAX_EVENTS`, defaults to 256, and is intentionally
+  memory-only in this slice.
 - Paired credentials are not MCP OAuth. Loopback token rotation is implemented for
   the Hub and a confirmed Android foreground action, but automatic rotation
   schedules and trusted LAN onboarding remain unimplemented.
@@ -231,8 +241,9 @@ include real credentials or unrelated personal data.
   background retry or WorkManager recovery.
 - Android backup and device-to-device transfer are disabled for app data, and
   uninstall removes local audit records.
-- Direct Hub/MCP operator audit remains deferred until user-visible retrieval and
-  bounded audit storage exist; stable paired identity is now available.
+- Persistent, tamper-evident Hub/MCP operator audit and Android-side audit
+  retrieval remain future work. The current Hub operator audit is volatile and
+  diagnostic, not forensic evidence.
 - CI validates both the strict source manifest and freshly merged debug and release
   manifests, rejecting permission variants, undeclared hardware features, and
   non-intent package queries.
@@ -263,7 +274,9 @@ include real credentials or unrelated personal data.
   or verification checks in the Android audit trail
 - Restoring audit rows as pending approval state, active execution, structured
   result data, or resumable authority
-- Shipping direct Hub/MCP operator audit before paired identity and user-visible
-  retrieval exist
+- Treating the bounded in-memory Hub operator audit as persistent, tamper-evident,
+  or complete forensic evidence
+- Persisting Hub operator audit events before retention, deletion, export, and
+  tamper-evidence policy are defined
 
 See [the initial threat model](docs/security/threat-model.md) for remaining risks.

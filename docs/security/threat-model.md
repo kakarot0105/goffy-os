@@ -31,7 +31,7 @@
 | Host information leakage | `mac.system_info` returns status, OS family, and architecture only | User-visible field policy for future tools |
 | Unnecessary phone-state collection | Battery state is read once only after an explicit command; no receiver, polling, or permission | Field policy for future phone tools |
 | Device fingerprinting | Device info is local-only and limited to manufacturer, model, Android release, and SDK; stable identifiers and build fingerprint are excluded | Reassess before persistence or remote transmission |
-| Audit over-collection or disclosure | Android stores only redacted terminal-task metadata in app-private SQLite, disables backup/device transfer, bounds retention to the newest 50 rows, and removes records on uninstall | Explicit clear UI, tamper evidence, and user-directed export/deletion |
+| Audit over-collection or disclosure | Android stores only redacted terminal-task metadata in app-private SQLite, disables backup/device transfer, bounds retention to the newest 50 rows, and removes records on uninstall; Hub operator audit stores only bounded control-plane metadata in memory and exposes it through loopback bootstrap administration | Explicit clear UI, tamper evidence, user-directed export/deletion, and Android retrieval for Hub events |
 | Synthetic audit success after restart or process death | Audit rows are written only after terminal phase; restored audit is display-only, result-free, and never revives pending approval or active execution | Real-device restart matrix and future paired identity |
 | Audit corruption or persistence failure | Read/write/corrupt-row failure shows `DEGRADED` or a discarded-row count, keeps the shown execution verdict unchanged, and performs no background retry | Repair tooling, tamper evidence, and operator-visible diagnostics |
 | Invalid local tool output | Tool-specific type, range, field-length, and control-character checks run before result and verification events | Tool-specific state re-read where meaningful |
@@ -48,7 +48,7 @@
 | Android capability creep | Security scan rejects unexpected source-manifest structure and checks exact permissions and queries in freshly merged debug and release manifests | Review allowlist changes as security decisions |
 | Misleading success | Output validation plus separate `VerificationResult` event | Tool-specific state re-read |
 | False cancel expectations | UI states that cancel is local-only and Hub completion is not guaranteed | End-to-end cancellation protocol |
-| Missing direct Hub/MCP operator audit | Stable paired identity now exists, but the persistent slice is Android-local only | Design bounded Hub/MCP audit with user-visible Android retrieval |
+| Missing persistent Hub/MCP operator audit | Bounded loopback-admin in-memory Hub audit now records pairing, WebSocket, and MCP control-plane events without tokens, bodies, arguments, or tool outputs | Add persistent/tamper-evident storage, Android retrieval, retention controls, and user-directed export/deletion |
 
 ## Current non-goals
 
@@ -59,6 +59,8 @@ manual Android paired token rotation, and a loopback-admin Hub identity
 fingerprint with Android USB-loopback public metadata pinning are implemented for
 the USB loopback slice, but there is no trusted certificate provisioning,
 public-key Hub proof, automatic rotation scheduling, device-aware request rate
-limiting, server-side cancellation, or direct Hub/MCP operator audit yet.
+limiting, server-side cancellation, or persistent Hub/MCP operator audit yet.
 The Android audit trail is local-only, redacted, bounded, display-only on
 restore, and still lacks explicit clear controls and cryptographic tamper evidence.
+The Hub operator audit is bounded, in-memory, and loopback-admin-only; it is not
+tamper-evident, retained across restart, or visible from Android yet.

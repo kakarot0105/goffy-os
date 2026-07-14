@@ -73,9 +73,10 @@
 - [x] Android-triggered paired-token rotation UX and fail-closed recovery policy
 - [x] Stable loopback Hub identity fingerprint for future trust onboarding
 - [x] Android-pinned USB-loopback Hub identity in QR pairing and Keystore restore
+- [x] Bounded loopback-admin Hub/MCP operator audit event retrieval
 - [ ] Certificate/public-key trusted Hub identity onboarding
 - [ ] Automatic token rotation reminders or schedules after physical validation
-- [ ] Direct Hub/MCP operator audit after stable paired identity and user-visible retrieval
+- [ ] Persistent/tamper-evident Hub/MCP operator audit with Android retrieval
 
 ## Milestones 4-8
 

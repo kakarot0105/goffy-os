@@ -15,6 +15,8 @@ from goffy_hub.connections import WebSocketConnectionRegistry
 from goffy_hub.credentials import CredentialStore
 from goffy_hub.identity import HubIdentityStore
 from goffy_hub.mcp_server import build_mcp_runtime
+from goffy_hub.operator_audit import OperatorAuditLog
+from goffy_hub.operator_audit_api import build_operator_audit_router
 from goffy_hub.pairing import PairingService
 from goffy_hub.pairing_api import build_pairing_router
 from goffy_hub.registry import (
@@ -87,6 +89,9 @@ def create_app(
     )
     hub_identity = hub_identity_store.load_or_create() if hub_identity_store is not None else None
     authenticator = CredentialAuthenticator(resolved_settings, credential_store)
+    operator_audit_log = OperatorAuditLog(
+        max_events=resolved_settings.operator_audit_max_events,
+    )
     pairing_service = (
         PairingService(
             credential_store,
@@ -96,7 +101,12 @@ def create_app(
         else None
     )
     websocket_connections = WebSocketConnectionRegistry()
-    mcp_runtime = build_mcp_runtime(resolved_settings, registry, authenticator)
+    mcp_runtime = build_mcp_runtime(
+        resolved_settings,
+        registry,
+        authenticator,
+        audit_log=operator_audit_log,
+    )
     tool_health_monitor = ToolHealthMonitor(
         registry,
         interval_seconds=resolved_settings.tool_health_interval_seconds,
@@ -121,11 +131,14 @@ def create_app(
     app.state.mcp_runtime = mcp_runtime
     app.state.tool_health_monitor = tool_health_monitor
     app.state.authenticator = authenticator
+    app.state.operator_audit_log = operator_audit_log
     app.state.credential_store = credential_store
     app.state.hub_identity_store = hub_identity_store
     app.state.hub_identity = hub_identity
     app.state.pairing_service = pairing_service
     app.state.websocket_connections = websocket_connections
+
+    app.include_router(build_operator_audit_router(authenticator, operator_audit_log))
 
     if pairing_service is not None:
         if hub_identity is None:
@@ -143,6 +156,7 @@ def create_app(
                 pairing_service,
                 hub_identity,
                 on_revoke=revoke_live_access,
+                audit_log=operator_audit_log,
             )
         )
 
@@ -164,17 +178,47 @@ def create_app(
     async def websocket_endpoint(websocket: WebSocket) -> None:
         principal = await authenticator.authenticate_header(websocket.headers.get("authorization"))
         if principal is None:
+            operator_audit_log.record(
+                source="websocket",
+                action="connect",
+                outcome="rejected",
+                principal_kind="none",
+                detail_code="auth",
+            )
             await websocket.close(code=4401, reason="authentication required")
             return
         if not principal.has_scope(SAFE_TOOL_SCOPE):
+            operator_audit_log.record(
+                source="websocket",
+                action="connect",
+                outcome="rejected",
+                principal_kind=principal.kind.value,
+                credential_id=principal.credential_id,
+                detail_code="scope",
+            )
             await websocket.close(code=4403, reason="insufficient scope")
             return
 
         await websocket.accept()
+        operator_audit_log.record(
+            source="websocket",
+            action="connect",
+            outcome="succeeded",
+            principal_kind=principal.kind.value,
+            credential_id=principal.credential_id,
+        )
         credential_id = principal.credential_id
         if credential_id is not None:
             await websocket_connections.register(credential_id, websocket)
             if not await authenticator.is_active(principal):
+                operator_audit_log.record(
+                    source="websocket",
+                    action="connect",
+                    outcome="rejected",
+                    principal_kind=principal.kind.value,
+                    credential_id=principal.credential_id,
+                    detail_code="revoked",
+                )
                 await websocket_connections.unregister(credential_id, websocket)
                 await websocket.close(code=4403, reason="credential revoked")
                 return

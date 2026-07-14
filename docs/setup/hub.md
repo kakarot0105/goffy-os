@@ -185,6 +185,7 @@ export GOFFY_MCP_ALLOWED_HOSTS='127.0.0.1:8787,localhost:8787'
 export GOFFY_MCP_ALLOWED_ORIGINS='http://127.0.0.1:8787,http://localhost:8787'
 export GOFFY_MCP_MAX_CONCURRENT_CALLS='2'
 export GOFFY_MCP_MAX_ACTIVE_SESSIONS='8'
+export GOFFY_OPERATOR_AUDIT_MAX_EVENTS='256'
 export GOFFY_TOOL_HEALTH_TIMEOUT_SECONDS='1'
 export GOFFY_TOOL_HEALTH_INTERVAL_SECONDS='30'
 ```
@@ -214,6 +215,27 @@ Non-local binding requires `GOFFY_HUB_ALLOW_LAN=true` plus existing
 guard, not trusted pairing transport. Configuring paired mode with a non-local
 bind is rejected; trusted LAN use is still unsupported until certificate
 onboarding exists, so localhost remains the recommended mode.
+
+## Operator audit
+
+In paired mode, the Hub keeps a bounded in-memory operator audit for pairing,
+WebSocket, and MCP control-plane events. Retrieve the newest events from the Mac
+only through loopback bootstrap administration:
+
+```bash
+curl -fsS -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
+  'http://127.0.0.1:8787/admin/v1/audit/events?limit=20'
+```
+
+Responses are `no-store` and newest-first. Events contain only sequence,
+timestamp, source, action, outcome, principal kind, optional credential ID, and a
+bounded detail code. They do not contain bearer tokens, pairing tokens, request
+bodies, command text, typed arguments, tool outputs, or free-form summaries.
+
+This audit is diagnostic and volatile. It is not persisted across Hub restart,
+not tamper-evident, and not yet visible from Android. Keep
+`GOFFY_OPERATOR_AUDIT_MAX_EVENTS` bounded; the setting defaults to 256 and is
+accepted only from 16 through 2048.
 
 ## Android debug over USB
 

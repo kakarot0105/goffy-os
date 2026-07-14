@@ -239,6 +239,40 @@ def test_mcp_rejects_invalid_host_before_json_rpc(client: TestClient) -> None:
     assert response.text == "Invalid Host header"
 
 
+@pytest.mark.parametrize(
+    ("blocked_headers", "expected_status"),
+    [
+        ({"Host": "attacker.example"}, 421),
+        ({"Origin": "https://attacker.example"}, 403),
+    ],
+)
+def test_mcp_rejects_transport_security_before_authentication(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    blocked_headers: dict[str, str],
+    expected_status: int,
+) -> None:
+    calls = 0
+    authenticator = client.app.state.authenticator
+    original_authenticate_header = authenticator.authenticate_header
+
+    async def counted_authenticate_header(authorization: str | None) -> object:
+        nonlocal calls
+        calls += 1
+        return await original_authenticate_header(authorization)
+
+    monkeypatch.setattr(authenticator, "authenticate_header", counted_authenticate_header)
+
+    response = client.post(
+        "/mcp",
+        json=initialize_request(),
+        headers={**MCP_HTTP_HEADERS, **blocked_headers},
+    )
+
+    assert response.status_code == expected_status
+    assert calls == 0
+
+
 def test_mcp_uses_exact_non_redirecting_endpoint(client: TestClient) -> None:
     response = client.post("/mcp", json=initialize_request(), headers=MCP_HTTP_HEADERS)
     trailing_slash = client.post("/mcp/", json=initialize_request(), headers=MCP_HTTP_HEADERS)

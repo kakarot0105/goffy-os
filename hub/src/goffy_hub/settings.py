@@ -30,6 +30,7 @@ class HubSettings(BaseModel):
     mcp_allowed_origins: tuple[str, ...] = ()
     mcp_max_concurrent_calls: int = Field(default=2, ge=1, le=8)
     mcp_max_active_sessions: int = Field(default=8, ge=1, le=64)
+    operator_audit_max_events: int = Field(default=256, ge=16, le=2048)
 
     @model_validator(mode="after")
     def guard_network_binding(self) -> HubSettings:
@@ -115,6 +116,7 @@ class HubSettings(BaseModel):
             mcp_allowed_origins=_comma_separated("GOFFY_MCP_ALLOWED_ORIGINS"),
             mcp_max_concurrent_calls=int(os.getenv("GOFFY_MCP_MAX_CONCURRENT_CALLS", "2")),
             mcp_max_active_sessions=int(os.getenv("GOFFY_MCP_MAX_ACTIVE_SESSIONS", "8")),
+            operator_audit_max_events=int(os.getenv("GOFFY_OPERATOR_AUDIT_MAX_EVENTS", "256")),
         )
 
 
