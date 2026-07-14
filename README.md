@@ -260,4 +260,23 @@ Mutating mode uses only the Android SDK `platform-tools/adb` resolved from the
 configured SDK root and only installs the debug APK from this checked-out GOFFY
 repository. PATH `adb` and alternate `--repo-root` values are plan-only.
 
+After the manual phone pass, record redacted evidence:
+
+```bash
+.venv/bin/python scripts/record_moto_g_smoke.py \
+  --app-launched pass \
+  --command-submitted pass \
+  --mac-status-displayed pass \
+  --timeline-recorded pass \
+  --restart-restored pass \
+  --json
+```
+
+The recorder is read-only. It captures readiness, USB setup status, debug APK
+hash, and operator-entered checklist results. It runs only fixed readiness probes
+plus read-only `adb devices -l` and `adb reverse --list` through the SDK
+`platform-tools/adb`. It never runs `adb shell`, never mutates the phone, never
+launches GOFFY, never performs UI automation, never executes arbitrary commands,
+and never accepts free-form notes.
+
 Read [SECURITY.md](SECURITY.md) before exposing the Hub beyond localhost.

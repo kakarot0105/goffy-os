@@ -20,6 +20,7 @@
 - [x] Redacted Android CI setup diagnostics after failed Android gates
 - [x] One-command Moto G readiness verifier for toolchain, USB, Hub, and APK checks
 - [x] Explicit-confirmation Moto G USB reverse/install setup runner
+- [x] Redacted Moto G physical smoke evidence recorder
 - [ ] GOFFY home shell verified on the Moto G physical device
 
 ## Milestone 1: First end-to-end action - in progress

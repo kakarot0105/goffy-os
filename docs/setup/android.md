@@ -203,6 +203,25 @@ Mutating mode uses only the Android SDK `platform-tools/adb` resolved from the
 configured SDK root and only installs the debug APK from this checked-out GOFFY
 repository. PATH `adb` and alternate `--repo-root` values remain plan-only.
 
+After the manual phone checks pass, record redacted evidence:
+
+```bash
+.venv/bin/python scripts/record_moto_g_smoke.py \
+  --app-launched pass \
+  --command-submitted pass \
+  --mac-status-displayed pass \
+  --timeline-recorded pass \
+  --restart-restored pass \
+  --json
+```
+
+The recorder is read-only. It captures readiness, USB setup state, the debug APK
+hash, and bounded operator-entered checklist results. It runs only fixed
+readiness probes plus read-only `adb devices -l` and `adb reverse --list`
+through the SDK `platform-tools/adb`. It never runs `adb shell`, never mutates
+the phone, never launches GOFFY, never performs UI automation, never executes
+arbitrary commands, and never accepts free-form notes.
+
 ## USB localhost debug flow
 
 1. Start the Hub on the Mac in either legacy development mode or the paired mode
@@ -246,6 +265,8 @@ repository. PATH `adb` and alternate `--repo-root` values remain plan-only.
    enter the development bearer in the debug-only field.
 6. Submit `Show my Mac status` or `Check my Mac status`, restart the app, and run
    it again without re-entering the paired bearer.
+7. Run `scripts/record_moto_g_smoke.py` with the checklist flags above and attach
+   the JSON output to the validation notes.
 
 The task timeline should show an authenticated compatible MAC capability before
 accepted tool progress. A Hub using GOFFY protocol `0.1.0`, a missing tool, or a
