@@ -24,6 +24,7 @@
 - [x] Read-only Moto G physical validation guide
 - [x] Local Moto G validation bundle collector
 - [x] Offline Moto G validation bundle verifier
+- [x] One-command Moto G validation collect-and-verify pipeline
 - [ ] GOFFY home shell verified on the Moto G physical device
 
 ## Milestone 1: First end-to-end action - in progress

@@ -176,6 +176,8 @@ Before starting a Moto G physical validation pass, run the readiness verifier:
 .venv/bin/python scripts/verify_moto_g_readiness.py --json
 .venv/bin/python scripts/guide_moto_g_validation.py
 .venv/bin/python scripts/guide_moto_g_validation.py --json
+.venv/bin/python scripts/run_moto_g_validation_pipeline.py
+.venv/bin/python scripts/run_moto_g_validation_pipeline.py --json
 .venv/bin/python scripts/collect_moto_g_validation_bundle.py
 .venv/bin/python scripts/collect_moto_g_validation_bundle.py --json
 .venv/bin/python scripts/verify_moto_g_validation_bundle.py .goffy-validation/<bundle>
@@ -197,6 +199,14 @@ paths, artifact hashes, metadata marker presence, and guide/smoke consistency
 without touching the phone. Verifier exit codes are: `0` for integrity-valid
 passed physical smoke evidence, `1` for integrity-valid but incomplete physical
 smoke evidence, and `2` for schema or integrity failure.
+The pipeline command is the preferred operator path because it collects and
+verifies the bundle in one local, phone-read-only step. It still re-runs the same
+fixed readiness probes inherited from the collector/recorder path:
+`GET http://127.0.0.1:8787/health`, `adb devices -l`, and `adb reverse --list`.
+It does not run `adb shell`, configure `adb reverse`, install the APK, or broaden
+network access beyond localhost. Pipeline exit code `2` can also mean collection
+failed before verification, such as an existing bundle or unsafe `--force`
+target.
 
 When the readiness report has no blockers except a missing Hub USB reverse, use
 the USB setup runner. It prints the fixed setup plan by default:
@@ -235,13 +245,12 @@ After the manual phone checks pass, record redacted evidence:
 To package the same evidence for review:
 
 ```bash
-.venv/bin/python scripts/collect_moto_g_validation_bundle.py \
+.venv/bin/python scripts/run_moto_g_validation_pipeline.py \
   --app-launched pass \
   --command-submitted pass \
   --mac-status-displayed pass \
   --timeline-recorded pass \
   --restart-restored pass
-.venv/bin/python scripts/verify_moto_g_validation_bundle.py .goffy-validation/<bundle>
 ```
 
 The recorder is read-only. It captures readiness, USB setup state, the debug APK
