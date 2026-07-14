@@ -169,6 +169,18 @@ diagnostic step is non-blocking and appears after the blocking preflight, Gradle
 and merged-manifest checks so it cannot hide or weaken the original validation
 result.
 
+Before starting a Moto G physical validation pass, run the readiness verifier:
+
+```bash
+.venv/bin/python scripts/verify_moto_g_readiness.py
+.venv/bin/python scripts/verify_moto_g_readiness.py --json
+```
+
+It combines Android preflight, read-only device diagnostics, fixed localhost Hub
+`/health`, and debug APK presence into one report. It does not run `adb shell`,
+configure `adb reverse`, install the APK, start the Hub, or replace the manual
+phone checklist below.
+
 ## USB localhost debug flow
 
 1. Start the Hub on the Mac in either legacy development mode or the paired mode

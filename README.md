@@ -232,4 +232,15 @@ gates. If any Android gate fails, CI also runs the setup doctor with
 failure log contains focused, redacted Android toolchain, `adb`, and USB reverse
 readiness details.
 
+Before a Moto G physical validation pass, run the readiness verifier:
+
+```bash
+.venv/bin/python scripts/verify_moto_g_readiness.py
+.venv/bin/python scripts/verify_moto_g_readiness.py --json
+```
+
+It reuses the Android/device setup checks, probes only the fixed localhost Hub
+health endpoint, and confirms a debug APK is present. It does not configure
+`adb reverse`, install an APK, start the Hub, or prove the manual phone checklist.
+
 Read [SECURITY.md](SECURITY.md) before exposing the Hub beyond localhost.

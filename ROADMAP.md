@@ -18,6 +18,7 @@
 - [x] Read-only setup doctor for Python and Android toolchain diagnostics
 - [x] Optional read-only ADB readiness diagnostics without serial logging
 - [x] Redacted Android CI setup diagnostics after failed Android gates
+- [x] One-command Moto G readiness verifier for toolchain, USB, Hub, and APK checks
 - [ ] GOFFY home shell verified on the Moto G physical device
 
 ## Milestone 1: First end-to-end action - in progress
