@@ -55,6 +55,7 @@
 - [x] Loopback paired-device self-revocation with verified/unverified phone reporting
 - [x] Versioned QR-ready USB-loopback pairing bundle contract
 - [x] Local operator QR SVG generation for USB-loopback pairing bundles
+- [x] In-process QR bundle redemption smoke verifier
 - [x] Foreground Android QR challenge transfer for USB-loopback pairing bundles
 - [ ] Trusted Hub identity onboarding
 - [ ] Paired-device token rotation

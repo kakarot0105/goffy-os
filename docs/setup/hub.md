@@ -43,6 +43,15 @@ The Hub creates the database with mode `0600`. It stores only bearer digests and
 bounded metadata. The configured bootstrap token now has pairing-admin scope only;
 it cannot call `/ws/v1` or `/mcp`.
 
+Before using a physical phone, run the in-process smoke verifier. It creates a
+temporary local Hub app, mints a bundle, validates the QR payload, redeems the
+challenge once, verifies replay rejection, and confirms admin listing does not
+echo pairing material:
+
+```bash
+.venv/bin/python scripts/verify_pairing_flow.py
+```
+
 From the same Mac, create one 120-second QR-ready pairing bundle and write it as
 a local SVG QR code:
 

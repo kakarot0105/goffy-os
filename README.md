@@ -42,6 +42,8 @@ tools are the capability boundary.
 - Explicit loopback pairing with digest-only, revocable per-device Hub credentials
 - QR-ready `goffy.pairing.bundle.v1` payloads for USB-loopback onboarding
 - Local operator script that writes a short-lived pairing-bundle SVG QR artifact
+- In-process pairing smoke verifier for bundle creation, one-time redemption, and
+  replay rejection
 - Foreground Android challenge redemption with API-26 Keystore AES-GCM storage,
   verified restart restore, and paired self-revocation
 - Foreground-only Android QR scanner for pairing bundles, with no image storage
@@ -200,6 +202,7 @@ ROM remains a later hardware-specific project after the agent runtime is proven.
 .venv/bin/python -m build
 .venv/bin/python -m pytest -q
 .venv/bin/python scripts/security_scan.py
+.venv/bin/python scripts/verify_pairing_flow.py
 python3 scripts/android_preflight.py
 ```
 
