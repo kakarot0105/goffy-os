@@ -43,35 +43,47 @@ The Hub creates the database with mode `0600`. It stores only bearer digests and
 bounded metadata. The configured bootstrap token now has pairing-admin scope only;
 it cannot call `/ws/v1` or `/mcp`.
 
-From the same Mac, create one 120-second QR-ready pairing bundle:
+From the same Mac, create one 120-second QR-ready pairing bundle and write it as
+a local SVG QR code:
 
 ```bash
-pairing_bundle=$(curl -fsS -X POST \
-  -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
-  http://127.0.0.1:8787/admin/v1/pairing/bundles)
+GOFFY_HUB_TOKEN='replace-with-the-same-bootstrap-token' \
+  .venv/bin/python scripts/create_pairing_qr.py --output goffy-pairing-bundle.svg --force
 ```
 
-The bundle is the future QR payload. It contains `bundleVersion`, the exact
-loopback `hubEndpoint`, explicit `usb_loopback` Hub identity metadata, and one
-redeemable challenge. The identity metadata says the bundle was created through
-the loopback bootstrap-admin session; it is not LAN trust, certificate pinning,
-or production remote onboarding. Do not redeem the same challenge elsewhere
-first: it is single-use. Do not put the bundle in source control, logs,
-command-line arguments, cloud-synchronized clipboards, or screenshots.
+The script accepts only an HTTP loopback Hub URL, posts the bootstrap token in an
+`Authorization` header, validates the returned bundle shape, and writes the SVG
+with owner-only file permissions. The SVG is a short-lived secret because it
+contains the pairing token encoded in the QR modules; delete it after pairing.
+Do not put the SVG or underlying bundle in source control, logs, command-line
+arguments, cloud-synchronized clipboards, or screenshots.
 
 ```bash
 adb reverse tcp:8787 tcp:8787
-printf '%s\n' "$pairing_bundle"
+open goffy-pairing-bundle.svg
 ```
 
-In the debug app, keep `ws://127.0.0.1:8787/ws/v1`, enter the full printed JSON in
-`Pairing bundle JSON`, and tap `Pair phone` before the 120-second
-expiry. This temporary operator-assisted transfer is intentionally not a
-production onboarding flow; use a device-local input path and avoid shared
-clipboard services. Android verifies the bundle version, loopback identity
-metadata, and exact endpoint match before posting the typed redemption once. It
-then encrypts the returned bearer with Android Keystore, verifies the stored
-record, and shows the link as paired.
+In the debug app, keep `ws://127.0.0.1:8787/ws/v1`, tap `Scan QR`, scan the SVG
+from the Mac screen, and tap `Pair phone` before the 120-second expiry. This
+temporary operator-assisted transfer is intentionally not a production onboarding
+flow. Android verifies the bundle version, loopback identity metadata, and exact
+endpoint match before posting the typed redemption once. It then encrypts the
+returned bearer with Android Keystore, verifies the stored record, and shows the
+link as paired.
+
+Manual JSON transfer remains possible for low-level administration:
+
+```bash
+curl -fsS -X POST \
+  -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
+  http://127.0.0.1:8787/admin/v1/pairing/bundles
+```
+
+The bundle contains `bundleVersion`, the exact loopback `hubEndpoint`, explicit
+`usb_loopback` Hub identity metadata, and one redeemable challenge. The identity
+metadata says the bundle was created through the loopback bootstrap-admin session;
+it is not LAN trust, certificate pinning, or production remote onboarding. Do not
+redeem the same challenge elsewhere first: it is single-use.
 
 The older `/admin/v1/pairing/challenges` route remains available for Hub
 compatibility tests and low-level administration, but Android onboarding now
@@ -97,8 +109,7 @@ remote revocation as unverified, or if the phone is lost, use the administrator
 route above from the Mac and inspect the credential list.
 Paired mode requires a local Hub bind, and all pairing and administration routes
 also reject non-loopback clients. Configured LAN TLS and allowlists do not override
-these guards. Guided QR pairing, token rotation, and trusted LAN onboarding are
-not implemented yet.
+these guards. Token rotation and trusted LAN onboarding are not implemented yet.
 
 ## MCP client
 

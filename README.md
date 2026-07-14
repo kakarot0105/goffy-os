@@ -41,6 +41,7 @@ tools are the capability boundary.
 - Authenticated MCP tool-list change notifications with bounded reconnect replay
 - Explicit loopback pairing with digest-only, revocable per-device Hub credentials
 - QR-ready `goffy.pairing.bundle.v1` payloads for USB-loopback onboarding
+- Local operator script that writes a short-lived pairing-bundle SVG QR artifact
 - Foreground Android challenge redemption with API-26 Keystore AES-GCM storage,
   verified restart restore, and paired self-revocation
 - Foreground-only Android QR scanner for pairing bundles, with no image storage
@@ -91,6 +92,13 @@ stable paired identity, configure the explicit state path and follow
 is still unsupported. Android can now redeem the versioned pairing bundle through
 the foreground Hub card over USB loopback, scan that bundle as a QR code, and
 restore the encrypted credential after restart; token rotation remains open.
+Generate the local QR artifact from the Mac with:
+
+```bash
+GOFFY_HUB_TOKEN='replace-with-the-same-bootstrap-token' \
+  .venv/bin/python scripts/create_pairing_qr.py --output goffy-pairing-bundle.svg --force
+```
+
 With the Hub running, verify the official MCP path in another terminal:
 
 ```bash

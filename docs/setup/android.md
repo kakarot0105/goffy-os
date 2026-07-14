@@ -148,9 +148,16 @@ No large model or background service loads.
    ```
 
 4. Install and run the debug app from Android Studio or with the debug APK.
-5. For paired mode, create a pairing bundle on the Mac. Either scan its QR code
-   with `Scan QR` or enter the complete bundle JSON in the app's password-masked
-   field, then tap `Pair phone` within 120 seconds. Do not redeem the embedded
+5. For paired mode, create a pairing QR SVG on the Mac:
+
+   ```bash
+   GOFFY_HUB_TOKEN='replace-with-the-same-bootstrap-token' \
+     .venv/bin/python scripts/create_pairing_qr.py --output goffy-pairing-bundle.svg --force
+   open goffy-pairing-bundle.svg
+   ```
+
+   Scan it with `Scan QR`, then tap `Pair phone` within 120 seconds. The SVG is a
+   short-lived secret; delete it after pairing. Do not redeem the embedded
    challenge elsewhere or use a cloud-synchronized clipboard. For legacy mode,
    enter the development bearer in the debug-only field.
 6. Submit `Show my Mac status` or `Check my Mac status`, restart the app, and run

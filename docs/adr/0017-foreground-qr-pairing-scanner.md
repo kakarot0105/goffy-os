@@ -25,12 +25,15 @@ bypasses the existing typed bundle parser.
   stops, or one payload is captured.
 - Treat scanned text as input only: fill the existing bounded pairing-bundle
   field and require the user to tap `Pair phone` before redemption.
+- Add a local operator script that calls the loopback Hub bundle endpoint and
+  writes an owner-only SVG QR artifact.
 - Keep trusted LAN, certificate pin onboarding, and token rotation out of scope.
 
 ## Consequences
 
 The user can complete USB-loopback pairing without a cloud clipboard or manual
-copying. The scanner increases APK size because the ML Kit model is bundled, but
+copying. The SVG artifact is a short-lived secret and must be deleted after
+pairing. The scanner increases APK size because the ML Kit model is bundled, but
 the model and camera pipeline load only while the visible scanner panel is active.
 
 The existing parser remains the authorization boundary. Non-GOFFY QR contents,

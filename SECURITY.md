@@ -39,6 +39,11 @@ include real credentials or unrelated personal data.
   `goffy.pairing.bundle.v1` QR payload shape. The Hub creates them only through
   loopback bootstrap administration, requires a loopback Host header, marks them
   no-store, and declares `trustedLanSupported=false`.
+- `scripts/create_pairing_qr.py` creates local operator QR artifacts only from an
+  HTTP loopback Hub URL, sends the bootstrap token in an `Authorization` header,
+  validates the returned bundle shape, and writes the SVG with owner-only file
+  permissions. The SVG is a short-lived secret because it contains the challenge
+  token encoded in QR modules.
 - Paired bearers contain 256 bits of randomness and are returned once. SQLite
   stores only a domain-separated SHA-256 digest, generated credential ID, bounded
   device metadata, and timestamps in a `0600` file. Active credentials are capped
@@ -221,6 +226,7 @@ include real credentials or unrelated personal data.
 - Implicit timer intents or non-allowlisted Clock-handler dispatch
 - Camera opening or image capture as part of the flashlight tool
 - Persisting QR frames or redeeming a scanned bundle without a visible pairing action
+- Committing, logging, or cloud-syncing generated pairing QR SVG artifacts
 - Persisting raw commands, typed arguments, note text, tool results, device info,
   approval text, event messages, endpoint or token values, free-form summaries,
   or verification checks in the Android audit trail
