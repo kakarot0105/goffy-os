@@ -43,7 +43,7 @@ class OkHttpHubPairingGateway internal constructor(
                 "Phone pairing currently requires the USB loopback link.",
             )
         }
-        val challenge = parseChallenge(challengeJson)
+        val challenge = parseChallenge(challengeJson, endpoint.webSocketUrl)
         validateMetadata(deviceId, displayName)
         val body = buildJsonObject {
             put("challengeId", challenge.challengeId.toString())
@@ -147,23 +147,48 @@ class OkHttpHubPairingGateway internal constructor(
         client.connectionPool.evictAll()
     }
 
-    private fun parseChallenge(challengeJson: String): PairingChallenge {
+    private fun parseChallenge(challengeJson: String, expectedEndpoint: String): PairingChallenge {
         if (challengeJson.toByteArray(Charsets.UTF_8).size !in 1..MAX_PAIRING_JSON_BYTES) {
             throw invalidChallenge()
         }
-        val wire = try {
+        return try {
             val value = json.parseToJsonElement(challengeJson).jsonObject
-            value.requireExactKeys(CHALLENGE_KEYS)
-            PairingChallengeWire(
-                challengeId = value.requiredString("challengeId"),
-                pairingToken = value.requiredString("pairingToken"),
-                expiresAt = value.requiredString("expiresAt"),
-            )
+            when (value.keys) {
+                PAIRING_BUNDLE_KEYS -> parseBundleObject(value, expectedEndpoint)
+                else -> throw invalidChallenge()
+            }
         } catch (_: SerializationException) {
             throw invalidChallenge()
         } catch (_: IllegalArgumentException) {
             throw invalidChallenge()
         }
+    }
+
+    private fun parseBundleObject(value: JsonObject, expectedEndpoint: String): PairingChallenge {
+        value.requireExactKeys(PAIRING_BUNDLE_KEYS)
+        if (value.requiredString("bundleVersion") != PAIRING_BUNDLE_VERSION ||
+            value.requiredString("hubEndpoint") != expectedEndpoint
+        ) {
+            throw invalidChallenge()
+        }
+        val identity = value.requiredObject("hubIdentity")
+        identity.requireExactKeys(PAIRING_BUNDLE_IDENTITY_KEYS)
+        if (identity.requiredString("mode") != "usb_loopback" ||
+            identity.requiredString("verifiedBy") != "loopback_admin_session" ||
+            identity.requiredBoolean("trustedLanSupported")
+        ) {
+            throw invalidChallenge()
+        }
+        return parseChallengeObject(value.requiredObject("challenge"))
+    }
+
+    private fun parseChallengeObject(value: JsonObject): PairingChallenge {
+        value.requireExactKeys(CHALLENGE_KEYS)
+        val wire = PairingChallengeWire(
+            challengeId = value.requiredString("challengeId"),
+            pairingToken = value.requiredString("pairingToken"),
+            expiresAt = value.requiredString("expiresAt"),
+        )
         val challengeId = parseCanonicalUuid(wire.challengeId) ?: throw invalidChallenge()
         if (wire.pairingToken.length !in MIN_PAIRING_TOKEN_LENGTH..MAX_PAIRING_TOKEN_LENGTH) {
             throw invalidChallenge()
@@ -355,7 +380,19 @@ class OkHttpHubPairingGateway internal constructor(
         const val MAX_ACCESS_TOKEN_LENGTH = 4_096
         const val MAX_DISPLAY_NAME_LENGTH = 80
         val DEVICE_ID_REGEX = Regex("^[A-Za-z0-9._:-]{1,64}$")
+        const val PAIRING_BUNDLE_VERSION = "goffy.pairing.bundle.v1"
         val CHALLENGE_KEYS = setOf("challengeId", "pairingToken", "expiresAt")
+        val PAIRING_BUNDLE_KEYS = setOf(
+            "bundleVersion",
+            "hubEndpoint",
+            "hubIdentity",
+            "challenge",
+        )
+        val PAIRING_BUNDLE_IDENTITY_KEYS = setOf(
+            "mode",
+            "verifiedBy",
+            "trustedLanSupported",
+        )
         val SUCCESS_KEYS = setOf("credentialId", "accessToken", "createdAt")
         val REVOCATION_KEYS = setOf("credentialId", "revoked")
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
@@ -391,6 +428,9 @@ class OkHttpHubPairingGateway internal constructor(
             }
             return primitive.content == "true"
         }
+
+        fun JsonObject.requiredObject(name: String): JsonObject =
+            get(name) as? JsonObject ?: throw SerializationException("missing JSON object")
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)

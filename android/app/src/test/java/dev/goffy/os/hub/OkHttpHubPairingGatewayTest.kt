@@ -19,7 +19,30 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33])
 class OkHttpHubPairingGatewayTest {
     @Test
-    fun redeemsExactTypedChallengeWithoutPuttingSecretsInTheUrl() = runTest {
+    fun rejectsRawChallengeJsonBeforeAnyNetworkCall() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            val gateway = OkHttpHubPairingGateway(OkHttpClient())
+
+            val failure = runCatching {
+                gateway.redeem(
+                    endpoint(server),
+                    CHALLENGE_JSON,
+                    "goffy-android-test",
+                    "Moto G",
+                )
+            }.exceptionOrNull()
+
+            assertTrue(failure is HubPairingException)
+            assertEquals("invalid_pairing_payload", (failure as HubPairingException).code)
+            assertFalse(failure.message.orEmpty().contains(PAIRING_TOKEN))
+            assertEquals(0, server.requestCount)
+            gateway.close()
+        }
+    }
+
+    @Test
+    fun redeemsExactTypedPairingBundleWithoutPuttingSecretsInTheUrl() = runTest {
         MockWebServer().use { server ->
             server.start()
             server.enqueue(jsonResponse(201, SUCCESS_JSON))
@@ -27,7 +50,7 @@ class OkHttpHubPairingGatewayTest {
 
             val issued = gateway.redeem(
                 endpoint(server),
-                CHALLENGE_JSON,
+                pairingBundle(server),
                 "goffy-android-test",
                 "Moto G",
             )
@@ -49,12 +72,44 @@ class OkHttpHubPairingGatewayTest {
     }
 
     @Test
-    fun rejectsMalformedOrExtendedChallengeBeforeAnyNetworkCall() = runTest {
+    fun rejectsMalformedNestedPairingBundleBeforeAnyNetworkCall() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            val gateway = OkHttpHubPairingGateway(OkHttpClient())
+            val badIdentity = pairingBundle(server).replace(
+                "\"hubIdentity\":{\"mode\":\"usb_loopback\",\"verifiedBy\":\"loopback_admin_session\",\"trustedLanSupported\":false}",
+                "\"hubIdentity\":true",
+            )
+            val badChallenge = pairingBundle(server).replace(
+                "\"challenge\":$CHALLENGE_JSON",
+                "\"challenge\":\"not-an-object\"",
+            )
+
+            val identityFailure = runCatching {
+                gateway.redeem(endpoint(server), badIdentity, "goffy-test", "Moto G")
+            }.exceptionOrNull()
+            val challengeFailure = runCatching {
+                gateway.redeem(endpoint(server), badChallenge, "goffy-test", "Moto G")
+            }.exceptionOrNull()
+
+            assertTrue(identityFailure is HubPairingException)
+            assertEquals("invalid_pairing_payload", (identityFailure as HubPairingException).code)
+            assertTrue(challengeFailure is HubPairingException)
+            assertEquals("invalid_pairing_payload", (challengeFailure as HubPairingException).code)
+            assertEquals(0, server.requestCount)
+            assertFalse(identityFailure.message.orEmpty().contains(PAIRING_TOKEN))
+            assertFalse(challengeFailure.message.orEmpty().contains(PAIRING_TOKEN))
+            gateway.close()
+        }
+    }
+
+    @Test
+    fun rejectsMalformedOrExtendedPairingPayloadBeforeAnyNetworkCall() = runTest {
         MockWebServer().use { server ->
             server.start()
             val gateway = OkHttpHubPairingGateway(OkHttpClient())
 
-            val extraField = CHALLENGE_JSON.dropLast(1) + ",\"unexpected\":true}"
+            val extraField = pairingBundle(server).dropLast(1) + ",\"unexpected\":true}"
             val failure = runCatching {
                 gateway.redeem(endpoint(server), extraField, "goffy-test", "Moto G")
             }.exceptionOrNull()
@@ -68,6 +123,35 @@ class OkHttpHubPairingGatewayTest {
     }
 
     @Test
+    fun rejectsMismatchedOrExtendedPairingBundleBeforeAnyNetworkCall() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            val gateway = OkHttpHubPairingGateway(OkHttpClient())
+            val mismatchedEndpoint = pairingBundle(server).replace(
+                endpoint(server).webSocketUrl,
+                "ws://127.0.0.1:9999/ws/v1",
+            )
+            val extended = pairingBundle(server).dropLast(1) + ",\"unexpected\":true}"
+
+            val mismatchFailure = runCatching {
+                gateway.redeem(endpoint(server), mismatchedEndpoint, "goffy-test", "Moto G")
+            }.exceptionOrNull()
+            val extendedFailure = runCatching {
+                gateway.redeem(endpoint(server), extended, "goffy-test", "Moto G")
+            }.exceptionOrNull()
+
+            assertTrue(mismatchFailure is HubPairingException)
+            assertEquals("invalid_pairing_payload", (mismatchFailure as HubPairingException).code)
+            assertTrue(extendedFailure is HubPairingException)
+            assertEquals("invalid_pairing_payload", (extendedFailure as HubPairingException).code)
+            assertEquals(0, server.requestCount)
+            assertFalse(mismatchFailure.message.orEmpty().contains(PAIRING_TOKEN))
+            assertFalse(extendedFailure.message.orEmpty().contains(PAIRING_TOKEN))
+            gateway.close()
+        }
+    }
+
+    @Test
     fun rejectsMalformedOrOversizedSuccessAndNeverRetriesRedemption() = runTest {
         MockWebServer().use { server ->
             server.start()
@@ -75,7 +159,7 @@ class OkHttpHubPairingGatewayTest {
             val gateway = OkHttpHubPairingGateway(OkHttpClient())
 
             val failure = runCatching {
-                gateway.redeem(endpoint(server), CHALLENGE_JSON, "goffy-test", "Moto G")
+                gateway.redeem(endpoint(server), pairingBundle(server), "goffy-test", "Moto G")
             }.exceptionOrNull()
 
             assertTrue(failure is HubPairingException)
@@ -93,7 +177,7 @@ class OkHttpHubPairingGatewayTest {
             val gateway = OkHttpHubPairingGateway(OkHttpClient())
 
             val failure = runCatching {
-                gateway.redeem(endpoint(server), CHALLENGE_JSON, "goffy-test", "Moto G")
+                gateway.redeem(endpoint(server), pairingBundle(server), "goffy-test", "Moto G")
             }.exceptionOrNull()
 
             assertTrue(failure is HubPairingException)
@@ -267,6 +351,14 @@ class OkHttpHubPairingGatewayTest {
         server.url("/ws/v1").toString().replaceFirst("http://", "ws://"),
         allowInsecureLoopback = true,
     )
+
+    private fun pairingBundle(server: MockWebServer): String =
+        "{\"bundleVersion\":\"goffy.pairing.bundle.v1\"," +
+            "\"hubEndpoint\":\"${endpoint(server).webSocketUrl}\"," +
+            "\"hubIdentity\":{\"mode\":\"usb_loopback\"," +
+            "\"verifiedBy\":\"loopback_admin_session\"," +
+            "\"trustedLanSupported\":false}," +
+            "\"challenge\":$CHALLENGE_JSON}"
 
     private fun jsonResponse(status: Int, body: String): MockResponse = MockResponse.Builder()
         .code(status)

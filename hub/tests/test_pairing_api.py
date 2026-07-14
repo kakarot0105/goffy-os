@@ -131,6 +131,10 @@ def test_pairing_admin_and_redemption_are_loopback_only(tmp_path: Path) -> None:
             "/admin/v1/pairing/challenges",
             headers=BOOTSTRAP_HEADERS,
         )
+        bundle_response = client.post(
+            "/admin/v1/pairing/bundles",
+            headers=BOOTSTRAP_HEADERS,
+        )
         redemption_response = client.post(
             "/pairing/v1/redeem",
             json={
@@ -154,6 +158,7 @@ def test_pairing_admin_and_redemption_are_loopback_only(tmp_path: Path) -> None:
         )
 
     assert admin_response.status_code == 403
+    assert bundle_response.status_code == 403
     assert redemption_response.status_code == 403
     assert list_response.status_code == 403
     assert revoke_response.status_code == 403
@@ -183,19 +188,82 @@ def test_pairing_mints_token_once_and_admin_listing_never_echoes_secrets(tmp_pat
     assert "pairingToken" not in response.text
 
 
+def test_pairing_bundle_contains_loopback_identity_and_redeemable_challenge(
+    tmp_path: Path,
+) -> None:
+    with pairing_client(tmp_path) as client:
+        bundle_response = client.post(
+            "/admin/v1/pairing/bundles",
+            headers=BOOTSTRAP_HEADERS,
+        )
+        assert bundle_response.status_code == 201
+        assert bundle_response.headers["cache-control"] == "no-store"
+        assert bundle_response.headers["pragma"] == "no-cache"
+        bundle = bundle_response.json()
+        redemption_response = client.post(
+            "/pairing/v1/redeem",
+            json={
+                "challengeId": bundle["challenge"]["challengeId"],
+                "pairingToken": bundle["challenge"]["pairingToken"],
+                "deviceId": "qr-observation-1",
+                "displayName": "Moto G",
+            },
+        )
+
+    assert bundle == {
+        "bundleVersion": "goffy.pairing.bundle.v1",
+        "hubEndpoint": "ws://127.0.0.1:8787/ws/v1",
+        "hubIdentity": {
+            "mode": "usb_loopback",
+            "verifiedBy": "loopback_admin_session",
+            "trustedLanSupported": False,
+        },
+        "challenge": {
+            "challengeId": bundle["challenge"]["challengeId"],
+            "pairingToken": bundle["challenge"]["pairingToken"],
+            "expiresAt": bundle["challenge"]["expiresAt"],
+        },
+    }
+    assert redemption_response.status_code == 201
+
+
+def test_pairing_bundle_rejects_non_loopback_host_header(tmp_path: Path) -> None:
+    with pairing_client(tmp_path) as client:
+        accepted_alias = client.post(
+            "/admin/v1/pairing/bundles",
+            headers={**BOOTSTRAP_HEADERS, "Host": "localhost:8787"},
+        )
+        response = client.post(
+            "/admin/v1/pairing/bundles",
+            headers={**BOOTSTRAP_HEADERS, "Host": "hub.example:8787"},
+        )
+
+    assert accepted_alias.status_code == 201
+    assert accepted_alias.json()["hubEndpoint"] == "ws://127.0.0.1:8787/ws/v1"
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "loopback_host_required"
+
+
 def test_pairing_requires_bootstrap_admin_and_rejects_paired_admin_access(
     tmp_path: Path,
 ) -> None:
     with pairing_client(tmp_path) as client:
         missing = client.post("/admin/v1/pairing/challenges")
+        missing_bundle = client.post("/admin/v1/pairing/bundles")
         _credential_id, access_token = pair_device(client)
         paired = client.get(
             "/admin/v1/credentials",
             headers=paired_headers(access_token),
         )
+        paired_bundle = client.post(
+            "/admin/v1/pairing/bundles",
+            headers=paired_headers(access_token),
+        )
 
     assert missing.status_code == 401
+    assert missing_bundle.status_code == 401
     assert paired.status_code == 403
+    assert paired_bundle.status_code == 403
     assert paired.json()["detail"]["code"] == "insufficient_scope"
 
 

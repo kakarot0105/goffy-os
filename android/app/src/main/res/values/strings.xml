@@ -17,7 +17,7 @@
     <string name="hub_forgetting">REMOVING LOCAL LINK</string>
     <string name="hub_degraded">LOCAL LINK NEEDS ATTENTION</string>
     <string name="hub_endpoint_label">WebSocket endpoint</string>
-    <string name="hub_pairing_challenge_label">Pairing challenge JSON</string>
+    <string name="hub_pairing_challenge_label">Pairing bundle JSON</string>
     <string name="hub_token_label">Development bearer token</string>
     <string name="pair_hub">Pair phone</string>
     <string name="configure_hub">Debug link</string>

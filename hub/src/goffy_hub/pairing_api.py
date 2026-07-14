@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from ipaddress import ip_address
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
@@ -27,6 +28,7 @@ RevokeCallback = Callable[[UUID], Awaitable[None]]
 DEVICE_ID_PATTERN = r"^[A-Za-z0-9._:-]{1,64}$"
 DISPLAY_NAME_PATTERN = r"^[^\x00-\x1F\x7F]{1,80}$"
 MAX_PAIRING_REQUEST_BYTES = 2_048
+PAIRING_BUNDLE_VERSION: Literal["goffy.pairing.bundle.v1"] = "goffy.pairing.bundle.v1"
 
 
 class PairingApiModel(BaseModel):
@@ -42,6 +44,19 @@ class PairingChallengeResponse(PairingApiModel):
     challenge_id: UUID
     pairing_token: str = Field(repr=False)
     expires_at: datetime
+
+
+class PairingBundleHubIdentity(PairingApiModel):
+    mode: Literal["usb_loopback"]
+    verified_by: Literal["loopback_admin_session"]
+    trusted_lan_supported: bool
+
+
+class PairingBundleResponse(PairingApiModel):
+    bundle_version: Literal["goffy.pairing.bundle.v1"]
+    hub_endpoint: str = Field(min_length=1, max_length=2048)
+    hub_identity: PairingBundleHubIdentity
+    challenge: PairingChallengeResponse
 
 
 class PairingRedemptionRequest(PairingApiModel):
@@ -98,14 +113,45 @@ def build_pairing_router(
         response: Response,
     ) -> PairingChallengeResponse:
         await _require_loopback_admin(request, authenticator)
+        challenge = await _begin_pairing_challenge(pairing_service)
+        _prevent_secret_caching(response)
+        return challenge
+
+    @router.post(
+        "/admin/v1/pairing/bundles",
+        response_model=PairingBundleResponse,
+        response_model_by_alias=True,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_pairing_bundle(
+        request: Request,
+        response: Response,
+    ) -> PairingBundleResponse:
+        await _require_loopback_admin(request, authenticator)
+        hub_endpoint = _websocket_endpoint_from_request(request)
+        challenge = await _begin_pairing_challenge(pairing_service)
+        _prevent_secret_caching(response)
+        return PairingBundleResponse(
+            bundle_version=PAIRING_BUNDLE_VERSION,
+            hub_endpoint=hub_endpoint,
+            hub_identity=PairingBundleHubIdentity(
+                mode="usb_loopback",
+                verified_by="loopback_admin_session",
+                trusted_lan_supported=False,
+            ),
+            challenge=challenge,
+        )
+
+    async def _begin_pairing_challenge(
+        service: PairingService,
+    ) -> PairingChallengeResponse:
         try:
-            await pairing_service.check_store()
-            challenge = await pairing_service.begin()
+            await service.check_store()
+            challenge = await service.begin()
         except PairingBusyError as error:
             raise _api_error(429, "pairing_busy", "Pairing is temporarily unavailable.") from error
         except CredentialStoreError as error:
             raise _credential_store_unavailable() from error
-        _prevent_secret_caching(response)
         return PairingChallengeResponse(
             challenge_id=challenge.challenge_id,
             pairing_token=challenge.pairing_token,
@@ -247,6 +293,29 @@ def _require_loopback(request: Request) -> None:
         loopback = False
     if not loopback:
         raise _api_error(403, "loopback_required", "Pairing is available on loopback only.")
+
+
+def _websocket_endpoint_from_request(request: Request) -> str:
+    host = request.url.hostname
+    if host is None or not _is_loopback_host(host):
+        raise _api_error(
+            400,
+            "loopback_host_required",
+            "Pairing bundles require a loopback Host header.",
+        )
+    settings = request.app.state.settings
+    websocket_scheme = "wss" if settings.tls_cert_file is not None else "ws"
+    return f"{websocket_scheme}://127.0.0.1:{settings.port}/ws/v1"
+
+
+def _is_loopback_host(host: str) -> bool:
+    normalized = host.lower().removeprefix("[").removesuffix("]")
+    if normalized == "localhost":
+        return True
+    try:
+        return ip_address(normalized).is_loopback
+    except ValueError:
+        return False
 
 
 def _credential_response(credential: PairedCredential) -> PairedCredentialResponse:

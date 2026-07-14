@@ -35,6 +35,10 @@ include real credentials or unrelated personal data.
   three pending entries, and invalidated after five failed attempts. Redemption
   JSON is capped at 2 KiB, validation errors never echo secret input, and
   secret-bearing success responses disable caching.
+- Pairing bundles wrap one challenge in the versioned
+  `goffy.pairing.bundle.v1` QR payload shape. The Hub creates them only through
+  loopback bootstrap administration, requires a loopback Host header, marks them
+  no-store, and declares `trustedLanSupported=false`.
 - Paired bearers contain 256 bits of randomness and are returned once. SQLite
   stores only a domain-separated SHA-256 digest, generated credential ID, bounded
   device metadata, and timestamps in a `0600` file. Active credentials are capped
@@ -88,7 +92,7 @@ include real credentials or unrelated personal data.
   not retry an ambiguous DELETE.
 - The bearer is decrypted into process memory while the active ViewModel owns the
   Hub connection configuration. Rooted-device/process compromise is outside this
-  pre-alpha storage guarantee. Guided QR transfer, certificate pin onboarding,
+  pre-alpha storage guarantee. Camera QR transfer, certificate pin onboarding,
   and token rotation are not implemented.
 - Release Android clients require `wss://`; debug cleartext is limited to
   `localhost` and `127.0.0.1` for the documented USB port-reversal flow.

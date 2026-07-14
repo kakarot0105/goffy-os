@@ -133,9 +133,9 @@ and forget add one tiny atomic write/delete. No model or background service load
    ```
 
 4. Install and run the debug app from Android Studio or with the debug APK.
-5. For paired mode, create a challenge on the Mac, enter the complete challenge
+5. For paired mode, create a pairing bundle on the Mac, enter the complete bundle
    JSON in the app's password-masked field, and tap `Pair phone` within 120 seconds.
-   Do not redeem the challenge elsewhere or use a cloud-synchronized clipboard.
+   Do not redeem the embedded challenge elsewhere or use a cloud-synchronized clipboard.
    For legacy mode, enter the development bearer in the debug-only field.
 6. Submit `Show my Mac status` or `Check my Mac status`, restart the app, and run
    it again without re-entering the paired bearer.

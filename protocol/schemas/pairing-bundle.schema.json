@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goffy.dev/protocol/0.2.0/pairing-bundle.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "bundleVersion",
+    "hubEndpoint",
+    "hubIdentity",
+    "challenge"
+  ],
+  "properties": {
+    "bundleVersion": {
+      "const": "goffy.pairing.bundle.v1"
+    },
+    "hubEndpoint": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^wss?://127\\.0\\.0\\.1(:[0-9]{1,5})?/ws/v1$"
+    },
+    "hubIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "verifiedBy",
+        "trustedLanSupported"
+      ],
+      "properties": {
+        "mode": {
+          "const": "usb_loopback"
+        },
+        "verifiedBy": {
+          "const": "loopback_admin_session"
+        },
+        "trustedLanSupported": {
+          "const": false
+        }
+      }
+    },
+    "challenge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "challengeId",
+        "pairingToken",
+        "expiresAt"
+      ],
+      "properties": {
+        "challengeId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "pairingToken": {
+          "type": "string",
+          "minLength": 32,
+          "maxLength": 128
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

@@ -24,8 +24,14 @@ from goffy_protocol import (
 )
 
 FIXTURE_PATH = Path(__file__).parents[1] / "protocol" / "fixtures" / "mac-system-info-flow.jsonl"
+PAIRING_BUNDLE_FIXTURE_PATH = (
+    Path(__file__).parents[1] / "protocol" / "fixtures" / "pairing-bundle-v1.json"
+)
 DISCOVERY_SCHEMA_PATH = (
     Path(__file__).parents[1] / "protocol" / "schemas" / "capability-discovery.schema.json"
+)
+PAIRING_BUNDLE_SCHEMA_PATH = (
+    Path(__file__).parents[1] / "protocol" / "schemas" / "pairing-bundle.schema.json"
 )
 
 
@@ -162,6 +168,34 @@ def test_capability_json_schema_matches_android_acceptance_boundary() -> None:
     incompatible["tools"][0]["outputSchema"]["properties"]["status"]["description"] = "Not allowed"
     with pytest.raises(JsonSchemaValidationError):
         validator.validate(incompatible)
+
+
+def test_pairing_bundle_json_schema_matches_qr_onboarding_boundary() -> None:
+    schema = json.loads(PAIRING_BUNDLE_SCHEMA_PATH.read_text(encoding="utf-8"))
+    bundle = json.loads(PAIRING_BUNDLE_FIXTURE_PATH.read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(schema)
+    validator = Draft202012Validator(schema)
+    validator.validate(bundle)
+
+    lan_claim = deepcopy(bundle)
+    lan_claim["hubEndpoint"] = "wss://hub.example/ws/v1"
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(lan_claim)
+
+    localhost_alias = deepcopy(bundle)
+    localhost_alias["hubEndpoint"] = "ws://localhost:8787/ws/v1"
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(localhost_alias)
+
+    trusted_lan_claim = deepcopy(bundle)
+    trusted_lan_claim["hubIdentity"]["trustedLanSupported"] = True
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(trusted_lan_claim)
+
+    extended = deepcopy(bundle)
+    extended["unexpected"] = True
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(extended)
 
 
 def test_shared_mac_system_info_flow_is_protocol_compatible() -> None:

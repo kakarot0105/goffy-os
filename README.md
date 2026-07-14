@@ -12,8 +12,9 @@ tools are the capability boundary.
 > for the newest 50 terminal tasks. MCP tool-list changes now stream with
 > bounded, session-local reconnect replay. Paired phones can now forget locally
 > and ask the Hub once to revoke the exact matching credential over loopback.
-> Guided QR pairing, physical Moto G verification, direct Hub/MCP operator audit,
-> token rotation, and trusted LAN operation remain open.
+> The Hub now emits a versioned USB-loopback pairing bundle for the future QR
+> flow. Camera QR scanning, physical Moto G verification, direct Hub/MCP operator
+> audit, token rotation, and trusted LAN operation remain open.
 
 ## Current vertical slice
 
@@ -38,6 +39,7 @@ tools are the capability boundary.
 - Bounded, fail-closed Hub tool-health checks
 - Authenticated MCP tool-list change notifications with bounded reconnect replay
 - Explicit loopback pairing with digest-only, revocable per-device Hub credentials
+- QR-ready `goffy.pairing.bundle.v1` payloads for USB-loopback onboarding
 - Foreground Android challenge redemption with API-26 Keystore AES-GCM storage,
   verified restart restore, and paired self-revocation
 - Allowlisted, read-only `SAFE mac.system_info` tool
@@ -83,9 +85,9 @@ can still authenticate previously issued active credentials. Never commit a real
 token. The default command above is legacy USB development mode. To enable
 stable paired identity, configure the explicit state path and follow
 [Hub setup](docs/setup/hub.md). Pairing remains loopback-only and trusted LAN use
-is still unsupported. Android can now redeem the complete challenge JSON through
+is still unsupported. Android can now redeem the versioned pairing bundle through
 the foreground Hub card over USB loopback and restores the encrypted credential
-after restart; QR transfer and token rotation remain open.
+after restart; camera QR scanning and token rotation remain open.
 With the Hub running, verify the official MCP path in another terminal:
 
 ```bash

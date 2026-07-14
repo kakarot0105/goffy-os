@@ -43,31 +43,39 @@ The Hub creates the database with mode `0600`. It stores only bearer digests and
 bounded metadata. The configured bootstrap token now has pairing-admin scope only;
 it cannot call `/ws/v1` or `/mcp`.
 
-From the same Mac, create one 120-second challenge:
+From the same Mac, create one 120-second QR-ready pairing bundle:
 
 ```bash
-challenge_json=$(curl -fsS -X POST \
+pairing_bundle=$(curl -fsS -X POST \
   -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
-  http://127.0.0.1:8787/admin/v1/pairing/challenges)
+  http://127.0.0.1:8787/admin/v1/pairing/bundles)
 ```
 
-The future guided flow will encode that challenge plus authenticated Hub identity
-in a QR code. The current Android debug app accepts the complete `challenge_json`
-in its password-masked foreground pairing field. Do not redeem the same challenge
-elsewhere first: it is single-use. Do not put it in source control, logs,
+The bundle is the future QR payload. It contains `bundleVersion`, the exact
+loopback `hubEndpoint`, explicit `usb_loopback` Hub identity metadata, and one
+redeemable challenge. The identity metadata says the bundle was created through
+the loopback bootstrap-admin session; it is not LAN trust, certificate pinning,
+or production remote onboarding. Do not redeem the same challenge elsewhere
+first: it is single-use. Do not put the bundle in source control, logs,
 command-line arguments, cloud-synchronized clipboards, or screenshots.
 
 ```bash
 adb reverse tcp:8787 tcp:8787
-printf '%s\n' "$challenge_json"
+printf '%s\n' "$pairing_bundle"
 ```
 
 In the debug app, keep `ws://127.0.0.1:8787/ws/v1`, enter the full printed JSON in
-`Pairing challenge JSON`, and tap `Pair phone` before the 120-second expiry. This
-temporary operator-assisted transfer is intentionally not a production onboarding
-flow; use a device-local input path and avoid shared clipboard services. Android
-posts the typed redemption once, encrypts the returned bearer with Android
-Keystore, verifies the stored record, and then shows the link as paired.
+`Pairing bundle JSON`, and tap `Pair phone` before the 120-second
+expiry. This temporary operator-assisted transfer is intentionally not a
+production onboarding flow; use a device-local input path and avoid shared
+clipboard services. Android verifies the bundle version, loopback identity
+metadata, and exact endpoint match before posting the typed redemption once. It
+then encrypts the returned bearer with Android Keystore, verifies the stored
+record, and shows the link as paired.
+
+The older `/admin/v1/pairing/challenges` route remains available for Hub
+compatibility tests and low-level administration, but Android onboarding now
+targets the bundle route.
 
 `deviceId` is descriptive setup metadata; the returned `credentialId` is the
 security principal. List credentials or perform administrator revocation with the

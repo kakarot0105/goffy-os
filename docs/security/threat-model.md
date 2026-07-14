@@ -11,8 +11,8 @@
 | Threat | Current control | Remaining work |
 | --- | --- | --- |
 | Unauthenticated tool use | Fail-closed bearer check on every `/ws/v1` connection and `/mcp` request; paired mode gives each credential a stable principal and removes tool scope from bootstrap admin | MCP authorization profile and token rotation |
-| Token leakage | Bearer in header only; Hub stores only a domain-separated digest; Android stores one endpoint-bound AES-GCM record under `noBackupFilesDir` with a non-exportable Keystore key; pairing/error/state strings are redacted | Guided QR transfer, runtime-memory hardening, and rooted-device assessment |
-| Pairing replay or credential farming | Loopback-only bootstrap creation and Android redemption; 256-bit memory-only challenges; 120-second TTL; single-use lock; three pending and five-failure caps; 2 KiB strict bodies; Android never retries and cancels enrollment when its Activity stops | Device-aware rate limits and guided QR UX |
+| Token leakage | Bearer in header only; Hub stores only a domain-separated digest; Android stores one endpoint-bound AES-GCM record under `noBackupFilesDir` with a non-exportable Keystore key; pairing/error/state strings are redacted | Camera QR transfer, runtime-memory hardening, and rooted-device assessment |
+| Pairing replay or credential farming | Loopback-only bootstrap creation, versioned no-store USB-loopback pairing bundles, and Android redemption; 256-bit memory-only challenges; 120-second TTL; single-use lock; three pending and five-failure caps; 2 KiB strict bodies; Android never retries and cancels enrollment when its Activity stops | Device-aware rate limits and guided QR UX |
 | Android credential corruption or substitution | AES-GCM authenticates the exact endpoint and full versioned record; read-back gates activation; malformed/decrypt-failed state deletes the record and key and disables Mac authority | Physical API-26 Keystore failure matrix and recovery diagnostics |
 | Misleading local forget | Foreground enrollment is canceled and joined before local record/key deletion; paired links make one authenticated loopback self-revocation request for the exact authenticated Hub principal; UI distinguishes verified Hub revocation from unverified offline or ambiguous outcomes | Token rotation and physical process-failure testing |
 | Stale access after revocation | Revoked state persists before indexed live WebSocket and MCP sessions terminate; new auth rechecks the store | Real-network race and process-failure testing |
@@ -51,9 +51,10 @@
 ## Current non-goals
 
 Paired credentials are not MCP OAuth. Neither transport is approved for LAN use,
-and pairing delivery is loopback-only. Android secure local storage and paired
-self-revocation are implemented for the USB loopback slice, but there is no
-trusted certificate provisioning, guided QR pairing, token rotation, device-aware
+and pairing delivery is loopback-only. Android secure local storage, a versioned
+USB-loopback pairing bundle, and paired self-revocation are implemented for the
+USB loopback slice, but there is no trusted certificate provisioning, camera QR
+scanning, token rotation, device-aware
 request rate limiting, server-side cancellation, or direct Hub/MCP operator audit
 yet.
 The Android audit trail is local-only, redacted, bounded, display-only on

@@ -54,44 +54,47 @@ approval state, active work, and execution authority are not revived.
 6. Paired bearer digests and bounded metadata use a versioned owner-only SQLite
    store. One-time challenges are memory-only, short-lived, attempt-bounded, and
    discarded on restart.
-7. Credential revocation persists before indexed live WebSocket and MCP sessions
+7. USB-loopback pairing bundles wrap one challenge with an exact `/ws/v1`
+   endpoint and explicit `trustedLanSupported=false` identity metadata. They are
+   QR-ready transfer payloads, not trusted LAN onboarding.
+8. Credential revocation persists before indexed live WebSocket and MCP sessions
    are terminated. New requests recheck the digest store.
-8. GOFFY protocol, MCP metadata, and tool contract versions are checked separately.
-9. Remote discovery only confirms or disables a locally known tool. It never adds
+9. GOFFY protocol, MCP metadata, and tool contract versions are checked separately.
+10. Remote discovery only confirms or disables a locally known tool. It never adds
    a route, permission, or executable capability.
-10. The Hub consumes discovery on one invocation attempt and currently registers
+11. The Hub consumes discovery on one invocation attempt and currently registers
    only SAFE read-only, non-destructive, idempotent, closed-world Mac tools with
    closed object schemas.
-11. Fixed gateways allow only the documented typed tool names; no command-string capability exists.
-12. The PHONE registry is sorted, immutable, size-bounded, and uses closed MCP-shaped
+12. Fixed gateways allow only the documented typed tool names; no command-string capability exists.
+13. The PHONE registry is sorted, immutable, size-bounded, and uses closed MCP-shaped
    schemas. It cannot execute tools or grant approval.
-13. The router sources PHONE permission from the registry, and the gateway rechecks
+14. The router sources PHONE permission from the registry, and the gateway rechecks
     compiled name, target, permission, typed arguments, and timeout before source access.
-14. The battery source is read once, requires no permission, and must return a percentage from 0 through 100.
-15. Device info contains four display fields and excludes stable device, network, account, and build identifiers.
-16. Mutating PHONE tools require an exact-task, exact-tool, exact-arguments,
+15. The battery source is read once, requires no permission, and must return a percentage from 0 through 100.
+16. Device info contains four display fields and excludes stable device, network, account, and build identifiers.
+17. Mutating PHONE tools require an exact-task, exact-tool, exact-arguments,
    expiring, single-use approval.
-17. Terminal-task audit rows are written only after `UNVERIFIED`, `VERIFIED`,
+18. Terminal-task audit rows are written only after `UNVERIFIED`, `VERIFIED`,
     `FAILED`, or `CANCELLED`; process death before then leaves no synthetic
     success row.
-18. Audit retention is bounded to the newest 50 rows and stores only closed
+19. Audit retention is bounded to the newest 50 rows and stores only closed
     metadata, not raw commands, arguments, results, device info, approval text,
     or free-form summaries.
-19. Restored audit entries are result-free, display-only terminal cards. They
+20. Restored audit entries are result-free, display-only terminal cards. They
     cannot revive pending approval, active execution, or authority.
-20. Audit read/write/corrupt-row failure degrades the audit badge without
+21. Audit read/write/corrupt-row failure degrades the audit badge without
     rewriting the task verdict and without background retry.
-21. Flashlight success requires a matching CameraManager callback and releases the
+22. Flashlight success requires a matching CameraManager callback and releases the
    callback immediately; it never opens an image stream.
-22. A typed result carries data; a separate verification event is the success boundary.
-23. Local cancel stops the active coroutine; MAC cancellation does not guarantee Hub-side termination.
-24. The Hub rejects duplicate message IDs within a connection and applies the
+23. A typed result carries data; a separate verification event is the success boundary.
+24. Local cancel stops the active coroutine; MAC cancellation does not guarantee Hub-side termination.
+25. The Hub rejects duplicate message IDs within a connection and applies the
     configured message-size limit in both transport directions.
-25. `/mcp` validates exact Host and Origin allowlists, bearer authentication,
+26. `/mcp` validates exact Host and Origin allowlists, bearer authentication,
     message bounds, and concurrency before registry execution.
-26. The Hub seals registry definitions before serving. Health probes can only
+27. The Hub seals registry definitions before serving. Health probes can only
     remove or restore those definitions and cannot mutate their policy metadata.
-27. Health never grants authority: clients see only compiled definitions that pass
+28. Health never grants authority: clients see only compiled definitions that pass
     their current bounded probe. Admission validates availability and arguments
     before `accepted`; later health changes block new calls, not admitted work.
 
