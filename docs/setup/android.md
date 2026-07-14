@@ -45,8 +45,9 @@ review both published checksums during any wrapper upgrade.
 - `Turn on the flashlight` and `Turn off the torch` require visible one-time
   approval. GOFFY uses `CameraManager.setTorchMode` without opening the camera and
   reaches `VERIFIED` only after a matching callback.
-- The flashlight declares flash hardware optional and requests no `CAMERA`
-  permission. Its callback is removed on every success, failure, timeout, or cancel.
+- The flashlight declares flash hardware optional and never requests or uses the
+  QR scanner's `CAMERA` permission. Its callback is removed on every success,
+  failure, timeout, or cancel.
 - Any extra instruction, unrelated command, or appended authority is rejected on
   the phone before a Hub connection opens.
 - Before a Mac invocation, Android requests only the locally routed capability on
@@ -81,6 +82,11 @@ review both published checksums during any wrapper upgrade.
   Hub. The UI reports whether Hub revocation was verified or remains unverified.
   If local credential deletion itself cannot be verified, GOFFY enters a degraded
   state and tells the operator to clear app data before relaunching.
+- Pairing QR scanning is foreground-only. Tapping `Scan QR` requests the normal
+  Android camera permission if needed, opens a visible scanner panel, decodes QR
+  codes only, stores no image, and closes the camera when the panel is dismissed,
+  the Activity stops, or one bundle is captured. Scanning only fills the existing
+  pairing-bundle field; the user still must tap `Pair phone`.
 - Manual development bearer entry remains debug-only and memory-only.
 
 ## Android audit trail
@@ -110,7 +116,10 @@ Performance assessment: the audit path is a tiny bounded SQLite read at startup
 and one write per terminal task on the existing IO dispatcher. There is no
 polling or WorkManager, so this slice stays within GOFFY LITE expectations for
 4 GB devices. Paired restore adds one bounded file read and Keystore decrypt; pair
-and forget add one tiny atomic write/delete. No model or background service loads.
+and forget add one tiny atomic write/delete. QR scanning lazy-loads CameraX and
+the bundled barcode model only while the visible scanner panel is active, uses a
+single latest-frame analyzer at 1280x720, and shuts down the analyzer when closed.
+No large model or background service loads.
 
 ## USB localhost debug flow
 
@@ -133,10 +142,11 @@ and forget add one tiny atomic write/delete. No model or background service load
    ```
 
 4. Install and run the debug app from Android Studio or with the debug APK.
-5. For paired mode, create a pairing bundle on the Mac, enter the complete bundle
-   JSON in the app's password-masked field, and tap `Pair phone` within 120 seconds.
-   Do not redeem the embedded challenge elsewhere or use a cloud-synchronized clipboard.
-   For legacy mode, enter the development bearer in the debug-only field.
+5. For paired mode, create a pairing bundle on the Mac. Either scan its QR code
+   with `Scan QR` or enter the complete bundle JSON in the app's password-masked
+   field, then tap `Pair phone` within 120 seconds. Do not redeem the embedded
+   challenge elsewhere or use a cloud-synchronized clipboard. For legacy mode,
+   enter the development bearer in the debug-only field.
 6. Submit `Show my Mac status` or `Check my Mac status`, restart the app, and run
    it again without re-entering the paired bearer.
 
@@ -163,6 +173,15 @@ credentials on the Mac and confirm that credential has a revocation timestamp. R
 one offline pass with the Hub stopped: the app should still remove local authority
 and report remote revocation as unverified. Record the Moto G Android version and
 any Keystore, self-revocation, or OEM process-restart failure.
+
+For the QR transfer path, first deny the camera permission and confirm pairing is
+not attempted and the setup card tells you to paste the bundle instead. Then grant
+permission, scan a current Hub bundle QR, confirm the scanner panel closes, the
+masked bundle field is populated, and no credential is issued until `Pair phone`
+is tapped. Close the scanner without scanning and confirm no bundle field change.
+Put the app in the background while the scanner is visible and confirm the camera
+indicator turns off and no background capture continues. Repeat with a non-GOFFY
+QR and confirm pairing still fails through the existing typed bundle parser.
 
 The battery slice is also software-verified only. On a device, run the app
 without configuring a Hub, submit `Show my battery status`, and confirm the
@@ -197,7 +216,8 @@ Then submit `Turn on the flashlight`. Confirm `PHONE / phone.flashlight.set /
 CONFIRM`, deny once and verify the light stays unchanged, then approve a new
 request. The task should reach `VERIFIED` only after the rear torch turns on.
 Submit `Turn off the torch`, approve it, and confirm a second `VERIFIED` result.
-No camera permission dialog, camera privacy indicator, or image preview should
+If `CAMERA` was not previously granted for QR pairing, the flashlight action
+should not request it. No camera privacy indicator or image preview should
 appear. Record failures when another camera app is active. Physical Moto G
 verification remains open.
 

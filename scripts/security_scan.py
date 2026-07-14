@@ -41,6 +41,7 @@ ANDROID_NAMESPACE = "http://schemas.android.com/apk/res/android"
 ANDROID_MANIFEST = ROOT / "android" / "app" / "src" / "main" / "AndroidManifest.xml"
 MERGED_MANIFEST_ROOT = ROOT / "android" / "app" / "build" / "intermediates" / "merged_manifests"
 ALLOWED_ANDROID_PERMISSIONS = {
+    "android.permission.CAMERA",
     "android.permission.INTERNET",
     "com.android.alarm.permission.SET_ALARM",
 }
@@ -48,7 +49,10 @@ ALLOWED_MERGED_ANDROID_PERMISSIONS = ALLOWED_ANDROID_PERMISSIONS | {
     "dev.goffy.os.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
 }
 ALLOWED_PACKAGE_QUERY_ACTIONS = {"android.intent.action.SET_TIMER"}
-ALLOWED_ANDROID_FEATURES = {"android.hardware.camera.flash": "false"}
+ALLOWED_ANDROID_FEATURES = {
+    "android.hardware.camera": "false",
+    "android.hardware.camera.flash": "false",
+}
 
 
 def candidate_files() -> list[Path]:

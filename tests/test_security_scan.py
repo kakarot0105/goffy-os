@@ -6,6 +6,8 @@ EXPECTED_MANIFEST = """\
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
     <queries>
         <intent>
@@ -35,7 +37,7 @@ def test_manifest_allowlist_rejects_permission_variants_and_non_intent_queries(
         tmp_path,
         EXPECTED_MANIFEST.replace(
             "    <queries>",
-            '    <uses-permission-sdk-23 android:name="android.permission.CAMERA" />\n'
+            '    <uses-permission-sdk-23 android:name="android.permission.RECORD_AUDIO" />\n'
             "    <queries>\n"
             '        <package android:name="com.example.clock" />',
         ),
@@ -70,7 +72,7 @@ def test_manifest_allowlist_rejects_required_or_extra_hardware_features(tmp_path
             'android:name="android.hardware.camera.flash" android:required="true"',
         ).replace(
             "    <queries>",
-            '    <uses-feature android:name="android.hardware.camera.any" '
+            '    <uses-feature android:name="android.hardware.microphone" '
             'android:required="false" />\n'
             "    <queries>",
         ),

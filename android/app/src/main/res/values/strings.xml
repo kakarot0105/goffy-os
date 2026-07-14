@@ -18,7 +18,16 @@
     <string name="hub_degraded">LOCAL LINK NEEDS ATTENTION</string>
     <string name="hub_endpoint_label">WebSocket endpoint</string>
     <string name="hub_pairing_challenge_label">Pairing bundle JSON</string>
+    <string name="hub_pairing_qr_note">Scan the Hub QR bundle only while this setup card is open, or paste the JSON manually.</string>
     <string name="hub_token_label">Development bearer token</string>
+    <string name="scan_pairing_qr">Scan QR</string>
+    <string name="pairing_scanner_title">Scan pairing bundle</string>
+    <string name="pairing_scanner_explanation">The camera opens only for this visible scanner. GOFFY looks for one QR code, saves no image, and closes the camera after a bundle is captured or you close this panel.</string>
+    <string name="pairing_scanner_frame_label">PAIRING QR ONLY</string>
+    <string name="pairing_scanner_close">Close scanner</string>
+    <string name="pairing_scanner_permission_denied">Camera permission denied. Paste the pairing bundle JSON instead.</string>
+    <string name="pairing_scanner_start_failed">QR scanner could not start. Paste the pairing bundle JSON instead.</string>
+    <string name="pairing_scanner_captured">Pairing bundle captured. Review the endpoint, then pair the phone.</string>
     <string name="pair_hub">Pair phone</string>
     <string name="configure_hub">Debug link</string>
     <string name="forget_hub">Forget link</string>
@@ -52,7 +61,7 @@
     <string name="timer_dispatched">TIMER REQUEST / %1$d SECONDS</string>
     <string name="timer_clock_package">CLOCK / %1$s</string>
     <string name="microphone_placeholder">Voice input is coming in Milestone 4</string>
-    <string name="camera_placeholder">Camera input is coming in Milestone 4</string>
+    <string name="camera_placeholder">Camera actions beyond QR pairing are coming in Milestone 4</string>
     <string name="microphone_short">MIC</string>
     <string name="camera_short">CAM</string>
     <string name="timeline_title">TASK TIMELINE</string>

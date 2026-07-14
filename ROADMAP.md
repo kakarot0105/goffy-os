@@ -53,7 +53,8 @@
 - [x] Foreground Android pairing redemption with Keystore-backed restart restore
 - [x] Loopback paired-device self-revocation with verified/unverified phone reporting
 - [x] Versioned QR-ready USB-loopback pairing bundle contract
-- [ ] Guided QR challenge transfer and trusted Hub identity onboarding
+- [x] Foreground Android QR challenge transfer for USB-loopback pairing bundles
+- [ ] Trusted Hub identity onboarding
 - [ ] Paired-device token rotation
 - [ ] Direct Hub/MCP operator audit after stable paired identity and user-visible retrieval
 

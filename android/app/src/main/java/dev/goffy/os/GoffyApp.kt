@@ -1,5 +1,9 @@
 package dev.goffy.os
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -47,6 +51,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -57,10 +62,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.goffy.os.agent.TaskEventKind
 import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
+import dev.goffy.os.qr.PairingQrScanner
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
@@ -94,8 +101,14 @@ private val GoffyColors = darkColorScheme(
     onSurface = Bone,
 )
 
+private data class PairingScannerNotice(
+    val message: String,
+    val warning: Boolean,
+)
+
 @Composable
 fun GoffyApp(viewModel: GoffyViewModel) {
+    val context = LocalContext.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var command by remember { mutableStateOf("") }
     var endpoint by rememberSaveable(state.hubEndpoint) { mutableStateOf(state.hubEndpoint) }
@@ -103,6 +116,21 @@ fun GoffyApp(viewModel: GoffyViewModel) {
     var bearerToken by remember { mutableStateOf("") }
     var showLinkSetup by remember(state.hubConfigured) { mutableStateOf(!state.hubConfigured) }
     var showForgetConfirmation by remember { mutableStateOf(false) }
+    var showPairingScanner by remember { mutableStateOf(false) }
+    var pairingScannerNotice by remember { mutableStateOf<PairingScannerNotice?>(null) }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            pairingScannerNotice = null
+            showPairingScanner = true
+        } else {
+            pairingScannerNotice = PairingScannerNotice(
+                message = context.getString(R.string.pairing_scanner_permission_denied),
+                warning = true,
+            )
+        }
+    }
 
     MaterialTheme(colorScheme = GoffyColors) {
         Surface(modifier = Modifier.fillMaxSize(), color = Void) {
@@ -119,6 +147,26 @@ fun GoffyApp(viewModel: GoffyViewModel) {
                     onDismiss = { showForgetConfirmation = false },
                 )
             }
+            if (showPairingScanner) {
+                PairingQrScannerDialog(
+                    onScanned = { payload ->
+                        pairingChallenge = payload.take(MAX_PAIRING_CHALLENGE_LENGTH)
+                        pairingScannerNotice = PairingScannerNotice(
+                            message = context.getString(R.string.pairing_scanner_captured),
+                            warning = false,
+                        )
+                        showPairingScanner = false
+                    },
+                    onCameraFailure = {
+                        pairingScannerNotice = PairingScannerNotice(
+                            message = context.getString(R.string.pairing_scanner_start_failed),
+                            warning = true,
+                        )
+                        showPairingScanner = false
+                    },
+                    onDismiss = { showPairingScanner = false },
+                )
+            }
             GoffyHomeScreen(
                 state = state,
                 command = command,
@@ -126,10 +174,12 @@ fun GoffyApp(viewModel: GoffyViewModel) {
                 pairingChallenge = pairingChallenge,
                 bearerToken = bearerToken,
                 showLinkSetup = showLinkSetup,
+                pairingScannerNotice = pairingScannerNotice,
                 onCommandChange = { command = it.take(MAX_COMMAND_LENGTH) },
                 onEndpointChange = { endpoint = it.take(MAX_ENDPOINT_LENGTH) },
                 onPairingChallengeChange = {
                     pairingChallenge = it.take(MAX_PAIRING_CHALLENGE_LENGTH)
+                    pairingScannerNotice = null
                 },
                 onBearerTokenChange = { bearerToken = it.take(MAX_TOKEN_LENGTH) },
                 onToggleLinkSetup = { showLinkSetup = !showLinkSetup },
@@ -139,9 +189,20 @@ fun GoffyApp(viewModel: GoffyViewModel) {
                         showLinkSetup = false
                     }
                 },
+                onScanPairingQr = {
+                    if (context.checkSelfPermission(Manifest.permission.CAMERA) ==
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        pairingScannerNotice = null
+                        showPairingScanner = true
+                    } else {
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                    }
+                },
                 onPairHub = {
                     val challenge = pairingChallenge
                     pairingChallenge = ""
+                    pairingScannerNotice = null
                     viewModel.pairHub(endpoint, challenge)
                 },
                 onForgetHub = { showForgetConfirmation = true },
@@ -155,6 +216,62 @@ fun GoffyApp(viewModel: GoffyViewModel) {
             )
         }
     }
+}
+
+@Composable
+private fun PairingQrScannerDialog(
+    onScanned: (String) -> Unit,
+    onCameraFailure: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.pairing_scanner_title)) },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(R.string.pairing_scanner_explanation),
+                    color = Mist,
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(360.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Void)
+                        .border(1.dp, Line, RoundedCornerShape(18.dp)),
+                ) {
+                    PairingQrScanner(
+                        onPayloadScanned = onScanned,
+                        onCameraFailure = onCameraFailure,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Text(
+                        text = stringResource(R.string.pairing_scanner_frame_label),
+                        color = Bone,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 12.dp)
+                            .background(Void.copy(alpha = 0.72f), RoundedCornerShape(99.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.pairing_scanner_close), color = Signal)
+            }
+        },
+        containerColor = Panel,
+        titleContentColor = Bone,
+        textContentColor = Mist,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    )
 }
 
 @Composable
@@ -207,12 +324,14 @@ private fun GoffyHomeScreen(
     pairingChallenge: String,
     bearerToken: String,
     showLinkSetup: Boolean,
+    pairingScannerNotice: PairingScannerNotice?,
     onCommandChange: (String) -> Unit,
     onEndpointChange: (String) -> Unit,
     onPairingChallengeChange: (String) -> Unit,
     onBearerTokenChange: (String) -> Unit,
     onToggleLinkSetup: () -> Unit,
     onConfigureHub: () -> Unit,
+    onScanPairingQr: () -> Unit,
     onPairHub: () -> Unit,
     onForgetHub: () -> Unit,
     onSubmit: () -> Unit,
@@ -244,11 +363,13 @@ private fun GoffyHomeScreen(
             pairingChallenge = pairingChallenge,
             bearerToken = bearerToken,
             showSetup = showLinkSetup,
+            pairingScannerNotice = pairingScannerNotice,
             onEndpointChange = onEndpointChange,
             onPairingChallengeChange = onPairingChallengeChange,
             onBearerTokenChange = onBearerTokenChange,
             onToggleSetup = onToggleLinkSetup,
             onConfigure = onConfigureHub,
+            onScanPairingQr = onScanPairingQr,
             onPair = onPairHub,
             onForget = onForgetHub,
         )
@@ -409,11 +530,13 @@ private fun HubLinkSection(
     pairingChallenge: String,
     bearerToken: String,
     showSetup: Boolean,
+    pairingScannerNotice: PairingScannerNotice?,
     onEndpointChange: (String) -> Unit,
     onPairingChallengeChange: (String) -> Unit,
     onBearerTokenChange: (String) -> Unit,
     onToggleSetup: () -> Unit,
     onConfigure: () -> Unit,
+    onScanPairingQr: () -> Unit,
     onPair: () -> Unit,
     onForget: () -> Unit,
 ) {
@@ -484,6 +607,34 @@ private fun HubLinkSection(
                     minLines = 2,
                     maxLines = 3,
                 )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.hub_pairing_qr_note),
+                        color = Mist,
+                        fontSize = 12.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    OutlinedButton(
+                        onClick = onScanPairingQr,
+                        enabled = !state.isBusy && !state.linkOperationInProgress,
+                    ) {
+                        Text(stringResource(R.string.scan_pairing_qr), color = Signal)
+                    }
+                }
+                pairingScannerNotice?.let { notice ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = notice.message,
+                        color = if (notice.warning) Warning else Signal,
+                        fontSize = 12.sp,
+                    )
+                }
                 if (state.developmentTokenAllowed) {
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(

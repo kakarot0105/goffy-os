@@ -12,9 +12,10 @@ tools are the capability boundary.
 > for the newest 50 terminal tasks. MCP tool-list changes now stream with
 > bounded, session-local reconnect replay. Paired phones can now forget locally
 > and ask the Hub once to revoke the exact matching credential over loopback.
-> The Hub now emits a versioned USB-loopback pairing bundle for the future QR
-> flow. Camera QR scanning, physical Moto G verification, direct Hub/MCP operator
-> audit, token rotation, and trusted LAN operation remain open.
+> The Hub now emits a versioned USB-loopback pairing bundle, and Android can scan
+> that bundle through a foreground-only QR pairing panel. Physical Moto G
+> verification, direct Hub/MCP operator audit, token rotation, and trusted LAN
+> operation remain open.
 
 ## Current vertical slice
 
@@ -42,6 +43,8 @@ tools are the capability boundary.
 - QR-ready `goffy.pairing.bundle.v1` payloads for USB-loopback onboarding
 - Foreground Android challenge redemption with API-26 Keystore AES-GCM storage,
   verified restart restore, and paired self-revocation
+- Foreground-only Android QR scanner for pairing bundles, with no image storage
+  or automatic pairing after scan
 - Allowlisted, read-only `SAFE mac.system_info` tool
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
@@ -86,8 +89,8 @@ token. The default command above is legacy USB development mode. To enable
 stable paired identity, configure the explicit state path and follow
 [Hub setup](docs/setup/hub.md). Pairing remains loopback-only and trusted LAN use
 is still unsupported. Android can now redeem the versioned pairing bundle through
-the foreground Hub card over USB loopback and restores the encrypted credential
-after restart; camera QR scanning and token rotation remain open.
+the foreground Hub card over USB loopback, scan that bundle as a QR code, and
+restore the encrypted credential after restart; token rotation remains open.
 With the Hub running, verify the official MCP path in another terminal:
 
 ```bash
@@ -168,6 +171,10 @@ removes the phone copy first; paired links then make exactly one authenticated
 loopback self-revocation request for the stored credential ID. If the Hub cannot
 verify it, the phone reports local deletion with remote revocation unverified.
 Direct Hub/MCP operator audit remains future work.
+The QR scanner exists only in the visible pairing setup panel, requests the
+normal Android `CAMERA` permission from that action, decodes QR codes only, saves
+no frame, and only fills the existing pairing-bundle field. The user still has to
+tap `Pair phone` before redemption.
 
 This is an Android application layer, not a flashable replacement ROM. A custom
 ROM remains a later hardware-specific project after the agent runtime is proven.

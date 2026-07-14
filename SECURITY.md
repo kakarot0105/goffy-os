@@ -71,6 +71,13 @@ include real credentials or unrelated personal data.
   local cleanup. The temporary challenge input is foreground-only,
   password-masked, bounded to 2 KiB, and excluded from saved Compose state,
   audit rows, URLs, and error text.
+- Android QR transfer is limited to the visible pairing setup flow. `Scan QR`
+  requests `CAMERA` only from that foreground action, binds CameraX preview and
+  image analysis to the Activity lifecycle, decodes QR codes only with ML Kit,
+  stores no frame, performs no background capture, and shuts down analysis when
+  the scanner closes, the Activity stops, or one payload is captured. The scanned
+  value only populates the existing bounded pairing-bundle field; redemption still
+  goes through the typed loopback parser and explicit `Pair phone` action.
 - A returned paired bearer is activated only after one bounded record is encrypted
   with an API-26 Android Keystore 256-bit AES-GCM key, atomically stored under
   `noBackupFilesDir`, re-read, decrypted, and exactly verified. The authenticated
@@ -92,8 +99,8 @@ include real credentials or unrelated personal data.
   not retry an ambiguous DELETE.
 - The bearer is decrypted into process memory while the active ViewModel owns the
   Hub connection configuration. Rooted-device/process compromise is outside this
-  pre-alpha storage guarantee. Camera QR transfer, certificate pin onboarding,
-  and token rotation are not implemented.
+  pre-alpha storage guarantee. Trusted certificate pin onboarding and token
+  rotation are not implemented.
 - Release Android clients require `wss://`; debug cleartext is limited to
   `localhost` and `127.0.0.1` for the documented USB port-reversal flow.
 - Automatic reconnect occurs only before an invocation is sent. Sent requests
@@ -163,9 +170,10 @@ include real credentials or unrelated personal data.
 - `phone.flashlight.set` requires exact-task, exact-state, expiring, single-use
   approval. It selects a deterministic back-facing flash candidate and never opens
   a camera stream or captures an image.
-- Flashlight execution requests no `CAMERA` permission, service, receiver, or
-  background worker. Its short-lived `TorchCallback` is unregistered after success,
-  failure, timeout, or cancellation.
+- Flashlight execution never requests or uses the QR scanner's `CAMERA`
+  permission, service, receiver, or background worker. Its short-lived
+  `TorchCallback` is unregistered after success, failure, timeout, or
+  cancellation.
 - Flashlight verification is point-in-time: a matching callback proves the approved
   state at completion, not exclusive ownership or future persistence.
 - Android persists a redacted terminal-task audit trail in app-private SQLite.
@@ -212,6 +220,7 @@ include real credentials or unrelated personal data.
 - Treating PHONE capability metadata or fixtures as authorization
 - Implicit timer intents or non-allowlisted Clock-handler dispatch
 - Camera opening or image capture as part of the flashlight tool
+- Persisting QR frames or redeeming a scanned bundle without a visible pairing action
 - Persisting raw commands, typed arguments, note text, tool results, device info,
   approval text, event messages, endpoint or token values, free-form summaries,
   or verification checks in the Android audit trail
