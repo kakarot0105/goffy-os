@@ -116,9 +116,13 @@ Install Android Studio with JDK 17 and Android SDK 36, then open `android/` as a
 project. The minimum SDK is 26. Command-line verification is:
 
 ```bash
+python3 scripts/android_preflight.py
 ./android/gradlew -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon
 python3 scripts/security_scan.py --require-merged-manifests
 ```
+
+Run the preflight first. It checks JDK 17+, Android SDK Platform 36, Build Tools
+36.0.0, `adb`, and the pinned Gradle wrapper before Gradle starts.
 
 See [Android setup](docs/setup/android.md) for the USB localhost debug flow.
 Physical Moto G verification for this slice is still open.
@@ -188,6 +192,7 @@ ROM remains a later hardware-specific project after the agent runtime is proven.
 .venv/bin/python -m build
 .venv/bin/python -m pytest -q
 .venv/bin/python scripts/security_scan.py
+python3 scripts/android_preflight.py
 ```
 
 Read [SECURITY.md](SECURITY.md) before exposing the Hub beyond localhost.

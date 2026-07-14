@@ -12,9 +12,15 @@ The app supports API 26 and newer and starts in GOFFY LITE mode.
 From the repository root, run the pinned Gradle wrapper:
 
 ```bash
+python3 scripts/android_preflight.py
 ./android/gradlew -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon
 python3 scripts/security_scan.py --require-merged-manifests
 ```
+
+The preflight performs no shell execution. It inspects `JAVA_HOME`, known JDK
+locations, `ANDROID_HOME` or `ANDROID_SDK_ROOT`, SDK component directories,
+`adb`, and `android/gradlew`. Fix any failed preflight item before treating a
+Gradle failure as an app regression.
 
 The debug APK is written to `android/app/build/outputs/apk/debug/app-debug.apk`.
 The first wrapper run downloads Gradle 9.4.1 and validates the distribution
