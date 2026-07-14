@@ -13,6 +13,7 @@
 - [x] Exact source and merged Android manifest capability checks
 - [x] Android build verified on a configured JDK 17 / SDK 36 toolchain
 - [x] Android environment preflight for JDK, SDK, adb, and Gradle wrapper readiness
+- [x] Unified local verification runner with Android preflight-gated Gradle
 - [ ] GOFFY home shell verified on the Moto G physical device
 
 ## Milestone 1: First end-to-end action - in progress

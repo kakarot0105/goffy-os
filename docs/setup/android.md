@@ -132,6 +132,21 @@ the bundled barcode model only while the visible scanner panel is active, uses a
 single latest-frame analyzer at 1280x720, and shuts down the analyzer when closed.
 No large model or background service loads.
 
+## Local verification
+
+Run the unified verifier before relying on an Android change:
+
+```bash
+.venv/bin/python scripts/verify_all.py
+```
+
+The verifier runs the Python/Hub checks, then Android preflight. If the JDK,
+Android SDK, Build Tools, and `adb` are present, it continues into Gradle lint,
+unit tests, debug/release assembly, and post-build merged-manifest security
+validation. On a machine without Android tooling, use `--allow-missing-android`
+only to verify non-Android work while keeping the Android blocker visible in the
+report.
+
 ## USB localhost debug flow
 
 1. Start the Hub on the Mac in either legacy development mode or the paired mode

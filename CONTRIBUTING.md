@@ -5,7 +5,9 @@ GOFFY OS is pre-alpha. Keep changes narrow, testable, and easy to review.
 1. Read `AGENTS.md`, `SECURITY.md`, and the relevant ADRs.
 2. Create or select one issue with explicit acceptance criteria.
 3. Add tests for success, malformed input, denied access, and failure paths.
-4. Run the repository verification commands from `README.md`.
+4. Run `.venv/bin/python scripts/verify_all.py`. If Android tooling is not
+   installed, use `--allow-missing-android` only for non-Android changes and
+   state that limitation clearly.
 5. Update setup or architecture documentation when behavior changes.
 6. Submit a focused pull request using the template.
 

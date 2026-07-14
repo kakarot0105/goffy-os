@@ -205,14 +205,14 @@ ROM remains a later hardware-specific project after the agent runtime is proven.
 ## Verify the repository
 
 ```bash
-.venv/bin/ruff format --check .
-.venv/bin/ruff check .
-.venv/bin/mypy hub/src protocol/python
-.venv/bin/python -m build
-.venv/bin/python -m pytest -q
-.venv/bin/python scripts/security_scan.py
-.venv/bin/python scripts/verify_pairing_flow.py
-python3 scripts/android_preflight.py
+.venv/bin/python scripts/verify_all.py
 ```
+
+This runs formatting, linting, type checks, Python tests, package build,
+security scan, pairing smoke verification, Android environment preflight, and
+Android Gradle plus merged-manifest security validation when the local
+JDK/SDK/adb prerequisites are present.
+Use `--allow-missing-android` only when you intentionally want the Python/Hub
+checks to pass while Android Gradle remains blocked by local tooling.
 
 Read [SECURITY.md](SECURITY.md) before exposing the Hub beyond localhost.
