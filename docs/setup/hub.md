@@ -45,8 +45,9 @@ it cannot call `/ws/v1` or `/mcp`.
 
 Before using a physical phone, run the in-process smoke verifier. It creates a
 temporary local Hub app, mints a bundle, validates the QR payload, redeems the
-challenge once, verifies replay rejection, and confirms admin listing does not
-echo pairing material:
+challenge once, verifies replay rejection, rotates the paired bearer, confirms
+the old bearer fails and the new bearer authenticates, and confirms admin listing
+does not echo pairing material:
 
 ```bash
 .venv/bin/python scripts/verify_pairing_flow.py
@@ -117,9 +118,26 @@ paired self-revocation route once when the link is paired. A verified response
 means the Hub revoked that exact authenticated credential. If the phone reports
 remote revocation as unverified, or if the phone is lost, use the administrator
 route above from the Mac and inspect the credential list.
+
+Paired credentials can also rotate their own bearer over loopback without
+creating a second device identity:
+
+```bash
+curl -fsS -X POST -H "Authorization: Bearer $GOFFY_PAIRED_ACCESS_TOKEN" \
+  http://127.0.0.1:8787/pairing/v1/rotate
+```
+
+The Hub derives the credential ID from the authenticated paired bearer, atomically
+replaces the stored digest only if that bearer is still current, returns the same
+credential ID plus a new one-time bearer, and closes all indexed WebSocket and
+MCP sessions for that credential. The old bearer fails new authentication after a
+verified rotation response. Store the new bearer immediately; do not retry a
+rotation conflict automatically because another successful rotation may already
+have changed Hub state.
 Paired mode requires a local Hub bind, and all pairing and administration routes
 also reject non-loopback clients. Configured LAN TLS and allowlists do not override
-these guards. Token rotation and trusted LAN onboarding are not implemented yet.
+these guards. Android-triggered token rotation UX and trusted LAN onboarding are
+not implemented yet.
 
 ## MCP client
 

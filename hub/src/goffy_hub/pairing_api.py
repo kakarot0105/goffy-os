@@ -10,7 +10,12 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 from pydantic.alias_generators import to_camel
 
-from goffy_hub.auth import PAIRING_ADMIN_SCOPE, CredentialAuthenticator, PrincipalKind
+from goffy_hub.auth import (
+    BEARER_PREFIX,
+    PAIRING_ADMIN_SCOPE,
+    CredentialAuthenticator,
+    PrincipalKind,
+)
 from goffy_hub.credentials import (
     CredentialCapacityError,
     CredentialStoreError,
@@ -75,6 +80,12 @@ class PairingSuccessResponse(PairingApiModel):
     credential_id: UUID
     access_token: str = Field(repr=False)
     created_at: datetime
+
+
+class TokenRotationResponse(PairingApiModel):
+    credential_id: UUID
+    access_token: str = Field(repr=False)
+    rotated_at: datetime
 
 
 class PairedCredentialResponse(PairingApiModel):
@@ -232,13 +243,7 @@ def build_pairing_router(
         response: Response,
     ) -> RevocationResponse:
         _require_loopback(request)
-        principal = await authenticator.authenticate_header(request.headers.get("authorization"))
-        if principal is None:
-            raise _api_error(401, "authentication_required", "Paired authentication required.")
-        if principal.kind is not PrincipalKind.PAIRED or principal.credential_id is None:
-            raise _api_error(403, "paired_principal_required", "Paired authentication required.")
-
-        credential_id = principal.credential_id
+        credential_id = await _require_paired_credential_id(request, authenticator)
         try:
             revoked = await pairing_service.revoke(credential_id)
         except CredentialStoreError as error:
@@ -248,6 +253,41 @@ def build_pairing_router(
         await on_revoke(credential_id)
         _prevent_secret_caching(response)
         return RevocationResponse(credential_id=credential_id, revoked=True)
+
+    @router.post(
+        "/pairing/v1/rotate",
+        response_model=TokenRotationResponse,
+        response_model_by_alias=True,
+        status_code=status.HTTP_200_OK,
+    )
+    async def rotate_own_paired_credential(
+        request: Request,
+        response: Response,
+    ) -> TokenRotationResponse:
+        _require_loopback(request)
+        credential_id = await _require_paired_credential_id(request, authenticator)
+        current_token = _bearer_token_from_request(request)
+        if current_token is None:
+            raise _api_error(401, "authentication_required", "Paired authentication required.")
+
+        try:
+            rotated = await pairing_service.rotate(credential_id, current_token)
+        except CredentialStoreError as error:
+            raise _credential_store_unavailable() from error
+        if rotated is None:
+            raise _api_error(
+                409,
+                "credential_rotation_conflict",
+                "Paired credential could not be rotated.",
+            )
+
+        await on_revoke(credential_id)
+        _prevent_secret_caching(response)
+        return TokenRotationResponse(
+            credential_id=rotated.credential.credential_id,
+            access_token=rotated.access_token,
+            rotated_at=rotated.rotated_at,
+        )
 
     @router.delete(
         "/admin/v1/credentials/{credential_id}",
@@ -269,6 +309,25 @@ def build_pairing_router(
         return RevocationResponse(credential_id=credential_id, revoked=True)
 
     return router
+
+
+async def _require_paired_credential_id(
+    request: Request,
+    authenticator: CredentialAuthenticator,
+) -> UUID:
+    principal = await authenticator.authenticate_header(request.headers.get("authorization"))
+    if principal is None:
+        raise _api_error(401, "authentication_required", "Paired authentication required.")
+    if principal.kind is not PrincipalKind.PAIRED or principal.credential_id is None:
+        raise _api_error(403, "paired_principal_required", "Paired authentication required.")
+    return principal.credential_id
+
+
+def _bearer_token_from_request(request: Request) -> str | None:
+    authorization = request.headers.get("authorization")
+    if authorization is None or not authorization.startswith(BEARER_PREFIX):
+        return None
+    return authorization.removeprefix(BEARER_PREFIX)
 
 
 async def _require_loopback_admin(

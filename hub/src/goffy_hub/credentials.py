@@ -56,6 +56,13 @@ class IssuedCredential:
     access_token: str = field(repr=False)
 
 
+@dataclass(frozen=True, slots=True)
+class RotatedCredential:
+    credential: PairedCredential
+    access_token: str = field(repr=False)
+    rotated_at: datetime
+
+
 class CredentialStore:
     """Small file-backed store that persists only digests of generated bearers."""
 
@@ -187,6 +194,45 @@ class CredentialStore:
             display_name=credential.display_name,
             created_at=credential.created_at,
             revoked_at=revoked_at,
+        )
+
+    def rotate(self, credential_id: UUID, current_access_token: str) -> RotatedCredential | None:
+        if not current_access_token or len(current_access_token) > 512:
+            return None
+        rotated_at = _as_utc(self._clock())
+        current_digest = _token_digest(current_access_token)
+
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT credential_id, device_id, display_name, token_digest, created_at, revoked_at
+                FROM paired_credentials
+                WHERE credential_id = ? AND revoked_at IS NULL
+                """,
+                (str(credential_id),),
+            ).fetchone()
+            if row is None or not compare_digest(current_digest, bytes(row[3])):
+                return None
+            new_access_token = self._token_factory()
+            if len(new_access_token) < MIN_GENERATED_TOKEN_LENGTH:
+                raise CredentialStoreError("generated credential token is too short")
+            new_digest = _token_digest(new_access_token)
+            if compare_digest(current_digest, new_digest):
+                raise CredentialStoreError("generated credential token did not rotate")
+            connection.execute(
+                """
+                UPDATE paired_credentials
+                SET token_digest = ?
+                WHERE credential_id = ? AND revoked_at IS NULL AND token_digest = ?
+                """,
+                (new_digest, str(credential_id), current_digest),
+            )
+
+        return RotatedCredential(
+            credential=_row_to_credential(row),
+            access_token=new_access_token,
+            rotated_at=rotated_at,
         )
 
     def active_count(self) -> int:

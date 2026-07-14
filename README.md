@@ -11,11 +11,11 @@ tools are the capability boundary.
 > Android pairing restore, and a persistent user-visible Android audit trail
 > for the newest 50 terminal tasks. MCP tool-list changes now stream with
 > bounded, session-local reconnect replay. Paired phones can now forget locally
-> and ask the Hub once to revoke the exact matching credential over loopback.
-> The Hub now emits a versioned USB-loopback pairing bundle, and Android can scan
-> that bundle through a foreground-only QR pairing panel. Physical Moto G
-> verification, direct Hub/MCP operator audit, token rotation, and trusted LAN
-> operation remain open.
+> and ask the Hub once to revoke or rotate the exact matching credential over
+> loopback. The Hub now emits a versioned USB-loopback pairing bundle, and Android
+> can scan that bundle through a foreground-only QR pairing panel. Physical Moto G
+> verification, Android-triggered rotation UX, direct Hub/MCP operator audit, and
+> trusted LAN operation remain open.
 
 ## Current vertical slice
 
@@ -42,8 +42,10 @@ tools are the capability boundary.
 - Explicit loopback pairing with digest-only, revocable per-device Hub credentials
 - QR-ready `goffy.pairing.bundle.v1` payloads for USB-loopback onboarding
 - Local operator script that writes a short-lived pairing-bundle SVG QR artifact
-- In-process pairing smoke verifier for bundle creation, one-time redemption, and
-  replay rejection
+- In-process pairing smoke verifier for bundle creation, one-time redemption,
+  replay rejection, and token rotation
+- Loopback paired-token rotation API with old-token invalidation and live-session
+  termination
 - Foreground Android challenge redemption with API-26 Keystore AES-GCM storage,
   verified restart restore, and paired self-revocation
 - Foreground-only Android QR scanner for pairing bundles, with no image storage
@@ -93,7 +95,8 @@ stable paired identity, configure the explicit state path and follow
 [Hub setup](docs/setup/hub.md). Pairing remains loopback-only and trusted LAN use
 is still unsupported. Android can now redeem the versioned pairing bundle through
 the foreground Hub card over USB loopback, scan that bundle as a QR code, and
-restore the encrypted credential after restart; token rotation remains open.
+restore the encrypted credential after restart. Hub-side token rotation is
+available over loopback; Android-triggered rotation UX remains open.
 Generate the local QR artifact from the Mac with:
 
 ```bash

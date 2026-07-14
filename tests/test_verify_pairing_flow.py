@@ -15,6 +15,9 @@ def test_verify_pairing_flow_redeems_once_and_rejects_replay() -> None:
     assert result.credential_count == 1
     assert result.bundle_payload_bytes > 100
     assert result.replay_status in {400, 429}
+    assert result.rotation_status == 200
+    assert result.old_token_status == 401
+    assert result.new_token_status == 200
 
 
 def test_verify_pairing_flow_can_write_private_qr_artifact(tmp_path: Path) -> None:
@@ -36,6 +39,9 @@ def test_result_json_reports_success_without_secrets() -> None:
 
     assert decoded["verified"] is True
     assert decoded["credentialId"] == result.credential_id
+    assert decoded["rotationStatus"] == 200
+    assert decoded["oldTokenStatus"] == 401
+    assert decoded["newTokenStatus"] == 200
     assert "accessToken" not in decoded
     assert "pairingToken" not in decoded
 

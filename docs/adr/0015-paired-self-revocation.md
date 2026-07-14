@@ -54,9 +54,9 @@ This adds one foreground HTTP DELETE during paired forget only. There is no
 background worker, polling, retry loop, model load, or new Android permission, so
 the behavior remains compatible with GOFFY LITE and API 26.
 
-Token rotation, lost-phone administrator recovery, trusted LAN onboarding,
-direct Hub/MCP operator audit, and physical Moto G process-failure testing remain
-open.
+Lost-phone administrator recovery, trusted LAN onboarding, direct Hub/MCP
+operator audit, and physical Moto G process-failure testing remain open. Paired
+token rotation is handled by ADR 0018.
 
 ## Rejected alternatives
 

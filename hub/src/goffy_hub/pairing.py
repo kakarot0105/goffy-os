@@ -9,7 +9,12 @@ from hmac import compare_digest
 from secrets import token_urlsafe
 from uuid import UUID, uuid4
 
-from goffy_hub.credentials import CredentialStore, IssuedCredential, PairedCredential
+from goffy_hub.credentials import (
+    CredentialStore,
+    IssuedCredential,
+    PairedCredential,
+    RotatedCredential,
+)
 
 CHALLENGE_DIGEST_DOMAIN = b"goffy-pairing-challenge-v1\x00"
 PAIRING_CHALLENGE_TTL_SECONDS = 120
@@ -128,6 +133,17 @@ class PairingService:
 
     async def revoke(self, credential_id: UUID) -> PairedCredential | None:
         return await asyncio.to_thread(self._credential_store.revoke, credential_id)
+
+    async def rotate(
+        self,
+        credential_id: UUID,
+        current_access_token: str,
+    ) -> RotatedCredential | None:
+        return await asyncio.to_thread(
+            self._credential_store.rotate,
+            credential_id,
+            current_access_token,
+        )
 
     def _prune_expired(self, now: datetime) -> None:
         for challenge_id, pending in tuple(self._pending.items()):

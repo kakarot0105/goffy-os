@@ -71,6 +71,61 @@ def test_revoke_fails_authentication_and_persists_revoked_metadata(tmp_path: Pat
     assert reopened.list_credentials() == (revoked,)
 
 
+def test_rotate_replaces_token_for_same_credential_without_persisting_raw_bearers(
+    tmp_path: Path,
+) -> None:
+    rotated_at = NOW + timedelta(minutes=10)
+    tokens = iter([ACCESS_TOKEN, "rotated-access-token-" + "b" * 32])
+    current_time = NOW
+    database_path = tmp_path / "credentials.sqlite3"
+    store = CredentialStore(
+        database_path,
+        clock=lambda: current_time,
+        token_factory=lambda: next(tokens),
+        id_factory=lambda: CREDENTIAL_ID,
+    )
+    issued = store.issue("setup-observation-1", "Moto G")
+
+    current_time = rotated_at
+    rotated = store.rotate(CREDENTIAL_ID, ACCESS_TOKEN)
+    raw_database = database_path.read_bytes()
+    reopened = CredentialStore(database_path)
+
+    assert rotated is not None
+    assert rotated.credential == issued.credential
+    assert rotated.access_token == "rotated-access-token-" + "b" * 32
+    assert rotated.rotated_at == rotated_at
+    assert ACCESS_TOKEN not in repr(rotated)
+    assert rotated.access_token not in repr(rotated)
+    assert store.authenticate(ACCESS_TOKEN) is None
+    assert store.authenticate(rotated.access_token) == issued.credential
+    assert reopened.authenticate(rotated.access_token) == issued.credential
+    assert ACCESS_TOKEN.encode() not in raw_database
+    assert rotated.access_token.encode() not in raw_database
+
+
+def test_rotate_requires_current_active_token_and_distinct_generated_token(
+    tmp_path: Path,
+) -> None:
+    tokens = iter([ACCESS_TOKEN, "short", ACCESS_TOKEN])
+    store = CredentialStore(
+        tmp_path / "credentials.sqlite3",
+        clock=lambda: NOW,
+        token_factory=lambda: next(tokens),
+        id_factory=lambda: CREDENTIAL_ID,
+    )
+    store.issue("setup-observation-1", "Moto G")
+
+    assert store.rotate(CREDENTIAL_ID, "wrong-current-token-" + "x" * 32) is None
+    with pytest.raises(CredentialStoreError, match="too short"):
+        store.rotate(CREDENTIAL_ID, ACCESS_TOKEN)
+    with pytest.raises(CredentialStoreError, match="did not rotate"):
+        store.rotate(CREDENTIAL_ID, ACCESS_TOKEN)
+    assert store.authenticate(ACCESS_TOKEN) is not None
+    assert store.revoke(CREDENTIAL_ID) is not None
+    assert store.rotate(CREDENTIAL_ID, ACCESS_TOKEN) is None
+
+
 def test_revoke_unknown_or_already_revoked_credential_is_idempotent(tmp_path: Path) -> None:
     store = build_store(tmp_path / "credentials.sqlite3")
 

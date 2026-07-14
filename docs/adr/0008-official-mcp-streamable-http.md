@@ -44,9 +44,10 @@ Official MCP clients can now discover and call `mac.system_info` without changin
 the Android flow or duplicating tool contracts. Stateful JSON enforces lifecycle
 ordering without a persistent SSE connection; explicit termination and short idle
 reaping bound normal session lifetime. Server push, list-change notifications,
-resumption, pairing, token rotation, revocation, per-device rate limits, and the
-MCP authorization profile remain future work. The fixed development bearer token
-is an authentication placeholder, not a production OAuth deployment.
+resumption, pairing, revocation, per-device rate limits, and the MCP authorization
+profile remain future work. Paired token rotation is handled by ADR 0018. The
+fixed development bearer token is an authentication placeholder, not a production
+OAuth deployment.
 
 ## References
 

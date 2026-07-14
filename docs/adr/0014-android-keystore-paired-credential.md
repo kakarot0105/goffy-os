@@ -49,8 +49,9 @@ and one tiny atomic write. This remains compatible with GOFFY LITE and API 26.
 The decrypted bearer remains in the active ViewModel's process memory because the
 current WebSocket gateway requires a `HubConfig`; Keystore protects data at rest,
 not a rooted or compromised process. Physical Moto G Keystore behavior, guided QR
-transfer, trusted Hub certificate/public-key onboarding, and token rotation remain
-open.
+transfer, trusted Hub certificate/public-key onboarding, and Android-triggered
+token rotation UX remain open. Hub-side paired token rotation is handled by ADR
+0018.
 
 ## Rejected alternatives
 

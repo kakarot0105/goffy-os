@@ -12,6 +12,7 @@ from starlette.testclient import TestClient
 
 from goffy_hub.app import create_app
 from goffy_hub.settings import HubSettings
+from goffy_protocol import MCP_PROTOCOL_VERSION
 
 try:
     from scripts.create_pairing_qr import (
@@ -38,6 +39,9 @@ class PairingSmokeResult:
     bundle_payload_bytes: int
     output: Path | None
     replay_status: int
+    rotation_status: int
+    old_token_status: int
+    new_token_status: int
     credential_count: int
 
 
@@ -70,6 +74,27 @@ def create_smoke_app(database_path: Path) -> TestClient:
         create_app(settings),
         base_url="http://127.0.0.1:8787",
         client=("127.0.0.1", 50_000),
+    )
+
+
+def initialize_mcp_response(client: TestClient, access_token: str) -> Any:
+    return client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": "pairing-smoke", "version": "1.0.0"},
+            },
+        },
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json, text/event-stream",
+            "Content-Type": "application/json",
+        },
     )
 
 
@@ -109,11 +134,31 @@ def verify_pairing_flow(output: Path | None = None, force: bool = False) -> Pair
             if replay_response.status_code == 201:
                 raise PairingSmokeError("pairing challenge replay unexpectedly succeeded")
 
+            rotation_response = client.post(
+                "/pairing/v1/rotate",
+                headers={"Authorization": f"Bearer {credential['accessToken']}"},
+            )
+            require_status(rotation_response, 200, "credential rotation")
+            require_no_store(rotation_response, "credential rotation")
+            rotated = rotation_response.json()
+            if (
+                rotated["credentialId"] != credential["credentialId"]
+                or rotated["accessToken"] == credential["accessToken"]
+            ):
+                raise PairingSmokeError("credential rotation returned invalid authority")
+
+            old_token_response = initialize_mcp_response(client, credential["accessToken"])
+            if old_token_response.status_code != 401:
+                raise PairingSmokeError("old credential token remained usable after rotation")
+            new_token_response = initialize_mcp_response(client, rotated["accessToken"])
+            require_status(new_token_response, 200, "rotated credential authentication")
+
             list_response = client.get("/admin/v1/credentials", headers=BOOTSTRAP_HEADERS)
             require_status(list_response, 200, "credential listing")
             listing_text = list_response.text
             if (
                 credential["accessToken"] in listing_text
+                or rotated["accessToken"] in listing_text
                 or challenge["pairingToken"] in listing_text
             ):
                 raise PairingSmokeError("credential listing leaked pairing material")
@@ -129,6 +174,9 @@ def verify_pairing_flow(output: Path | None = None, force: bool = False) -> Pair
                 bundle_payload_bytes=len(payload.encode("utf-8")),
                 output=output,
                 replay_status=replay_response.status_code,
+                rotation_status=rotation_response.status_code,
+                old_token_status=old_token_response.status_code,
+                new_token_status=new_token_response.status_code,
                 credential_count=len(credentials),
             )
 
@@ -141,6 +189,9 @@ def result_json(result: PairingSmokeResult) -> str:
             "bundlePayloadBytes": result.bundle_payload_bytes,
             "qrOutput": str(result.output) if result.output is not None else None,
             "replayStatus": result.replay_status,
+            "rotationStatus": result.rotation_status,
+            "oldTokenStatus": result.old_token_status,
+            "newTokenStatus": result.new_token_status,
             "credentialCount": result.credential_count,
         },
         indent=2,

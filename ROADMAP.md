@@ -57,8 +57,9 @@
 - [x] Local operator QR SVG generation for USB-loopback pairing bundles
 - [x] In-process QR bundle redemption smoke verifier
 - [x] Foreground Android QR challenge transfer for USB-loopback pairing bundles
+- [x] Loopback paired-device token rotation API with old-token invalidation
 - [ ] Trusted Hub identity onboarding
-- [ ] Paired-device token rotation
+- [ ] Android-triggered token rotation UX and recovery policy
 - [ ] Direct Hub/MCP operator audit after stable paired identity and user-visible retrieval
 
 ## Milestones 4-8

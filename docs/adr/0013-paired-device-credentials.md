@@ -54,8 +54,9 @@ SQLite lookup off the event loop, comparing at most 32 digests.
 Android now redeems the challenge and persists the returned bearer through the
 separate boundary accepted in ADR 0014. Challenge transfer is still operator-assisted
 until guided QR exchange ships. This is not MCP OAuth and does not yet provide
-token rotation, trusted LAN pairing, or direct Hub/MCP operator audit. Paired
-self-revocation is handled by the later boundary accepted in ADR 0015.
+trusted LAN pairing or direct Hub/MCP operator audit. Paired self-revocation is
+handled by the later boundary accepted in ADR 0015; paired token rotation is
+handled by ADR 0018.
 
 ## Rejected alternatives
 

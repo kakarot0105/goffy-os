@@ -156,6 +156,10 @@ def test_pairing_admin_and_redemption_are_loopback_only(tmp_path: Path) -> None:
             "/pairing/v1/self",
             headers={"Authorization": "Bearer paired-token-that-is-long-enough"},
         )
+        rotate_response = client.post(
+            "/pairing/v1/rotate",
+            headers={"Authorization": "Bearer paired-token-that-is-long-enough"},
+        )
 
     assert admin_response.status_code == 403
     assert bundle_response.status_code == 403
@@ -163,6 +167,7 @@ def test_pairing_admin_and_redemption_are_loopback_only(tmp_path: Path) -> None:
     assert list_response.status_code == 403
     assert revoke_response.status_code == 403
     assert self_revoke_response.status_code == 403
+    assert rotate_response.status_code == 403
     assert admin_response.json()["detail"]["code"] == "loopback_required"
     assert redemption_response.json()["detail"]["code"] == "loopback_required"
 
@@ -276,6 +281,8 @@ def test_self_revocation_requires_the_paired_principal_and_targets_only_itself(
 
         missing = client.delete("/pairing/v1/self")
         bootstrap = client.delete("/pairing/v1/self", headers=BOOTSTRAP_HEADERS)
+        missing_rotation = client.post("/pairing/v1/rotate")
+        bootstrap_rotation = client.post("/pairing/v1/rotate", headers=BOOTSTRAP_HEADERS)
         revoked = client.delete("/pairing/v1/self", headers=paired_headers(first_token))
         repeated = client.delete("/pairing/v1/self", headers=paired_headers(first_token))
         second_access = client.post(
@@ -292,6 +299,9 @@ def test_self_revocation_requires_the_paired_principal_and_targets_only_itself(
     assert missing.status_code == 401
     assert bootstrap.status_code == 403
     assert bootstrap.json()["detail"]["code"] == "paired_principal_required"
+    assert missing_rotation.status_code == 401
+    assert bootstrap_rotation.status_code == 403
+    assert bootstrap_rotation.json()["detail"]["code"] == "paired_principal_required"
     assert revoked.status_code == 200
     assert revoked.headers["cache-control"] == "no-store"
     assert revoked.json() == {"credentialId": first_id, "revoked": True}
@@ -300,6 +310,72 @@ def test_self_revocation_requires_the_paired_principal_and_targets_only_itself(
     by_id = {item["credentialId"]: item for item in listed.json()["credentials"]}
     assert by_id[first_id]["revokedAt"] is not None
     assert by_id[second_id]["revokedAt"] is None
+
+
+def test_paired_credential_rotation_replaces_bearer_and_closes_live_sessions(
+    tmp_path: Path,
+) -> None:
+    with pairing_client(tmp_path) as client:
+        credential_id, access_token = pair_device(client)
+        old_session_id = initialize_mcp(client, access_token)
+
+        with client.websocket_connect(
+            "/ws/v1",
+            headers=paired_headers(access_token),
+        ) as socket:
+            rotation = client.post("/pairing/v1/rotate", headers=paired_headers(access_token))
+            with pytest.raises(WebSocketDisconnect) as websocket_error:
+                socket.receive_text()
+
+        assert rotation.status_code == 200
+        assert rotation.headers["cache-control"] == "no-store"
+        assert rotation.headers["pragma"] == "no-cache"
+        rotated = rotation.json()
+        rotated_token = rotated["accessToken"]
+        old_mcp_session = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+            headers=mcp_session_headers(access_token, old_session_id),
+        )
+        old_websocket = None
+        try:
+            with client.websocket_connect("/ws/v1", headers=paired_headers(access_token)):
+                pass
+        except WebSocketDisconnect as error:
+            old_websocket = error
+        new_session_id = initialize_mcp(client, rotated_token)
+        listed = client.get("/admin/v1/credentials", headers=BOOTSTRAP_HEADERS)
+        replay = client.post("/pairing/v1/rotate", headers=paired_headers(access_token))
+
+    assert websocket_error.value.code == 4403
+    assert rotated["credentialId"] == credential_id
+    assert rotated["rotatedAt"]
+    assert rotated_token != access_token
+    assert access_token not in rotation.text
+    assert old_mcp_session.status_code == 401
+    assert old_mcp_session.json()["error"] == "invalid_token"
+    assert old_websocket is not None
+    assert old_websocket.code == 4401
+    assert new_session_id
+    assert listed.status_code == 200
+    assert access_token not in listed.text
+    assert rotated_token not in listed.text
+    assert replay.status_code == 401
+
+    with pairing_client(tmp_path) as restarted_client:
+        restarted_session_id = initialize_mcp(restarted_client, rotated_token)
+        old_after_restart = restarted_client.post(
+            "/mcp",
+            json=initialize_request(),
+            headers={
+                **paired_headers(access_token),
+                "Accept": "application/json, text/event-stream",
+                "Content-Type": "application/json",
+            },
+        )
+
+    assert restarted_session_id
+    assert old_after_restart.status_code == 401
 
 
 def test_invalid_pairing_request_is_bounded_and_never_echoes_token(tmp_path: Path) -> None:
@@ -560,6 +636,10 @@ def test_runtime_credential_store_failure_fails_closed_without_secret_echo(
             "/pairing/v1/self",
             headers=paired_headers(access_token),
         )
+        rotated = client.post(
+            "/pairing/v1/rotate",
+            headers=paired_headers(access_token),
+        )
 
     assert health.status_code == 200
     assert health.json()["toolAccess"] == "disabled"
@@ -570,4 +650,6 @@ def test_runtime_credential_store_failure_fails_closed_without_secret_echo(
     assert revoked.status_code == 503
     assert redeemed.status_code == 503
     assert self_revoked.status_code == 401
+    assert rotated.status_code == 401
     assert access_token not in listed.text + revoked.text + redeemed.text + self_revoked.text
+    assert access_token not in rotated.text
