@@ -220,6 +220,7 @@ If verification is blocked by local setup, run the read-only setup doctor:
 ```bash
 .venv/bin/python scripts/setup_doctor.py
 .venv/bin/python scripts/setup_doctor.py --json
+.venv/bin/python scripts/setup_doctor.py --include-device
 ```
 
 The doctor redacts repo, home, and absolute toolchain paths, but review output

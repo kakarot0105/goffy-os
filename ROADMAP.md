@@ -16,6 +16,7 @@
 - [x] Unified local verification runner with Android preflight-gated Gradle
 - [x] CI aligned with the unified verifier and Android preflight gate
 - [x] Read-only setup doctor for Python and Android toolchain diagnostics
+- [x] Optional read-only ADB readiness diagnostics without serial logging
 - [ ] GOFFY home shell verified on the Moto G physical device
 
 ## Milestone 1: First end-to-end action - in progress

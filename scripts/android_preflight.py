@@ -13,6 +13,9 @@ ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_JDK_MAJOR = 17
 REQUIRED_ANDROID_PLATFORM = "android-36"
 REQUIRED_BUILD_TOOLS = "36.0.0"
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+ABSOLUTE_POSIX_PATH = re.compile(r"(?<![>\w])/(?!\s)(?:[^;\n\r,)]+)")
+OTHER_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 @dataclass(frozen=True)
@@ -184,19 +187,30 @@ def check_sdk_component(
 
 
 def check_adb(sdk_root: Path | None, adb_on_path: str | None) -> Check:
-    adb_name = "adb.exe" if platform.system() == "Windows" else "adb"
-    candidates: list[Path] = []
-    if sdk_root is not None:
-        candidates.append(sdk_root / "platform-tools" / adb_name)
-    if adb_on_path:
-        candidates.append(Path(adb_on_path))
-    adb = first_existing_path(candidates)
+    adb = resolve_adb(sdk_root, adb_on_path)
     return Check(
         name="adb",
         ok=adb is not None,
         detail=str(adb) if adb else "adb not found",
         remediation="Install Android SDK Platform Tools and ensure adb is on PATH.",
     )
+
+
+def resolve_adb(sdk_root: Path | None, adb_on_path: str | None) -> Path | None:
+    adb_name = "adb.exe" if platform.system() == "Windows" else "adb"
+    candidates: list[Path] = []
+    if sdk_root is not None:
+        candidates.append(sdk_root / "platform-tools" / adb_name)
+    if adb_on_path:
+        candidates.append(Path(adb_on_path))
+    for candidate in candidates:
+        expanded = candidate.expanduser()
+        if not expanded.is_absolute():
+            continue
+        resolved = expanded.resolve()
+        if resolved.is_file() and os.access(resolved, os.X_OK):
+            return resolved
+    return None
 
 
 def check_gradle_wrapper(root: Path) -> Check:
@@ -252,14 +266,23 @@ def render_report(checks: Sequence[Check]) -> str:
     lines = ["Android preflight"]
     for check in checks:
         status = "OK" if check.ok else "FAIL"
-        lines.append(f"[{status}] {check.name}: {check.detail}")
+        lines.append(f"[{status}] {check.name}: {safe_text(check.detail)}")
         if not check.ok:
-            lines.append(f"       fix: {check.remediation}")
+            lines.append(f"       fix: {safe_text(check.remediation)}")
     if all(check.ok for check in checks):
         lines.append("Ready for Android Gradle validation.")
     else:
         lines.append("Install the missing prerequisites before running Android Gradle validation.")
     return "\n".join(lines)
+
+
+def safe_text(value: str) -> str:
+    redacted = value.replace(str(ROOT), "<repo>").replace(str(Path.home()), "<home>")
+    redacted = ABSOLUTE_POSIX_PATH.sub("<path>", redacted)
+    redacted = ANSI_ESCAPE.sub("", redacted)
+    redacted = redacted.replace("\\", "\\\\")
+    redacted = redacted.replace("\r", "\\r").replace("\n", "\\n")
+    return OTHER_CONTROL.sub(lambda match: f"\\x{ord(match.group(0)):02x}", redacted)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

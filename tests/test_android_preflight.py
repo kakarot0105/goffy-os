@@ -4,10 +4,12 @@ import os
 from pathlib import Path
 
 from scripts.android_preflight import (
+    Check,
     collect_checks,
     java_home_from_bin,
     java_major_from_release,
     render_report,
+    resolve_adb,
 )
 
 
@@ -75,6 +77,23 @@ def test_collect_checks_accepts_valid_android_environment(tmp_path: Path) -> Non
     assert "Ready for Android Gradle validation" in render_report(checks)
 
 
+def test_render_report_redacts_paths_and_escapes_control_characters(tmp_path: Path) -> None:
+    report = render_report(
+        [
+            Check(
+                name="JDK",
+                ok=False,
+                detail=f"{tmp_path}/jdk\n[OK] forged\x1b[31m",
+                remediation=f"set JAVA_HOME under {tmp_path}\rnow",
+            )
+        ]
+    )
+
+    assert "[FAIL] JDK: <path>\\n[OK] forged" in report
+    assert "fix: set JAVA_HOME under <path>\\rnow" in report
+    assert str(tmp_path) not in report
+
+
 def test_collect_checks_rejects_missing_jdk_without_shelling_out(tmp_path: Path) -> None:
     root = write_android_project(tmp_path)
     sdk = write_android_sdk(tmp_path)
@@ -135,3 +154,15 @@ def test_gradle_wrapper_requires_executable_on_unix(tmp_path: Path) -> None:
     )
 
     assert any(check.name == "Gradle wrapper" and not check.ok for check in checks)
+
+
+def test_resolve_adb_rejects_relative_candidates(tmp_path: Path) -> None:
+    sdk = Path("relative-sdk")
+
+    assert resolve_adb(sdk, "relative-adb") is None
+
+
+def test_resolve_adb_accepts_absolute_executable(tmp_path: Path) -> None:
+    sdk = write_android_sdk(tmp_path)
+
+    assert resolve_adb(sdk, None) == sdk / "platform-tools" / "adb"

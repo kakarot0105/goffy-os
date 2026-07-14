@@ -153,10 +153,15 @@ grouped human report or JSON that can be attached to an issue:
 ```bash
 .venv/bin/python scripts/setup_doctor.py
 .venv/bin/python scripts/setup_doctor.py --json
+.venv/bin/python scripts/setup_doctor.py --include-device
 ```
 
 The doctor redacts repo, home, and absolute toolchain paths, but review output
 before posting it to a public issue.
+`--include-device` adds read-only `adb devices -l` and `adb reverse --list`
+diagnostics. It reports whether an authorized device is connected and whether
+`tcp:8787` is reversed, but it does not run shell commands on the phone and does
+not print device serials.
 
 ## USB localhost debug flow
 
@@ -176,6 +181,12 @@ before posting it to a public issue.
 
    ```bash
    adb reverse tcp:8787 tcp:8787
+   ```
+
+   Verify the host-side device link with:
+
+   ```bash
+   .venv/bin/python scripts/setup_doctor.py --include-device
    ```
 
 4. Install and run the debug app from Android Studio or with the debug APK.

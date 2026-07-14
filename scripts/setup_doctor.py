@@ -3,7 +3,10 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import re
+import shutil
+import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -15,8 +18,14 @@ if __package__ in {None, ""} and str(ROOT) not in sys.path:
 
 from scripts.android_preflight import Check as AndroidCheck  # noqa: E402
 from scripts.android_preflight import collect_checks as collect_android_checks  # noqa: E402
+from scripts.android_preflight import (  # noqa: E402
+    default_sdk_roots,
+    first_existing_path,
+    resolve_adb,
+)
 
 MIN_PYTHON = (3, 12)
+HUB_REVERSE_ENDPOINT = "tcp:8787"
 DEV_MODULES = {
     "build": "build",
     "fastapi": "fastapi",
@@ -35,7 +44,7 @@ DEV_MODULES = {
 }
 JSON_SCHEMA_VERSION = "goffy.setup-doctor.v1"
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
-ABSOLUTE_POSIX_PATH = re.compile(r"(?<![>\w])/(?:[^;\n\r,)]+)")
+ABSOLUTE_POSIX_PATH = re.compile(r"(?<![>\w])/(?!\s)(?:[^;\n\r,)]+)")
 OTHER_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
@@ -61,10 +70,53 @@ class DoctorReport:
 
 ModuleFinder = Callable[[str], bool]
 AndroidCollector = Callable[[Path], Sequence[AndroidCheck]]
+DeviceCommandRunner = Callable[[Sequence[str], Path, int], "DeviceCommandResult"]
+
+
+@dataclass(frozen=True)
+class DeviceCommandResult:
+    exit_code: int
+    stdout: str
+    stderr: str
+    timed_out: bool = False
+
+
+@dataclass(frozen=True)
+class AdbDeviceSummary:
+    serial: str
+    status: str
+
+
+@dataclass(frozen=True)
+class AdbReverseSummary:
+    serial: str
+    local: str
+    remote: str
 
 
 def default_module_finder(module: str) -> bool:
     return importlib.util.find_spec(module) is not None
+
+
+def default_device_command_runner(
+    command: Sequence[str],
+    cwd: Path,
+    timeout_seconds: int,
+) -> DeviceCommandResult:
+    try:
+        completed = subprocess.run(  # noqa: S603,S607
+            list(command),
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout if isinstance(exc.stdout, str) else ""
+        stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+        return DeviceCommandResult(124, stdout, stderr, timed_out=True)
+    return DeviceCommandResult(completed.returncode, completed.stdout, completed.stderr)
 
 
 def collect_python_checks(
@@ -118,8 +170,11 @@ def collect_doctor_report(
     root: Path = ROOT,
     module_finder: ModuleFinder = default_module_finder,
     android_collector: AndroidCollector = lambda root: collect_android_checks(root=root),
+    include_device: bool = False,
+    device_runner: DeviceCommandRunner = default_device_command_runner,
 ) -> DoctorReport:
     checks = collect_python_checks(module_finder=module_finder)
+    android_checks = tuple(android_collector(root))
     checks.extend(
         DoctorCheck(
             category="android",
@@ -128,9 +183,197 @@ def collect_doctor_report(
             detail=check.detail,
             remediation="" if check.ok else check.remediation,
         )
-        for check in android_collector(root)
+        for check in android_checks
     )
+    if include_device:
+        adb_check = next((check for check in android_checks if check.name == "adb"), None)
+        if adb_check is not None and not adb_check.ok:
+            checks.append(
+                DoctorCheck(
+                    category="device",
+                    name="Device diagnostics",
+                    ok=False,
+                    detail="skipped because Android adb preflight failed",
+                    remediation=(
+                        "Fix the Android adb preflight first, then rerun with --include-device."
+                    ),
+                )
+            )
+        else:
+            checks.extend(collect_device_checks(root=root, runner=device_runner))
     return DoctorReport(tuple(checks), repo_root=root.resolve())
+
+
+def discover_adb_path() -> Path | None:
+    sdk_root = first_existing_path(default_sdk_roots(os.environ))
+    adb = resolve_adb(sdk_root, shutil.which("adb"))
+    if adb is None:
+        return None
+    return adb if os.access(adb, os.X_OK) else None
+
+
+def parse_adb_devices(output: str) -> list[AdbDeviceSummary]:
+    devices: list[AdbDeviceSummary] = []
+    allowed_statuses = {
+        "authorizing",
+        "bootloader",
+        "detached",
+        "device",
+        "host",
+        "no permissions",
+        "nopermission",
+        "offline",
+        "recovery",
+        "rescue",
+        "sideload",
+        "unauthorized",
+    }
+    for line in output.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("*") or stripped == "List of devices attached":
+            continue
+        parts = stripped.split()
+        if len(parts) >= 3 and parts[1] == "no" and parts[2] == "permissions":
+            devices.append(AdbDeviceSummary(serial=parts[0], status="no permissions"))
+        elif len(parts) >= 2 and parts[1] in allowed_statuses:
+            devices.append(AdbDeviceSummary(serial=parts[0], status=parts[1]))
+    return devices
+
+
+def parse_adb_reverse_list(output: str) -> list[AdbReverseSummary]:
+    reverse_entries: list[AdbReverseSummary] = []
+    for line in output.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("*"):
+            continue
+        parts = stripped.split()
+        if len(parts) >= 3 and parts[1].startswith("tcp:") and parts[2].startswith("tcp:"):
+            reverse_entries.append(
+                AdbReverseSummary(serial=parts[0], local=parts[1], remote=parts[2])
+            )
+    return reverse_entries
+
+
+def count_statuses(devices: Sequence[AdbDeviceSummary]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for device in devices:
+        counts[device.status] = counts.get(device.status, 0) + 1
+    return counts
+
+
+def render_status_counts(counts: Mapping[str, int]) -> str:
+    if not counts:
+        return "none"
+    return ", ".join(f"{status}:{count}" for status, count in sorted(counts.items()))
+
+
+def collect_device_checks(
+    *,
+    root: Path = ROOT,
+    runner: DeviceCommandRunner = default_device_command_runner,
+    timeout_seconds: int = 5,
+) -> list[DoctorCheck]:
+    adb = discover_adb_path()
+    if adb is None:
+        return [
+            DoctorCheck(
+                category="device",
+                name="adb executable",
+                ok=False,
+                detail="adb unavailable",
+                remediation="Install Android SDK Platform Tools and ensure adb is on PATH.",
+            )
+        ]
+
+    device_result = runner((str(adb), "devices", "-l"), root, timeout_seconds)
+    if device_result.timed_out:
+        return [
+            DoctorCheck(
+                category="device",
+                name="adb devices",
+                ok=False,
+                detail="adb devices timed out",
+                remediation="Reconnect the phone and retry after approving USB debugging.",
+            )
+        ]
+    if device_result.exit_code != 0:
+        return [
+            DoctorCheck(
+                category="device",
+                name="adb devices",
+                ok=False,
+                detail="adb devices failed",
+                remediation="Restart adb or reconnect the phone, then rerun setup doctor.",
+            )
+        ]
+
+    devices = parse_adb_devices(device_result.stdout)
+    status_counts = count_statuses(devices)
+    authorized_count = status_counts.get("device", 0)
+    authorized_serials = {device.serial for device in devices if device.status == "device"}
+    checks = [
+        DoctorCheck(
+            category="device",
+            name="Authorized Android device",
+            ok=authorized_count > 0,
+            detail=(
+                f"authorized:{authorized_count}; statuses: {render_status_counts(status_counts)}"
+            ),
+            remediation=(
+                ""
+                if authorized_count > 0
+                else "Connect the Moto G over USB and approve this Mac for USB debugging."
+            ),
+        )
+    ]
+    if authorized_count == 0:
+        return checks
+
+    reverse_result = runner((str(adb), "reverse", "--list"), root, timeout_seconds)
+    if reverse_result.timed_out:
+        checks.append(
+            DoctorCheck(
+                category="device",
+                name="Hub USB reverse",
+                ok=False,
+                detail="adb reverse --list timed out",
+                remediation="Retry `adb reverse tcp:8787 tcp:8787` after reconnecting the phone.",
+            )
+        )
+        return checks
+    if reverse_result.exit_code != 0:
+        checks.append(
+            DoctorCheck(
+                category="device",
+                name="Hub USB reverse",
+                ok=False,
+                detail="adb reverse --list failed",
+                remediation="Run `adb reverse tcp:8787 tcp:8787` after the phone is authorized.",
+            )
+        )
+        return checks
+
+    reverse_entries = parse_adb_reverse_list(reverse_result.stdout)
+    reverse_ready = any(
+        (entry.serial == "host" or entry.serial in authorized_serials)
+        and entry.local == HUB_REVERSE_ENDPOINT
+        and entry.remote == HUB_REVERSE_ENDPOINT
+        for entry in reverse_entries
+    )
+    checks.append(
+        DoctorCheck(
+            category="device",
+            name="Hub USB reverse",
+            ok=reverse_ready,
+            detail=(
+                "tcp:8787 reverse is active"
+                if reverse_ready
+                else f"tcp:8787 reverse missing; reverse entries:{len(reverse_entries)}"
+            ),
+            remediation="" if reverse_ready else "Run `adb reverse tcp:8787 tcp:8787`.",
+        )
+    )
+    return checks
 
 
 def redact_paths(value: str, *, report: DoctorReport) -> str:
@@ -202,9 +445,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", default=str(ROOT))
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    parser.add_argument(
+        "--include-device",
+        action="store_true",
+        help="Also run read-only adb device and USB reverse diagnostics.",
+    )
     args = parser.parse_args(argv)
 
-    report = collect_doctor_report(root=Path(args.repo_root).resolve())
+    report = collect_doctor_report(
+        root=Path(args.repo_root).resolve(),
+        include_device=args.include_device,
+    )
     print(render_json(report) if args.json else render_text(report))
     return 0 if report.ok else 1
 
