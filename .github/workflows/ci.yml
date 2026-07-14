@@ -25,18 +25,8 @@ jobs:
           cache: pip
       - name: Install
         run: python -m pip install -e '.[dev]'
-      - name: Format
-        run: ruff format --check .
-      - name: Lint
-        run: ruff check .
-      - name: Type check
-        run: mypy hub/src protocol/python
-      - name: Build package
-        run: python -m build
-      - name: Test
-        run: python -m pytest -q
-      - name: Security invariants
-        run: python scripts/security_scan.py
+      - name: Verify
+        run: python scripts/verify_all.py --allow-missing-android
 
   android:
     name: Android
@@ -52,6 +42,8 @@ jobs:
       - name: Install Android SDK
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2 # v5
+      - name: Android preflight
+        run: python3 scripts/android_preflight.py
       - name: Lint, test, and assemble
         run: ./android/gradlew -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon
       - name: Verify merged Android manifests

@@ -8,7 +8,9 @@ State execution target, permission level, side effects, timeout, and any new tru
 
 ## Verification
 
-List exact commands and results. Include failure-path tests and visible verification evidence.
+List exact commands and results. Include `.venv/bin/python scripts/verify_all.py`
+or explain any explicit `--allow-missing-android` limitation, plus failure-path
+tests and visible verification evidence.
 
 ## Checklist
 
