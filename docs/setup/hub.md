@@ -56,7 +56,8 @@ The script accepts only an HTTP loopback Hub URL, posts the bootstrap token in a
 with owner-only file permissions. The SVG is a short-lived secret because it
 contains the pairing token encoded in the QR modules; delete it after pairing.
 Do not put the SVG or underlying bundle in source control, logs, command-line
-arguments, cloud-synchronized clipboards, or screenshots.
+arguments, cloud-synchronized clipboards, or screenshots. The documented default
+filename is ignored by git, and the security scan rejects generated QR SVGs.
 
 ```bash
 adb reverse tcp:8787 tcp:8787

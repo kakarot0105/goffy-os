@@ -43,7 +43,8 @@ include real credentials or unrelated personal data.
   HTTP loopback Hub URL, sends the bootstrap token in an `Authorization` header,
   validates the returned bundle shape, and writes the SVG with owner-only file
   permissions. The SVG is a short-lived secret because it contains the challenge
-  token encoded in QR modules.
+  token encoded in QR modules. The security scan rejects the default artifact
+  filename and the generator's non-secret SVG marker.
 - Paired bearers contain 256 bits of randomness and are returned once. SQLite
   stores only a domain-separated SHA-256 digest, generated credential ID, bounded
   device metadata, and timestamps in a `0600` file. Active credentials are capped

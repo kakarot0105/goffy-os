@@ -21,6 +21,7 @@ DEFAULT_OUTPUT = Path("goffy-pairing-bundle.svg")
 MAX_BUNDLE_BYTES = 4096
 TIMEOUT_SECONDS = 5.0
 PAIRING_BUNDLE_VERSION = "goffy.pairing.bundle.v1"
+PAIRING_QR_ARTIFACT_MARKER = "GOFFY_PAIRING_QR_ARTIFACT_V1"
 
 UrlOpen = Callable[[Request, float], Any]
 
@@ -170,7 +171,12 @@ def svg_qr(payload: str) -> str:
     qr = segno.make(payload, error="m", encoding="utf-8")
     buffer = BytesIO()
     qr.save(buffer, kind="svg", scale=8, border=4, xmldecl=True)
-    return buffer.getvalue().decode("utf-8")
+    svg = buffer.getvalue().decode("utf-8")
+    return svg.replace(
+        "\n",
+        f"\n<!-- {PAIRING_QR_ARTIFACT_MARKER}: short-lived local pairing secret -->\n",
+        1,
+    )
 
 
 def create_pairing_qr(

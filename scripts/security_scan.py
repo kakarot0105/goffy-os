@@ -31,6 +31,7 @@ TEXT_SUFFIXES = {
     ".md",
     ".properties",
     ".py",
+    ".svg",
     ".toml",
     ".xml",
     ".yml",
@@ -53,6 +54,8 @@ ALLOWED_ANDROID_FEATURES = {
     "android.hardware.camera": "false",
     "android.hardware.camera.flash": "false",
 }
+PAIRING_QR_ARTIFACT_MARKER = "GOFFY_PAIRING_QR_ARTIFACT_V1"
+PAIRING_QR_ARTIFACT_FILENAMES = {"goffy-pairing-bundle.svg"}
 
 
 def candidate_files() -> list[Path]:
@@ -132,6 +135,16 @@ def merged_manifests() -> list[Path]:
     return sorted(MERGED_MANIFEST_ROOT.glob("*/process*Manifest/AndroidManifest.xml"))
 
 
+def validate_no_pairing_qr_artifact(path: Path, text: str) -> list[str]:
+    findings: list[str] = []
+    location = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+    if path.name in PAIRING_QR_ARTIFACT_FILENAMES:
+        findings.append(f"{location}: generated pairing QR artifact")
+    if PAIRING_QR_ARTIFACT_MARKER in text:
+        findings.append(f"{location}: generated pairing QR artifact marker")
+    return findings
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -150,6 +163,8 @@ def main(argv: list[str] | None = None) -> int:
 
     for path in candidate_files():
         text = path.read_text(encoding="utf-8")
+        if path.suffix == ".svg":
+            findings.extend(validate_no_pairing_qr_artifact(path, text))
         patterns = dict(SECRET_PATTERNS)
         if path in source_files:
             patterns.update(PROHIBITED_SOURCE_PATTERNS)

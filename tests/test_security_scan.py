@@ -1,6 +1,11 @@
 from pathlib import Path
 
-from scripts.security_scan import ALLOWED_ANDROID_PERMISSIONS, validate_manifest
+from scripts.security_scan import (
+    ALLOWED_ANDROID_PERMISSIONS,
+    PAIRING_QR_ARTIFACT_MARKER,
+    validate_manifest,
+    validate_no_pairing_qr_artifact,
+)
 
 EXPECTED_MANIFEST = """\
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -81,3 +86,15 @@ def test_manifest_allowlist_rejects_required_or_extra_hardware_features(tmp_path
     findings = validate_manifest(manifest, ALLOWED_ANDROID_PERMISSIONS)
 
     assert any("hardware feature allowlist mismatch" in finding for finding in findings)
+
+
+def test_security_scan_rejects_generated_pairing_qr_artifact(tmp_path: Path) -> None:
+    default_artifact = tmp_path / "goffy-pairing-bundle.svg"
+    custom_artifact = tmp_path / "custom.svg"
+
+    assert validate_no_pairing_qr_artifact(default_artifact, "<svg />")
+    assert validate_no_pairing_qr_artifact(
+        custom_artifact,
+        f"<!-- {PAIRING_QR_ARTIFACT_MARKER} --><svg />",
+    )
+    assert validate_no_pairing_qr_artifact(tmp_path / "logo.svg", "<svg />") == []

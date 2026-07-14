@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from scripts import create_pairing_qr
 from scripts.create_pairing_qr import (
+    PAIRING_QR_ARTIFACT_MARKER,
     PairingQrError,
     canonical_bundle_payload,
     fetch_pairing_bundle,
@@ -147,6 +148,7 @@ def test_svg_qr_uses_local_renderer() -> None:
     svg = svg_qr(canonical_bundle_payload(PAIRING_BUNDLE))
 
     assert svg.startswith("<?xml")
+    assert PAIRING_QR_ARTIFACT_MARKER in svg
     assert "<svg" in svg
     assert PAIRING_BUNDLE["challenge"]["pairingToken"] not in svg
 
