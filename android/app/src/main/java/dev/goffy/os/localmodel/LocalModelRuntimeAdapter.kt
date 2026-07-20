@@ -2,6 +2,7 @@ package dev.goffy.os.localmodel
 
 import java.io.File
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 
 fun interface LocalModelTextGenerator {
     suspend fun generate(prompt: String, policy: LocalModelRuntimePolicy): String
@@ -41,14 +42,14 @@ class GatedLocalModelRuntimeAdapter(
         }
 
         val rawOutput = try {
-            textGenerator.generate(prompt, policy)
+            withTimeoutOrNull(policy.generationTimeoutMillis) {
+                textGenerator.generate(prompt, policy)
+            } ?: return LocalModelIntentObservation.Rejected(
+                "Local model generation timed out before producing a safe routing observation.",
+            )
         } catch (_: LocalModelOutputLimitExceeded) {
             return LocalModelIntentObservation.Rejected(
                 "Model output exceeded the local routing output budget.",
-            )
-        } catch (_: LocalModelGenerationTimedOut) {
-            return LocalModelIntentObservation.Rejected(
-                "Local model generation timed out before producing a safe routing observation.",
             )
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -125,5 +126,3 @@ private fun File.isUnder(root: File): Boolean {
 }
 
 internal class LocalModelOutputLimitExceeded : RuntimeException()
-
-internal class LocalModelGenerationTimedOut : RuntimeException()

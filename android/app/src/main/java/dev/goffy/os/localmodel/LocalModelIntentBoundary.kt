@@ -5,6 +5,7 @@ private const val MAX_PROMPT_CHARS = 512
 private const val MAX_MODEL_OUTPUT_CHARS = 256
 private const val MAX_CANDIDATE_TEXT_CHARS = 160
 private const val DEFAULT_IDLE_UNLOAD_MILLIS = 60_000L
+private const val DEFAULT_GENERATION_TIMEOUT_MILLIS = 15_000L
 private const val MIN_ROUTING_CONFIDENCE = 0.70f
 private val allowedRoutingLabels = setOf("PHONE", "MAC", "CLOUD")
 private val strictRoutingJson = Regex(
@@ -18,6 +19,7 @@ data class LocalModelRuntimePolicy(
     val maxModelOutputChars: Int = MAX_MODEL_OUTPUT_CHARS,
     val minRoutingConfidence: Float = MIN_ROUTING_CONFIDENCE,
     val idleUnloadMillis: Long = DEFAULT_IDLE_UNLOAD_MILLIS,
+    val generationTimeoutMillis: Long = DEFAULT_GENERATION_TIMEOUT_MILLIS,
 ) {
     init {
         require(maxModelFileBytes in 1L..MAX_MODEL_FILE_BYTES) {
@@ -34,6 +36,9 @@ data class LocalModelRuntimePolicy(
         }
         require(idleUnloadMillis in 1_000L..300_000L) {
             "local model idle unload must stay bounded"
+        }
+        require(generationTimeoutMillis in 1_000L..60_000L) {
+            "local model generation timeout must stay bounded"
         }
     }
 }

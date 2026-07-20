@@ -83,6 +83,45 @@ class ClosedTerminalAuditTest {
     }
 
     @Test
+    fun noToolObserveOnlyTerminalEntryRoundTripsAsUnsupportedAuditRecord() {
+        val entry = TaskTimelineEntry(
+            id = UUID.fromString("22222222-2222-4222-8222-222222222222"),
+            command = "open settings",
+            executionTarget = ExecutionTarget.PHONE,
+            toolName = null,
+            phase = TaskPhase.FAILED,
+            summary = "Local model suggested PHONE, but GOFFY needs a deterministic route before execution",
+            events = listOf(
+                TaskTimelineEvent(TaskEventKind.OBSERVE, "Received typed command input"),
+                TaskTimelineEvent(TaskEventKind.PLAN, "No deterministic route selected"),
+                TaskTimelineEvent(TaskEventKind.PREPARE, "Local model ready for observe-only fallback."),
+                TaskTimelineEvent(TaskEventKind.ERROR, "Deterministic route still required"),
+            ),
+            permission = null,
+        )
+
+        val record = entry.toClosedTerminalAuditRecord(recordedAtEpochMillis = 1_720_000_000_000)
+
+        assertNotNull(record)
+        assertEquals(null, record?.toolName)
+        assertEquals(null, record?.permission)
+        assertEquals(TerminalAuditPhase.FAILED, record?.phase)
+        assertEquals(AuditApprovalOutcome.NOT_REQUIRED, record?.approvalOutcome)
+        assertEquals(
+            listOf(TaskEventKind.OBSERVE, TaskEventKind.PLAN, TaskEventKind.PREPARE, TaskEventKind.ERROR),
+            record?.eventKinds,
+        )
+
+        val restored = requireNotNull(record).toTimelineEntry()
+        assertEquals("Recorded unsupported task", restored.command)
+        assertEquals(TaskPhase.FAILED, restored.phase)
+        assertEquals(null, restored.toolName)
+        assertEquals(null, restored.permission)
+        assertEquals(null, restored.result)
+        assertFalse(restored.approvalGranted)
+    }
+
+    @Test
     fun mapsApprovalOutcomesFromTerminalTimelineEntries() {
         val approved = terminalEntry(
             phase = TaskPhase.VERIFIED,

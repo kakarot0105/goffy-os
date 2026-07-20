@@ -2,6 +2,10 @@
 
 Status: Accepted
 
+Amended by ADR 0028, which wires `modelDebug` provider execution as a bounded
+observe-only unsupported-command timeline task while keeping model output
+non-executable.
+
 Date: 2026-07-20
 
 ## Context
@@ -28,8 +32,8 @@ commits and the stored value is read back with the exact requested value.
 Resolve the optional provider through a fixed local class name. Normal GOFFY LITE
 builds do not include that class or the LiteRT-LM dependency, so the resolver
 returns `null`, runtime controls stay hidden, and status remains fail-closed.
-Until unsupported-command model execution is implemented, a provider-level
-`READY` state is masked in the UI as not wired.
+ADR 0028 later wires provider execution only as an observe-only unsupported
+command timeline task.
 
 Do not wire model generation into executable routing in this decision.
 Deterministic routes and explicit approvals remain authoritative.
@@ -44,8 +48,8 @@ Deterministic routes and explicit approvals remain authoritative.
   current GOFFY LITE footprint.
 - Android Preferences DataStore remains the preferred option if settings become
   multi-field, flow-driven, migrated, or shared across components.
-- Actual unsupported-command model execution still requires a future async router
-  handoff, idle-unload behavior, and real Moto responsiveness evidence.
+- Executable model routing still requires a future async router handoff,
+  idle-unload behavior, and real Moto responsiveness evidence.
 
 ## Rejected Alternatives
 

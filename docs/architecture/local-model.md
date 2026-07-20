@@ -1,6 +1,7 @@
 # Local Phone Model
 
-Status: feasibility, safety boundary, and developer-variant runtime setting control.
+Status: feasibility, safety boundary, developer-variant runtime setting control,
+and bounded observe-only unsupported-command execution.
 
 GOFFY can use a small on-phone model later, but the model must not become the
 authority that executes tools. The current implementation keeps deterministic
@@ -66,6 +67,11 @@ text into the deterministic quality gate:
 - `GatedLocalModelRuntimeProvider` is a suspend boundary for generated-text
   observations. The synchronous deterministic router remains authoritative and
   does not block the UI thread on model generation.
+- Unsupported commands may run the provider only when the foreground status is
+  `READY`, the command already passed local prompt safety checks, and the
+  developer/runtime-validation build has explicitly wired observation execution.
+  The ViewModel records this as a PHONE timeline task with no tool, no
+  permission grant, and a terminal failed/cancelled phase.
 - `LocalModelRuntimeSettingsStore` persists the user enablement bit in
   app-private preferences and applies it only after a synchronous commit plus
   read-back verification on an IO dispatcher. If storage cannot be read or
@@ -80,7 +86,8 @@ text into the deterministic quality gate:
   commands over 160 characters before model execution, and rejects generated
   prompts outside the 512-character prompt budget.
 - Runtime failures become `Rejected` observations; caller cancellation is not
-  swallowed.
+  swallowed. Generation is bounded by the runtime policy timeout before its
+  output enters the deterministic quality gate.
 - `LocalModelRuntimeGate` is wired into `GoffyIntentRouter` from the ViewModel as
   an observe-only fallback boundary. The default GOFFY LITE gate is disabled,
   exposes `OFF` in the status rail, and does not load a model.
@@ -95,9 +102,9 @@ text into the deterministic quality gate:
   official `Engine` API on `Dispatchers.Default`, CPU backend, app cache
   directory, bounded output collection, and explicit `use`/close blocks. It
   still defaults to disabled user activation, exposes a foreground enable/disable
-  setting after verified storage, masks `READY` as not yet wired until
-  unsupported-command execution is implemented, and is not part of normal
-  `debug` or `release` GOFFY LITE packaging.
+  setting after verified storage, runs only observe-only unsupported-command
+  execution when ready, and is not part of normal `debug` or `release` GOFFY
+  LITE packaging.
 - `scripts/verify_android_apk_budget.py` is part of `verify_all.py` after the
   release APK build. It blocks the default GOFFY LITE APK when it exceeds 32 MiB
   or packages LiteRT-LM/model APK entries such as `liblitertlm` or `.litertlm`.
@@ -125,9 +132,10 @@ disabled-by-default observation behavior plus bounded prompt, model output, and
 candidate text. The app now also exposes a fail-closed runtime activation gate
 that rechecks model-file constraints at use time plus a status rail refreshed at
 command boundaries. The `modelDebug` runtime setting control stores only the
-user enablement bit and still does not make the model an executable router. The
-remaining values must still be satisfied before a model binary is shipped in any
-default build. Initial budgets are:
+user enablement bit and can run one bounded observe-only unsupported-command
+pass when the provider is ready. It still does not make the model an executable
+router. The remaining values must still be satisfied before a model binary is
+shipped in any default build. Initial budgets are:
 
 - Disabled by default
 - Maximum model file size: 512 MB
@@ -255,11 +263,11 @@ The JSON records initialization latency, first-chunk latency, total generation
 time, output chunk count, character-rate, battery and thermal snapshots, and
 managed/native memory snapshots. True token-per-second reporting, peak memory,
 UI responsiveness scoring, battery-drain acceptance, reusable idle-unload
-behavior, and the production LiteRT-LM provider still belong to future runtime
+behavior, and production LiteRT-LM activation still belong to future runtime
 integration work. Label-quality checks are implemented in the deterministic
-routing quality gate above; live app routing calls the fail-closed activation
-gate, but the default gate is disabled and no production LiteRT-LM provider is
-packaged.
+routing quality gate above; `modelDebug` can call the provider for observe-only
+unsupported-command timeline entries, but the default gate is disabled and no
+production LiteRT-LM provider is packaged.
 
 ## Physical Moto G LiteRT-LM Evidence
 

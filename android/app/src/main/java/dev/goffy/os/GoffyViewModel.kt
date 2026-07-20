@@ -132,6 +132,7 @@ class GoffyViewModel internal constructor(
         localModelSettingsSource = dependencies.localModelSettingsSource,
         localModelRuntimeProvider = dependencies.localModelRuntimeProvider,
         localModelControlsAvailable = dependencies.localModelControlsAvailable,
+        localModelObservationExecutionAvailable = dependencies.localModelObservationExecutionAvailable,
     )
 
     private val mutableUiState = MutableStateFlow(
@@ -649,12 +650,17 @@ class GoffyViewModel internal constructor(
         val decision = GoffyIntentRouter.route(command, localModelFallback)
         refreshLocalModelStatus()
         if (decision is RoutingDecision.Unsupported) {
-            mutableUiState.value = mutableUiState.value.rejectCommand(
-                command,
-                decision.unsupportedSummary(),
-                nowMillis(),
-            )
-            return
+            when (val start = startLocalModelObservationIfAvailable(command, decision)) {
+                LocalModelObservationStart.Started -> return
+                is LocalModelObservationStart.Skipped -> {
+                    mutableUiState.value = mutableUiState.value.rejectCommand(
+                        command,
+                        start.rejectionSummary ?: decision.unsupportedSummary(),
+                        nowMillis(),
+                    )
+                    return
+                }
+            }
         }
 
         val plan = (decision as RoutingDecision.Routed).plan
@@ -679,6 +685,64 @@ class GoffyViewModel internal constructor(
                 nowMillis(),
             )
         }
+    }
+
+    private fun startLocalModelObservationIfAvailable(
+        command: String,
+        decision: RoutingDecision.Unsupported,
+    ): LocalModelObservationStart {
+        val provider = localModelRuntimeProvider ?: return LocalModelObservationStart.Skipped()
+        if (!localModelObservationExecutionAvailable) return LocalModelObservationStart.Skipped()
+        if (decision.localModelObservation is LocalModelIntentObservation.Rejected) {
+            return LocalModelObservationStart.Skipped()
+        }
+        val status = currentLocalModelStatus()
+        mutableUiState.value = mutableUiState.value.copy(localModelStatus = status)
+        if (status.state != LocalModelRuntimeState.READY) {
+            return LocalModelObservationStart.Skipped(status.unsupportedObservationSummary())
+        }
+        val taskId = nextTaskId()
+        mutableUiState.value = mutableUiState.value.copy(
+            executionTarget = ExecutionTarget.PHONE,
+            timeline = mutableUiState.value.timeline.startLocalModelObservation(
+                taskId = taskId,
+                command = command,
+                statusSummary = status.summary,
+            ),
+        )
+        val job = viewModelScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val observation = provider.observeUnsupportedCommand(decision.normalizedCommand)
+                mutableUiState.value = mutableUiState.value.copy(
+                    localModelStatus = currentLocalModelStatus(),
+                    timeline = mutableUiState.value.timeline.completeLocalModelObservation(
+                        taskId = taskId,
+                        observation = observation,
+                        terminalAtEpochMillis = nowMillis(),
+                    ),
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                mutableUiState.value = mutableUiState.value.copy(
+                    localModelStatus = currentLocalModelStatus(),
+                    timeline = mutableUiState.value.timeline.completeLocalModelObservation(
+                        taskId = taskId,
+                        observation = LocalModelIntentObservation.Rejected(
+                            "Local model observation failed without producing a safe routing hint.",
+                        ),
+                        terminalAtEpochMillis = nowMillis(),
+                    ),
+                )
+            } finally {
+                if (activeJob === coroutineContext[Job]) {
+                    activeJob = null
+                }
+            }
+        }
+        activeJob = job
+        job.start()
+        return LocalModelObservationStart.Started
     }
 
     private fun submitPhonePlan(plan: GoffyExecutionPlan) {
@@ -770,6 +834,10 @@ class GoffyViewModel internal constructor(
                 "No safe deterministic route is available for this command yet. ${observation.reason}"
             null -> "No safe deterministic route is available for this command yet"
         }
+
+    private fun LocalModelRuntimeStatus.unsupportedObservationSummary(): String =
+        "No safe deterministic route is available for this command yet. " +
+            "Local model observation is unavailable: $summary"
 
     private fun Int.displayDuration(): String = when {
         this % 3_600 == 0 -> "${this / 3_600} ${if (this == 3_600) "hour" else "hours"}"
@@ -958,7 +1026,14 @@ private data class AndroidGoffyDependencies(
     val localModelSettingsSource: MutableLocalModelRuntimeSettingsSource,
     val localModelRuntimeProvider: LocalModelRuntimeProvider?,
     val localModelControlsAvailable: Boolean,
+    val localModelObservationExecutionAvailable: Boolean,
 )
+
+private sealed interface LocalModelObservationStart {
+    object Started : LocalModelObservationStart
+
+    data class Skipped(val rejectionSummary: String? = null) : LocalModelObservationStart
+}
 
 private fun createAndroidGoffyDependencies(context: Context): AndroidGoffyDependencies {
     val applicationContext = context.applicationContext
@@ -978,5 +1053,6 @@ private fun createAndroidGoffyDependencies(context: Context): AndroidGoffyDepend
         localModelRuntimeProvider = localModelRuntimeProvider,
         localModelControlsAvailable =
             BuildConfig.GOFFY_LOCAL_MODEL_DEVELOPER_RUNTIME_ALLOWED && localModelRuntimeProvider != null,
+        localModelObservationExecutionAvailable = localModelRuntimeProvider != null,
     )
 }

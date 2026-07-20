@@ -1,6 +1,7 @@
 package dev.goffy.os
 
 import dev.goffy.os.agent.TaskPhase
+import dev.goffy.os.agent.TaskEventKind
 import dev.goffy.os.audit.AuditApprovalOutcome
 import dev.goffy.os.audit.AuditPermission
 import dev.goffy.os.audit.AuditSourceSurface
@@ -507,6 +508,161 @@ class GoffyViewModelTest {
         assertTrue(entry.summary.contains("Local model suggested PHONE"))
         assertTrue(entry.summary.contains("deterministic route"))
         assertEquals(LocalModelRuntimeState.READY, viewModel.uiState.value.localModelStatus.state)
+    }
+
+    @Test
+    fun localModelRuntimeProviderObservesUnsupportedCommandAsNonExecutableTimelineTask() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val provider = RecordingLocalModelRuntimeProvider(
+            statusProvider = { readyLocalModelStatus() },
+            observer = {
+                LocalModelIntentObservation.Candidate(
+                    LocalModelIntentCandidate(
+                        intentLabel = "PHONE",
+                        confidence = 0.91f,
+                        normalizedCommand = it,
+                        rationale = "strict routing JSON passed",
+                    ),
+                )
+            },
+        )
+        val viewModel = createViewModel(
+            gateway,
+            localModelRuntimeProvider = provider,
+            localModelControlsAvailable = true,
+            localModelObservationExecutionAvailable = true,
+        )
+        advanceUntilIdle()
+
+        viewModel.configureHub(endpoint, token)
+        viewModel.submitCommand("open settings")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(listOf("open settings"), provider.commands)
+        assertTrue(gateway.requests.isEmpty())
+        assertEquals(ExecutionTarget.PHONE, entry.executionTarget)
+        assertNull(entry.toolName)
+        assertNull(entry.permission)
+        assertNull(entry.result)
+        assertEquals(TaskPhase.FAILED, entry.phase)
+        assertTrue(entry.summary.contains("Local model suggested PHONE"))
+        assertTrue(entry.summary.contains("deterministic route"))
+        assertTrue(
+            entry.events.any {
+                it.kind == TaskEventKind.PLAN &&
+                    it.message.contains("Local model suggested PHONE at 0.91 confidence")
+            },
+        )
+        assertTrue(
+            entry.events.any {
+                it.kind == TaskEventKind.ERROR &&
+                    it.message.contains("Deterministic route still required")
+            },
+        )
+        assertEquals(LocalModelRuntimeState.READY, viewModel.uiState.value.localModelStatus.state)
+    }
+
+    @Test
+    fun deterministicPhoneRouteDoesNotInvokeLocalModelRuntimeProvider() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val provider = RecordingLocalModelRuntimeProvider(
+            statusProvider = { readyLocalModelStatus() },
+            observer = {
+                LocalModelIntentObservation.Rejected("provider should not run")
+            },
+        )
+        val viewModel = createViewModel(
+            gateway,
+            localModelRuntimeProvider = provider,
+            localModelControlsAvailable = true,
+            localModelObservationExecutionAvailable = true,
+        )
+        advanceUntilIdle()
+
+        viewModel.submitCommand("show my battery status")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertTrue(provider.commands.isEmpty())
+        assertTrue(gateway.requests.isEmpty())
+        assertEquals(ExecutionTarget.PHONE, entry.executionTarget)
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals(LocalModelRuntimeState.READY, viewModel.uiState.value.localModelStatus.state)
+    }
+
+    @Test
+    fun localModelProviderNonReadyStateExplainsUnsupportedCommandRejection() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val provider = RecordingLocalModelRuntimeProvider(
+            statusProvider = {
+                LocalModelRuntimeStatus(
+                    state = LocalModelRuntimeState.UNAVAILABLE,
+                    summary = "Approved local model file is unavailable.",
+                    enabledByUser = true,
+                    runtimeAvailable = true,
+                    modelAvailable = false,
+                )
+            },
+            observer = {
+                error("provider should not run when status is not ready")
+            },
+        )
+        val viewModel = createViewModel(
+            gateway,
+            localModelRuntimeProvider = provider,
+            localModelControlsAvailable = true,
+            localModelObservationExecutionAvailable = true,
+        )
+        advanceUntilIdle()
+
+        viewModel.submitCommand("open settings")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertTrue(provider.commands.isEmpty())
+        assertTrue(gateway.requests.isEmpty())
+        assertEquals(TaskPhase.FAILED, entry.phase)
+        assertTrue(entry.summary.contains("Approved local model file is unavailable."))
+        assertFalse(entry.summary.contains("Local model is off"))
+        assertEquals(LocalModelRuntimeState.UNAVAILABLE, viewModel.uiState.value.localModelStatus.state)
+    }
+
+    @Test
+    fun localModelObservationCanBeCancelledWithoutExecutingRoute() = runTest(dispatcher) {
+        var providerCancelled = false
+        val gateway = FakeHubGateway { flowOf() }
+        val provider = RecordingLocalModelRuntimeProvider(
+            statusProvider = { readyLocalModelStatus() },
+            observer = {
+                try {
+                    awaitCancellation()
+                } finally {
+                    providerCancelled = true
+                }
+            },
+        )
+        val viewModel = createViewModel(
+            gateway,
+            localModelRuntimeProvider = provider,
+            localModelControlsAvailable = true,
+            localModelObservationExecutionAvailable = true,
+        )
+        advanceUntilIdle()
+
+        viewModel.submitCommand("open settings")
+        runCurrent()
+        viewModel.cancelActiveTask()
+        runCurrent()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(listOf("open settings"), provider.commands)
+        assertTrue(providerCancelled)
+        assertTrue(gateway.requests.isEmpty())
+        assertNull(entry.toolName)
+        assertNull(entry.permission)
+        assertNull(entry.result)
+        assertEquals(TaskPhase.CANCELLED, entry.phase)
     }
 
     @Test
@@ -1122,16 +1278,18 @@ class GoffyViewModelTest {
 
     private fun statusFor(settings: LocalModelRuntimeSettings): LocalModelRuntimeStatus =
         if (settings.enabledByUser) {
-            LocalModelRuntimeStatus(
-                state = LocalModelRuntimeState.READY,
-                summary = "Local model ready for observe-only fallback.",
-                enabledByUser = true,
-                runtimeAvailable = true,
-                modelAvailable = true,
-            )
+            readyLocalModelStatus()
         } else {
             LocalModelRuntimeStatus.disabled()
         }
+
+    private fun readyLocalModelStatus(): LocalModelRuntimeStatus = LocalModelRuntimeStatus(
+        state = LocalModelRuntimeState.READY,
+        summary = "Local model ready for observe-only fallback.",
+        enabledByUser = true,
+        runtimeAvailable = true,
+        modelAvailable = true,
+    )
 
     private fun storedCredential(): StoredHubCredential = StoredHubCredential.create(
         endpoint = endpoint,
@@ -1432,6 +1590,21 @@ class GoffyViewModelTest {
 
         override suspend fun observeUnsupportedCommand(command: String): LocalModelIntentObservation =
             error("local model observation execution is not wired in this test")
+    }
+
+    private class RecordingLocalModelRuntimeProvider(
+        private val statusProvider: () -> LocalModelRuntimeStatus,
+        private val observer: suspend (String) -> LocalModelIntentObservation,
+    ) : LocalModelRuntimeProvider {
+        val commands = mutableListOf<String>()
+
+        override val status: LocalModelRuntimeStatus
+            get() = statusProvider()
+
+        override suspend fun observeUnsupportedCommand(command: String): LocalModelIntentObservation {
+            commands += command
+            return observer(command)
+        }
     }
 
     private class RecordingCredentialStore(

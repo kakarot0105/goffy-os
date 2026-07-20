@@ -17,6 +17,8 @@ import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
 import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.ToolResultContent
 import dev.goffy.os.protocol.matchesToolContract
+import dev.goffy.os.localmodel.LocalModelIntentObservation
+import java.util.Locale
 import java.util.UUID
 
 enum class TaskPhase {
@@ -148,6 +150,71 @@ data class TaskTimelineState(
             terminalAtEpochMillis = terminalAtEpochMillis,
         )
         return copy(entries = (entries + entry).takeLast(MAX_TIMELINE_ITEMS))
+    }
+
+    fun startLocalModelObservation(
+        taskId: UUID,
+        command: String,
+        statusSummary: String,
+    ): TaskTimelineState {
+        require(activeTaskId == null) { "only one task may run at a time" }
+        val normalized = command.trim().take(MAX_COMMAND_LENGTH)
+        if (normalized.isEmpty()) return this
+        val entry = TaskTimelineEntry(
+            id = taskId,
+            command = normalized,
+            executionTarget = ExecutionTarget.PHONE,
+            toolName = null,
+            phase = TaskPhase.ROUTING,
+            summary = "Checking local model observe-only fallback",
+            events = listOf(
+                TaskTimelineEvent(TaskEventKind.OBSERVE, "Received typed command input"),
+                TaskTimelineEvent(TaskEventKind.PLAN, "No deterministic route selected"),
+                TaskTimelineEvent(TaskEventKind.PREPARE, statusSummary.safeText()),
+            ),
+            permission = null,
+        )
+        return copy(
+            activeTaskId = taskId,
+            entries = (entries + entry).takeLast(MAX_TIMELINE_ITEMS),
+        )
+    }
+
+    fun completeLocalModelObservation(
+        taskId: UUID,
+        observation: LocalModelIntentObservation,
+        terminalAtEpochMillis: Long = System.currentTimeMillis(),
+    ): TaskTimelineState {
+        if (taskId != activeTaskId) return this
+        val index = entries.indexOfLast { it.id == taskId }
+        if (index < 0) return copy(activeTaskId = null)
+        val current = entries[index]
+        val summary = observation.nonExecutableSummary()
+        val events = when (observation) {
+            is LocalModelIntentObservation.Candidate -> listOf(
+                TaskTimelineEvent(
+                    TaskEventKind.PLAN,
+                    "Local model suggested ${observation.candidate.intentLabel} " +
+                        "at ${observation.candidate.confidence.displayConfidence()} confidence",
+                ),
+                TaskTimelineEvent(TaskEventKind.ERROR, "Deterministic route still required"),
+            )
+            is LocalModelIntentObservation.Disabled -> listOf(
+                TaskTimelineEvent(TaskEventKind.ERROR, observation.reason),
+            )
+            is LocalModelIntentObservation.Rejected -> listOf(
+                TaskTimelineEvent(TaskEventKind.ERROR, observation.reason),
+            )
+        }
+        val updated = current.copy(
+            phase = TaskPhase.FAILED,
+            summary = summary.safeText(),
+            terminalAtEpochMillis = terminalAtEpochMillis,
+        ).copy(events = (current.events + events).takeLast(MAX_TASK_EVENTS))
+        return copy(
+            activeTaskId = null,
+            entries = entries.toMutableList().also { it[index] = updated },
+        )
     }
 
     fun apply(
@@ -513,6 +580,17 @@ data class TaskTimelineState(
 }
 
 private fun String.safeText(): String = trim().take(256).ifEmpty { "No details available" }
+
+private fun LocalModelIntentObservation.nonExecutableSummary(): String = when (this) {
+    is LocalModelIntentObservation.Candidate ->
+        "Local model suggested ${candidate.intentLabel}, but GOFFY needs a deterministic route before execution"
+    is LocalModelIntentObservation.Disabled ->
+        "No safe deterministic route is available for this command yet. $reason"
+    is LocalModelIntentObservation.Rejected ->
+        "No safe deterministic route is available for this command yet. $reason"
+}
+
+private fun Float.displayConfidence(): String = String.format(Locale.US, "%.2f", this)
 
 private fun ToolResultContent.summaryText(): String = when (this) {
     is MacSystemInfo -> "$operatingSystem $architecture: $status"

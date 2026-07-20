@@ -36,8 +36,10 @@ the normal `debug` and `release` GOFFY LITE builds do not include that runtime.
 When a `modelDebug` APK is installed, GOFFY shows a foreground local-model
 runtime card. The enable switch stores only one app-private boolean after
 commit/read-back verification. Even with an approved app-owned `router.litertlm`
-file under `noBackupFilesDir/local-models/`, GOFFY masks readiness as not wired
-until unsupported-command model execution is implemented in a future gate.
+file under `noBackupFilesDir/local-models/`, GOFFY uses the provider only for a
+bounded, foreground, observe-only pass on unsupported commands. The timeline
+records the model hint as non-executable, and deterministic routing remains the
+only path that can invoke tools.
 The first wrapper run downloads Gradle 9.4.1 and validates the distribution
 checksum. Verify the wrapper JAR checksum separately before replacing it, and
 review both published checksums during any wrapper upgrade.

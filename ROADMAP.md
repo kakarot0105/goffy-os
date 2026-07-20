@@ -61,7 +61,8 @@
 - [x] Automated GOFFY LITE release APK size/model-payload guard plus default debug/release LiteRT-LM dependency guard
 - [x] Optional `modelDebug` LiteRT-LM provider compile path behind the async activation gate
 - [x] Foreground, verified `modelDebug` LiteRT-LM runtime setting control without GOFFY LITE APK-size regression
-- [ ] User-enabled LiteRT-LM unsupported-command observation execution with unload and Moto responsiveness evidence
+- [x] User-enabled `modelDebug` LiteRT-LM unsupported-command observation execution as non-executable timeline task
+- [ ] Moto responsiveness, idle-unload, and acceptance evidence for user-enabled LiteRT-LM observation execution
 
 ## Milestone 3: MCP core - in progress
 

@@ -16,6 +16,7 @@ class LocalModelIntentBoundaryTest {
         assertEquals(256, policy.maxModelOutputChars)
         assertEquals(0.70f, policy.minRoutingConfidence)
         assertEquals(60_000L, policy.idleUnloadMillis)
+        assertEquals(15_000L, policy.generationTimeoutMillis)
     }
 
     @Test
@@ -34,6 +35,12 @@ class LocalModelIntentBoundaryTest {
         }
         assertThrows(IllegalArgumentException::class.java) {
             LocalModelRuntimePolicy(idleUnloadMillis = 301_000L)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            LocalModelRuntimePolicy(generationTimeoutMillis = 999L)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            LocalModelRuntimePolicy(generationTimeoutMillis = 60_001L)
         }
     }
 

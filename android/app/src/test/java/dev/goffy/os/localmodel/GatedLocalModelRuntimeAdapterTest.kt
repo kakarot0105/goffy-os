@@ -2,6 +2,7 @@ package dev.goffy.os.localmodel
 
 import java.io.File
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -261,6 +262,31 @@ class GatedLocalModelRuntimeAdapterTest {
         assertTrue(observation is LocalModelIntentObservation.Rejected)
         assertEquals(
             "Model output exceeded the local routing output budget.",
+            (observation as LocalModelIntentObservation.Rejected).reason,
+        )
+    }
+
+    @Test
+    fun rejectsWhenGenerationTimesOut() = runTest {
+        val modelRoot = temporaryFolder.newFolder("models")
+        val modelFile = writeModel(modelRoot)
+        val adapter = enabledAdapter(
+            modelFile = modelFile,
+            modelRoot = modelRoot,
+            generator = LocalModelTextGenerator {
+                _, _ -> awaitCancellation()
+            },
+            policy = LocalModelRuntimePolicy(
+                enabled = true,
+                generationTimeoutMillis = 1_000L,
+            ),
+        )
+
+        val observation = adapter.observeUnsupportedCommand("show my battery status")
+
+        assertTrue(observation is LocalModelIntentObservation.Rejected)
+        assertEquals(
+            "Local model generation timed out before producing a safe routing observation.",
             (observation as LocalModelIntentObservation.Rejected).reason,
         )
     }
