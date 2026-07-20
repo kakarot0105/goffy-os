@@ -10,11 +10,15 @@ visible to the user.
 
 1. Inspect `README.md`, `ROADMAP.md`, relevant ADRs, tests, and current changes.
 2. Select one narrow end-to-end task and state its acceptance criteria.
-3. Implement the smallest complete change using typed boundaries.
-4. Run formatting, linting, type checks, tests, and the security scan.
-5. Review implementation and security in a separate pass.
-6. Fix high- and medium-severity findings before claiming completion.
-7. Update docs and roadmap status when behavior or setup changes.
+3. Run a reuse-first scan for mature open-source implementations before
+   building new feature code from scratch.
+4. Accept external code only when the license, maintenance state, security
+   posture, dependency cost, and 4 GB phone performance profile fit GOFFY.
+5. Implement the smallest complete change using typed boundaries.
+6. Run formatting, linting, type checks, tests, and the security scan.
+7. Review implementation and security in a separate pass.
+8. Fix high- and medium-severity findings before claiming completion.
+9. Update docs and roadmap status when behavior or setup changes.
 
 ## Safety invariants
 
@@ -36,6 +40,8 @@ visible to the user.
 - Protocol fields use lower camel case on the wire and explicit versioning.
 - New major design decisions require an ADR in `docs/adr/`.
 - Tests must cover rejection and failure paths, not only happy paths.
+- Prefer adapting proven open-source components over building from scratch, but
+  document source, license, modifications, and why the dependency is safe.
 
 <!-- OMC:START -->
 <!-- OMC:VERSION:4.9.3 -->
