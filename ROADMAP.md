@@ -25,7 +25,8 @@
 - [x] Local Moto G validation bundle collector
 - [x] Offline Moto G validation bundle verifier
 - [x] One-command Moto G validation collect-and-verify pipeline
-- [ ] GOFFY home shell verified on the Moto G physical device
+- [x] Bounded fixed-command Moto G device smoke automation
+- [x] GOFFY home shell verified on the Moto G physical device
 
 ## Milestone 1: First end-to-end action - in progress
 
@@ -48,7 +49,7 @@
 - [x] Approval-gated allowlisted-system `phone.timer.create` dispatch with explicit `UNVERIFIED` state
 - [x] API 26 and API 33+ system Clock intent tests
 - [x] Approval-gated, callback-verified `phone.flashlight.set`
-- [ ] Physical Moto G battery-status verification
+- [x] Physical Moto G battery-status verification
 
 ## Milestone 3: MCP core - in progress
 

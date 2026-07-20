@@ -230,6 +230,35 @@ Mutating mode uses only the Android SDK `platform-tools/adb` resolved from the
 configured SDK root and only installs the debug APK from this checked-out GOFFY
 repository. PATH `adb` and alternate `--repo-root` values remain plan-only.
 
+For a bounded install-launch-command smoke pass, inspect the device automation
+plan first:
+
+```bash
+.venv/bin/python scripts/run_moto_g_device_smoke.py
+.venv/bin/python scripts/run_moto_g_device_smoke.py --json
+```
+
+To actually run it against the connected Moto G, both mutating flags are
+required:
+
+```bash
+.venv/bin/python scripts/run_moto_g_device_smoke.py --execute --confirm-device-mutation
+```
+
+Execution first requires exactly one authorized Moto G target, or an explicit
+`--device-serial` when multiple devices are connected, and then pins every ADB
+call with `-s <device-serial>`. It configures `adb reverse tcp:8787 tcp:8787`,
+installs the debug APK, force-stops and launches GOFFY, collapses the Hub setup
+card if needed, types only `check my battery level`, verifies that a fresh PHONE
+task card appeared with expected markers, captures a screenshot, and saves
+bounded GOFFY process logcat under `.goffy-validation/device-smoke/`. Add
+`--include-mac` only when the Hub is already running and the phone's saved Hub
+link is valid; that optional path types only `check my Mac status` and verifies a
+fresh visible `mac.system_info` task card. The runner does not clear app data,
+tap `Forget link`, start the Hub, accept custom execute commands, or broaden
+network access beyond USB loopback. See
+[ADR 0024](../adr/0024-fixed-adb-device-smoke.md) for the reuse-first decision.
+
 After the manual phone checks pass, record redacted evidence:
 
 ```bash
@@ -321,9 +350,11 @@ device pairing exist.
 
 ## Physical-device status
 
-The USB localhost flow is implemented in software, but the full physical Moto G
-verification pass is still incomplete. Do not treat Milestone 1 as hardware
-verified yet.
+The Moto G PHONE smoke is verified for debug APK install, GOFFY home-shell
+launch, setup-card collapse, fixed `check my battery level` entry, fresh
+`phone.battery.status` task-card verification, screenshot capture, and bounded
+GOFFY process logcat capture. The MAC localhost smoke is still incomplete, so do
+not treat Milestone 1 as hardware verified yet.
 
 For the pairing slice, verify that restart restores `PAIRED`, an expired or
 altered challenge saves nothing, and `Forget link` first shows an explicit

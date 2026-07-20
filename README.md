@@ -17,7 +17,8 @@ tools are the capability boundary.
 > a foreground-only QR pairing panel, reject bundles without the fingerprint, and
 > restore the pinned identity from encrypted paired credentials. The Hub also
 > keeps a bounded, hash-chained paired-mode operator audit for pairing,
-> WebSocket, and MCP control-plane events. Physical Moto G verification,
+> WebSocket, and MCP control-plane events. Physical Moto G PHONE smoke now
+> verifies the home shell and `phone.battery.status`; MAC localhost smoke,
 > automatic rotation scheduling, Android retrieval for Hub audit,
 > certificate-backed Hub identity proof, and trusted LAN operation remain open.
 
@@ -153,7 +154,7 @@ Run the preflight first. It checks JDK 17+, Android SDK Platform 36, Build Tools
 36.0.0, `adb`, and the pinned Gradle wrapper before Gradle starts.
 
 See [Android setup](docs/setup/android.md) for the USB localhost debug flow.
-Physical Moto G verification for this slice is still open.
+The physical Moto G PHONE smoke is verified; the MAC localhost smoke is still open.
 
 To exercise the local mutation path, enter `Create a note saying Buy milk`. GOFFY
 must show an approval card and perform no write until `Approve once` is tapped.
@@ -310,6 +311,33 @@ pass. It verifies the reverse before installing the APK. It does not run
 Mutating mode uses only the Android SDK `platform-tools/adb` resolved from the
 configured SDK root and only installs the debug APK from this checked-out GOFFY
 repository. PATH `adb` and alternate `--repo-root` values are plan-only.
+
+To run the bounded real-device smoke automation after the APK is built and the
+Moto G is connected, inspect the plan first:
+
+```bash
+.venv/bin/python scripts/run_moto_g_device_smoke.py
+.venv/bin/python scripts/run_moto_g_device_smoke.py --json
+```
+
+Mutating mode requires the same explicit confirmation pattern:
+
+```bash
+.venv/bin/python scripts/run_moto_g_device_smoke.py --execute --confirm-device-mutation
+```
+
+That flow first requires exactly one authorized Moto G target, or an explicit
+`--device-serial` when multiple devices are connected, and then pins every ADB
+call with `-s <device-serial>`. It configures `adb reverse tcp:8787 tcp:8787`,
+installs the debug APK, force-stops and launches GOFFY, collapses the Hub setup
+card if needed, types only the fixed `check my battery level` smoke command,
+verifies that a fresh PHONE task card appeared with expected markers, captures a
+screenshot, and saves bounded GOFFY process logcat under
+`.goffy-validation/device-smoke/`. Add `--include-mac` only when the Hub is
+already running and the phone's saved Hub link is valid; the MAC path types only
+`check my Mac status` and verifies a fresh visible `mac.system_info` task card.
+The script does not clear app data, tap `Forget link`, start the Hub, accept
+custom execute commands, or broaden network access beyond USB loopback.
 
 After the manual phone pass, record redacted evidence:
 
