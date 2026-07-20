@@ -52,6 +52,39 @@ Rules:
 - A passing output creates only `LocalModelIntentObservation.Candidate`; it
   does not create a `GoffyExecutionPlan` and cannot approve any action.
 
+## Runtime Adapter Boundary
+
+The disabled runtime adapter boundary is implemented as a bridge from generated
+text into the deterministic quality gate:
+
+- `GatedLocalModelRuntimeAdapter` owns the fail-closed policy, model-file
+  validation, prompt generation, and handoff into
+  `evaluateLocalModelRoutingOutput`.
+- The adapter returns `Disabled` unless `LocalModelRuntimePolicy.enabled` is
+  explicitly true.
+- Model files must be existing `.litertlm` files under the approved app-owned
+  model directory and must stay within the 512 MB GOFFY LITE budget.
+- The adapter builds a short strict-JSON routing prompt, rejects candidate
+  commands over 160 characters before model execution, and rejects generated
+  prompts outside the 512-character prompt budget.
+- Runtime failures become `Rejected` observations; caller cancellation is not
+  swallowed.
+- The adapter is not connected to `GoffyIntentRouter`, the UI, startup, or any
+  background loop yet.
+
+The concrete LiteRT-LM Android runtime dependency remains benchmark/test-only
+until developer-controlled activation, startup/install-size evidence, and
+physical Moto smoke testing are complete. No model binary is packaged in the APK
+or committed to the repository.
+
+Standard GOFFY LITE packaging evidence checked on 2026-07-20 after keeping
+LiteRT-LM out of the main runtime classpath:
+
+- Debug APK: about 44 MB
+- Unsigned release APK: about 23 MB
+- Release APK inspection found no `liblitertlm_jni.so`
+- Release APK inspection found no `.litertlm` model asset
+
 ## Declared Runtime Policy
 
 GOFFY LITE remains the default on the Moto G target. The current code enforces
@@ -177,10 +210,11 @@ stores benchmark JSON under `.goffy-validation/litertlm-benchmark/`.
 The JSON records initialization latency, first-chunk latency, total generation
 time, output chunk count, character-rate, battery and thermal snapshots, and
 managed/native memory snapshots. True token-per-second reporting, peak memory,
-UI responsiveness scoring, battery-drain acceptance, and unload behavior still
-belong to future runtime integration work. Label-quality checks are implemented
-in the deterministic routing quality gate above, but they are not applied to
-live LiteRT-LM output until a runtime adapter calls the gate.
+UI responsiveness scoring, battery-drain acceptance, reusable idle-unload
+behavior, and developer-controlled activation still belong to future runtime
+integration work. Label-quality checks are implemented in the deterministic
+routing quality gate above and the disabled generated-text adapter calls that
+gate, but live app routing still does not call the adapter.
 
 ## Physical Moto G LiteRT-LM Evidence
 
@@ -223,7 +257,8 @@ Qwen3 0.6B mixed INT4 result:
 
 A stricter label-only prompt against the same Qwen3 model also produced verbose
 reasoning text in the output preview. Do not wire this model into executable
-routing until GOFFY has short response stopping criteria, idle unload behavior,
-and UI responsiveness evidence. The deterministic output-quality gate is now in
-place, so the observed verbose Qwen3 output would be rejected rather than
-treated as a route.
+routing until GOFFY has developer-controlled activation, short response stopping
+criteria, idle unload behavior, and UI responsiveness evidence. The
+deterministic output-quality gate is now in place and the disabled
+generated-text adapter calls it, so the observed verbose Qwen3 output would be
+rejected rather than treated as a route.

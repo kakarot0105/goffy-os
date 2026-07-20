@@ -23,9 +23,11 @@ tools are the capability boundary.
 > benchmarking now proves Qwen3 0.6B mixed INT4 can run on CPU, but it is not
 > runtime-enabled because its constrained-label output is still too verbose.
 > The local-model routing quality gate helper now rejects verbose or non-JSON
-> output once a future disabled runtime adapter feeds it. Automatic rotation
-> scheduling, Android retrieval for Hub audit, the disabled LiteRT-LM runtime adapter,
-> certificate-backed Hub identity proof, and trusted LAN operation remain open.
+> output, and the disabled local-model adapter can feed generated text into
+> that gate without wiring model output into executable routing. Automatic
+> rotation scheduling, Android retrieval for Hub audit, developer-controlled
+> LiteRT-LM activation, certificate-backed Hub identity proof, and trusted LAN
+> operation remain open.
 
 ## Current vertical slice
 

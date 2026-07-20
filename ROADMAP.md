@@ -55,7 +55,8 @@
 - [x] Benchmark-only Moto G LiteRT-LM instrumentation harness
 - [x] Moto G local-model runtime benchmark for one tiny text model
 - [x] Local-model routing quality gate before any runtime fallback wiring
-- [ ] Disabled runtime adapter from LiteRT-LM output into the quality gate
+- [x] Disabled generated-text adapter into the local-model quality gate
+- [ ] Developer-controlled LiteRT-LM adapter activation and physical Moto smoke
 
 ## Milestone 3: MCP core - in progress
 

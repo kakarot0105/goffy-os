@@ -122,7 +122,7 @@ fun evaluateLocalModelRoutingOutput(
         )
     }
     val normalizedCommand = command.trim()
-    if (!normalizedCommand.isSafeBoundedText()) {
+    if (!isSafeLocalModelCandidateText(normalizedCommand)) {
         return LocalModelIntentObservation.Rejected(
             "Normalized command is outside local candidate quality bounds.",
         )
@@ -144,6 +144,8 @@ fun isSafeLocalModelOutput(
     output.isNotBlank() &&
         output.length <= policy.maxModelOutputChars &&
         output.none(Char::isUnsafeModelTextCharacter)
+
+fun isSafeLocalModelCandidateText(text: String): Boolean = text.isSafeBoundedText()
 
 private fun String.isSafeBoundedText(): Boolean =
     isNotBlank() &&
