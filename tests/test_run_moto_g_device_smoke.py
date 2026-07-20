@@ -38,6 +38,17 @@ BASE_UI_XML = "\n".join(
 )
 
 
+COMMAND_FIELD_ONLY_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,1454][660,1594]" />',
+        "</hierarchy>",
+    ]
+)
+
+
 PHONE_UI_XML = "\n".join(
     [
         "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
@@ -404,6 +415,65 @@ def test_stale_ui_does_not_pass_without_fresh_command_card(
         and "fresh command card" in step.detail
         for step in report.steps
     )
+
+
+def test_submit_command_reveals_send_button_with_bounded_scroll(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    output_directory = tmp_path / "artifacts"
+    output_directory.mkdir()
+    ui_outputs = iter(
+        (
+            COMMAND_FIELD_ONLY_UI_XML,
+            COMMAND_FIELD_ONLY_UI_XML,
+            BASE_UI_XML,
+            PHONE_UI_XML,
+        )
+    )
+    seen: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        seen.append(tuple(command))
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            try:
+                return CommandResult(0, next(ui_outputs), "")
+            except StopIteration:
+                return CommandResult(0, PHONE_UI_XML, "")
+        return CommandResult(0, "ok", "")
+
+    result = smoke.submit_and_verify_command(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        wait_timeout_seconds=5,
+        command=smoke.DEFAULT_PHONE_COMMAND,
+        expected_markers=("VERIFIED", "PHONE", "phone.battery.status", "%"),
+        step_name="PHONE command smoke",
+        artifact_prefix="phone-command",
+        output_directory=output_directory,
+    )
+
+    assert result.status is StepStatus.OK
+    assert (
+        str(adb),
+        "-s",
+        SERIAL,
+        "shell",
+        "input",
+        "swipe",
+        "360",
+        "1450",
+        "360",
+        "650",
+        "450",
+    ) in seen
+    assert (output_directory / "phone-command.xml").is_file()
 
 
 def test_include_mac_requires_mac_visible_markers(

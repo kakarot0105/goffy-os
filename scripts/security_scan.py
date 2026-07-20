@@ -50,6 +50,16 @@ ALLOWED_MERGED_ANDROID_PERMISSIONS = ALLOWED_ANDROID_PERMISSIONS | {
     "android.permission.ACCESS_NETWORK_STATE",
     "dev.goffy.os.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
 }
+ALLOWED_MERGED_ANDROID_PERMISSIONS_BY_VARIANT = {
+    "debug": ALLOWED_MERGED_ANDROID_PERMISSIONS,
+    "release": ALLOWED_MERGED_ANDROID_PERMISSIONS,
+    "modelDebug": ALLOWED_ANDROID_PERMISSIONS
+    | {
+        "android.permission.ACCESS_NETWORK_STATE",
+        "dev.goffy.os.model.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION",
+    },
+}
+REQUIRED_MERGED_ANDROID_VARIANTS = {"debug", "modelDebug", "release"}
 ALLOWED_PACKAGE_QUERY_ACTIONS = {"android.intent.action.SET_TIMER"}
 ALLOWED_ANDROID_FEATURES = {
     "android.hardware.camera": "false",
@@ -136,6 +146,39 @@ def merged_manifests() -> list[Path]:
     return sorted(MERGED_MANIFEST_ROOT.glob("*/process*Manifest/AndroidManifest.xml"))
 
 
+def merged_manifest_permission_allowlist(variant: str) -> set[str] | None:
+    return ALLOWED_MERGED_ANDROID_PERMISSIONS_BY_VARIANT.get(variant)
+
+
+def validate_merged_manifests(
+    manifests: list[Path],
+    *,
+    manifest_root: Path = MERGED_MANIFEST_ROOT,
+) -> list[str]:
+    findings: list[str] = []
+    variants = {path.relative_to(manifest_root).parts[0] for path in manifests}
+    missing_variants = REQUIRED_MERGED_ANDROID_VARIANTS - variants
+    unknown_variants = variants - set(ALLOWED_MERGED_ANDROID_PERMISSIONS_BY_VARIANT)
+    if missing_variants:
+        findings.append(
+            "Android merged manifests: expected freshly built debug, modelDebug, "
+            f"and release variants (missing {sorted(missing_variants)}, "
+            f"found {sorted(variants)})"
+        )
+    if unknown_variants:
+        findings.append(
+            "Android merged manifests: unexpected variants "
+            f"{sorted(unknown_variants)} (found {sorted(variants)})"
+        )
+    for manifest in manifests:
+        variant = manifest.relative_to(manifest_root).parts[0]
+        allowed_permissions = merged_manifest_permission_allowlist(variant)
+        if allowed_permissions is None:
+            continue
+        findings.extend(validate_manifest(manifest, allowed_permissions))
+    return findings
+
+
 def validate_no_pairing_qr_artifact(path: Path, text: str) -> list[str]:
     findings: list[str] = []
     location = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
@@ -151,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--require-merged-manifests",
         action="store_true",
-        help="also require and validate post-merge debug and release manifests",
+        help="also require and validate post-merge debug, modelDebug, and release manifests",
     )
     args = parser.parse_args(argv)
     findings: list[str] = []
@@ -175,15 +218,7 @@ def main(argv: list[str] | None = None) -> int:
 
     findings.extend(validate_manifest(ANDROID_MANIFEST, ALLOWED_ANDROID_PERMISSIONS))
     if args.require_merged_manifests:
-        manifests = merged_manifests()
-        variants = {path.relative_to(MERGED_MANIFEST_ROOT).parts[0] for path in manifests}
-        if variants != {"debug", "release"}:
-            findings.append(
-                "Android merged manifests: expected freshly built debug and release variants "
-                f"(found {sorted(variants)})"
-            )
-        for manifest in manifests:
-            findings.extend(validate_manifest(manifest, ALLOWED_MERGED_ANDROID_PERMISSIONS))
+        findings.extend(validate_merged_manifests(merged_manifests()))
 
     if findings:
         print("Security scan failed:")

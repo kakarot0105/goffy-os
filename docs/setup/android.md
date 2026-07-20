@@ -297,6 +297,39 @@ artifacts redact the token. The runner does not clear app data, tap
 token, or broaden network access beyond USB loopback. See
 [ADR 0024](../adr/0024-fixed-adb-device-smoke.md) for the reuse-first decision.
 
+For the optional `modelDebug` local-model path, inspect the plan first:
+
+```bash
+.venv/bin/python scripts/run_moto_g_modeldebug_observation_smoke.py \
+  --model .goffy-validation/models/qwen3_0_6b_mixed_int4.litertlm
+.venv/bin/python scripts/run_moto_g_modeldebug_observation_smoke.py \
+  --model .goffy-validation/models/qwen3_0_6b_mixed_int4.litertlm \
+  --json
+```
+
+Mutating mode requires both execution flags and a host `.litertlm` model whose
+basename is ADB-safe and whose size is at most 512 MiB:
+
+```bash
+.venv/bin/python scripts/run_moto_g_modeldebug_observation_smoke.py \
+  --execute \
+  --confirm-device-mutation \
+  --device-serial <device-serial> \
+  --model .goffy-validation/models/qwen3_0_6b_mixed_int4.litertlm \
+  --wait-timeout-seconds 75 \
+  --json
+```
+
+The script builds and installs only `modelDebug`, seeds the approved model into
+the app-private `noBackupFilesDir/local-models/router.litertlm`, enables the
+foreground observe-only runtime setting after verified storage, types only the
+bounded unsupported command `open settings`, and verifies a visible failed
+timeline result. It saves the report, UI XML, battery state, memory state, and
+bounded app logcat under `.goffy-validation/modeldebug-observation-smoke/`. It
+does not package a model in the normal GOFFY LITE APK, enable executable model
+routing, clear app data, broaden ADB beyond fixed commands, or run in the
+background.
+
 After the manual phone checks pass, record redacted evidence:
 
 ```bash

@@ -1058,11 +1058,62 @@ def submit_and_verify_command(
         timeout_seconds=timeout_seconds,
     )
     send = find_node(ui_text, text="Send")
+    for attempt in range(4):
+        if send is not None:
+            break
+        if attempt == 3:
+            break
+        reveal = execute_step(
+            name=f"{step_name}: Reveal Send button",
+            command=adb_command(
+                adb,
+                target,
+                "shell",
+                "input",
+                "swipe",
+                "360",
+                "1450",
+                "360",
+                "650",
+                "450",
+            ),
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            mutates_device=True,
+            display_command=display_adb_command(
+                adb,
+                "shell",
+                "input",
+                "swipe",
+                "360",
+                "1450",
+                "360",
+                "650",
+                "450",
+            ),
+        )
+        if reveal.status is not StepStatus.OK:
+            return reveal
+        time.sleep(1)
+        ui_text = latest_ui_text(
+            adb=adb,
+            target=target,
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+        )
+        send = find_node(ui_text, text="Send")
     if send is None:
+        artifact = f"{artifact_prefix}-send-missing.xml"
+        if ui_text.strip():
+            (output_directory / artifact).write_text(ui_text, encoding="utf-8")
         return DeviceSmokeStep(
             name=step_name,
             status=StepStatus.FAIL,
             detail="Send button not found after typing command",
+            remediation="Inspect the saved UI XML and adjust bounded viewport reveal logic.",
+            artifact=artifact,
         )
     tapped_send = tap_center(
         adb,

@@ -4,7 +4,9 @@ from scripts.security_scan import (
     ALLOWED_ANDROID_PERMISSIONS,
     ALLOWED_MERGED_ANDROID_PERMISSIONS,
     PAIRING_QR_ARTIFACT_MARKER,
+    merged_manifest_permission_allowlist,
     validate_manifest,
+    validate_merged_manifests,
     validate_no_pairing_qr_artifact,
 )
 
@@ -30,6 +32,13 @@ def write_manifest(tmp_path: Path, content: str) -> Path:
     return manifest
 
 
+def write_merged_manifest(tmp_path: Path, variant: str, content: str) -> Path:
+    manifest = tmp_path / variant / f"process{variant.title()}Manifest" / "AndroidManifest.xml"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(content, encoding="utf-8")
+    return manifest
+
+
 def test_manifest_allowlist_accepts_exact_structure(tmp_path: Path) -> None:
     manifest = write_manifest(tmp_path, EXPECTED_MANIFEST)
 
@@ -50,6 +59,38 @@ def test_merged_manifest_allowlist_accepts_dependency_permissions(tmp_path: Path
     )
 
     assert validate_manifest(manifest, ALLOWED_MERGED_ANDROID_PERMISSIONS) == []
+
+
+def test_modeldebug_merged_manifest_allowlist_accepts_variant_receiver_permission(
+    tmp_path: Path,
+) -> None:
+    manifest = write_manifest(
+        tmp_path,
+        EXPECTED_MANIFEST.replace(
+            "    <uses-feature",
+            '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n'
+            '    <uses-permission android:name="'
+            'dev.goffy.os.model.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />\n'
+            "    <uses-feature",
+            1,
+        ),
+    )
+
+    allowlist = merged_manifest_permission_allowlist("modelDebug")
+
+    assert allowlist is not None
+    assert validate_manifest(manifest, allowlist) == []
+
+
+def test_merged_manifest_validation_requires_modeldebug_variant(tmp_path: Path) -> None:
+    manifests = [
+        write_merged_manifest(tmp_path, "debug", EXPECTED_MANIFEST),
+        write_merged_manifest(tmp_path, "release", EXPECTED_MANIFEST),
+    ]
+
+    findings = validate_merged_manifests(manifests, manifest_root=tmp_path)
+
+    assert any("modelDebug" in finding for finding in findings)
 
 
 def test_manifest_allowlist_rejects_permission_variants_and_non_intent_queries(

@@ -1,7 +1,8 @@
 # Local Phone Model
 
 Status: feasibility, safety boundary, developer-variant runtime setting control,
-and bounded observe-only unsupported-command execution.
+bounded observe-only unsupported-command execution, and physical Moto G
+modelDebug smoke evidence.
 
 GOFFY can use a small on-phone model later, but the model must not become the
 authority that executes tools. The current implementation keeps deterministic
@@ -150,6 +151,11 @@ shipped in any default build. Initial budgets are:
 The first model integration must collect real Moto measurements for startup
 impact, peak memory, time to first token, decode speed, battery impact, and UI
 responsiveness before the model is enabled in any default mode.
+
+The current `modelDebug` smoke proves one foreground unsupported-command pass can
+complete on the Moto G, but it is not enough to ship a default runtime. Repeated
+run responsiveness, idle-unload acceptance, production prompt stopping, and
+operator UX for model install/remove remain open.
 
 ## Reuse-First Scan
 
@@ -340,3 +346,37 @@ Qwen3 generated-text adapter smoke result:
 This physical smoke also found Android regex portability bugs in the first
 quality-gate pattern. The pattern now avoids JVM-only anchors and escapes both
 literal braces; `matchEntire` continues to enforce whole-string matching.
+
+Qwen3 `modelDebug` observe-only unsupported-command smoke result:
+
+- Artifact:
+  `.goffy-validation/modeldebug-observation-smoke/20260720T212836Z/modeldebug-observation-report.json`
+- Command:
+  `open settings`
+- Model:
+  `qwen3_0_6b_mixed_int4.litertlm`
+- SHA-256:
+  `b1baab462f6be49d70eada79d715c2c52cd9ece0cad00bddf6a2c097d23498e9`
+- Build:
+  `:app:assembleModelDebug`
+- Installed package:
+  `dev.goffy.os.model`
+- Observation elapsed:
+  37,581 ms
+- Battery snapshot:
+  AC powered, 100 percent
+- Memory snapshot after observation:
+  `TOTAL PSS: 156192` KB, `TOTAL RSS: 153288` KB, `TOTAL SWAP PSS: 57815` KB
+- Captured artifacts:
+  `after-launch.xml`, `local-model-enabled.xml`,
+  `modeldebug-observation-command.xml`, `final-ui.xml`, `battery-after.txt`,
+  `meminfo-after.txt`, and `modeldebug-logcat.txt`
+- Result:
+  passed because the phone displayed a terminal `FAILED` timeline card stating
+  no safe deterministic route was available and the model output exceeded the
+  local routing output budget. No tool executed, no approval was granted, and
+  deterministic routing remained authoritative.
+
+This is acceptable for the developer-only observation path. It is not acceptable
+for default GOFFY LITE enablement because 37.6 seconds is too slow for normal
+phone-first routing and repeated-run/idle-unload behavior is still unproven.

@@ -62,7 +62,8 @@
 - [x] Optional `modelDebug` LiteRT-LM provider compile path behind the async activation gate
 - [x] Foreground, verified `modelDebug` LiteRT-LM runtime setting control without GOFFY LITE APK-size regression
 - [x] User-enabled `modelDebug` LiteRT-LM unsupported-command observation execution as non-executable timeline task
-- [ ] Moto responsiveness, idle-unload, and acceptance evidence for user-enabled LiteRT-LM observation execution
+- [x] Automated physical Moto G `modelDebug` observe-only local-model smoke with UI, battery, memory, and logcat evidence
+- [ ] Repeated-run responsiveness, idle-unload, and production acceptance evidence for user-enabled LiteRT-LM observation execution
 
 ## Milestone 3: MCP core - in progress
 

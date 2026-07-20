@@ -28,9 +28,10 @@ tools are the capability boundary.
 > The app now exposes a fail-closed local-model runtime gate/status rail with
 > at-use model-file rechecks. An optional `modelDebug` LiteRT-LM provider compiles
 > behind that async gate, and `modelDebug` has a foreground enable/disable
-> setting backed by verified app-private settings. When the optional provider is
-> ready, unsupported commands can run one bounded observe-only model pass and the
-> timeline records the non-executable result.
+> setting backed by verified app-private settings. Physical Moto G `modelDebug`
+> smoke now verifies that a user-enabled Qwen3 0.6B observe-only pass for an
+> unsupported command records a non-executable failed timeline result with
+> bounded battery, memory, UI, and logcat artifacts.
 > Default GOFFY LITE still does not ship or load the LiteRT-LM runtime. Automatic
 > rotation scheduling, Android retrieval for Hub audit, certificate-backed Hub
 > identity proof, and trusted LAN operation remain open.
@@ -55,7 +56,8 @@ tools are the capability boundary.
   observe-only gate; default `debug` and `release` stay runtime-free
 - Foreground `modelDebug` local-model runtime setting control with app-private
   commit/read-back verification and bounded unsupported-command observation;
-  executable model fallback remains disabled
+  executable model fallback remains disabled and the physical Moto G smoke
+  verifies the non-executable timeline path
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
