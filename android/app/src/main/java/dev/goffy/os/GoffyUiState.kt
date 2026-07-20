@@ -32,6 +32,11 @@ enum class HubLinkState {
     DEGRADED,
 }
 
+data class LocalModelNotice(
+    val message: String,
+    val warning: Boolean,
+)
+
 data class GoffyUiState(
     val macConnection: MacConnectionState = MacConnectionState.DISCONNECTED,
     val executionTarget: ExecutionTarget = ExecutionTarget.PHONE,
@@ -46,6 +51,10 @@ data class GoffyUiState(
     val discardedAuditRecords: Int = 0,
     val hubIdentityFingerprint: String? = null,
     val localModelStatus: LocalModelRuntimeStatus = LocalModelRuntimeGate.goffyLiteDefault().status,
+    val localModelControlsAvailable: Boolean = false,
+    val localModelSettingsLoaded: Boolean = false,
+    val localModelOperationInProgress: Boolean = false,
+    val localModelNotice: LocalModelNotice? = null,
 ) {
     val hubConfigured: Boolean
         get() = hubLinkState == HubLinkState.PAIRED || hubLinkState == HubLinkState.DEVELOPMENT
@@ -78,6 +87,40 @@ data class GoffyUiState(
     fun hubConfigurationRejected(message: String): GoffyUiState = copy(
         linkError = message.take(MAX_ERROR_LENGTH),
         linkNotice = null,
+    )
+
+    fun localModelOperationStarted(): GoffyUiState = copy(
+        localModelOperationInProgress = true,
+        localModelNotice = null,
+    )
+
+    fun localModelSettingsStillLoading(
+        status: LocalModelRuntimeStatus,
+        message: String,
+    ): GoffyUiState = copy(
+        localModelStatus = status,
+        localModelOperationInProgress = false,
+        localModelNotice = LocalModelNotice(message, warning = true).bounded(),
+    )
+
+    fun localModelSettingsApplied(
+        status: LocalModelRuntimeStatus,
+        notice: LocalModelNotice,
+    ): GoffyUiState = copy(
+        localModelStatus = status,
+        localModelSettingsLoaded = true,
+        localModelOperationInProgress = false,
+        localModelNotice = notice.bounded(),
+    )
+
+    fun localModelSettingsRejected(
+        status: LocalModelRuntimeStatus,
+        message: String,
+    ): GoffyUiState = copy(
+        localModelStatus = status,
+        localModelSettingsLoaded = true,
+        localModelOperationInProgress = false,
+        localModelNotice = LocalModelNotice(message, warning = true).bounded(),
     )
 
     fun hubRestoreEmpty(): GoffyUiState = copy(
@@ -326,10 +369,15 @@ data class GoffyUiState(
         const val MAX_ERROR_LENGTH = 256
         const val MAX_NOTICE_LENGTH = 256
         const val MAX_FINGERPRINT_LENGTH = 80
+        const val MAX_LOCAL_MODEL_NOTICE_LENGTH = 180
     }
 
     private fun HubLinkNotice.bounded(): HubLinkNotice = copy(
         message = message.take(MAX_NOTICE_LENGTH),
+    )
+
+    private fun LocalModelNotice.bounded(): LocalModelNotice = copy(
+        message = message.take(MAX_LOCAL_MODEL_NOTICE_LENGTH),
     )
 }
 

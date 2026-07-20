@@ -27,8 +27,17 @@ import dev.goffy.os.hub.OkHttpHubPairingGateway
 import dev.goffy.os.hub.StoredHubCredential
 import dev.goffy.os.localmodel.LocalModelIntentFallback
 import dev.goffy.os.localmodel.LocalModelIntentObservation
+import dev.goffy.os.localmodel.AndroidLocalModelRuntimeSettingsStore
 import dev.goffy.os.localmodel.LocalModelRuntimeGate
+import dev.goffy.os.localmodel.LocalModelRuntimeProvider
+import dev.goffy.os.localmodel.LocalModelRuntimeProviderLoader
+import dev.goffy.os.localmodel.LocalModelRuntimeSettings
+import dev.goffy.os.localmodel.LocalModelRuntimeSettingsLoadResult
+import dev.goffy.os.localmodel.LocalModelRuntimeSettingsSaveResult
+import dev.goffy.os.localmodel.LocalModelRuntimeSettingsStore
+import dev.goffy.os.localmodel.LocalModelRuntimeState
 import dev.goffy.os.localmodel.LocalModelRuntimeStatus
+import dev.goffy.os.localmodel.MutableLocalModelRuntimeSettingsSource
 import dev.goffy.os.phone.AndroidBatteryStatusSource
 import dev.goffy.os.phone.AndroidDeviceInfoSource
 import dev.goffy.os.phone.AndroidFlashlightSource
@@ -78,24 +87,35 @@ class GoffyViewModel internal constructor(
     private val auditStore: TerminalAuditStore = NoOpTerminalAuditStore,
     private val auditDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val credentialDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val localModelSettingsStore: LocalModelRuntimeSettingsStore = NoOpLocalModelRuntimeSettingsStore,
+    private val localModelSettingsSource: MutableLocalModelRuntimeSettingsSource =
+        MutableLocalModelRuntimeSettingsSource(),
+    private val localModelRuntimeProvider: LocalModelRuntimeProvider? = null,
+    private val localModelSettingsDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val localModelControlsAvailable: Boolean = false,
+    private val localModelObservationExecutionAvailable: Boolean = false,
     private val localModelFallback: LocalModelIntentFallback = LocalModelRuntimeGate.goffyLiteDefault(),
     localModelStatus: LocalModelRuntimeStatus = LocalModelRuntimeStatus.disabled(),
     private val localModelStatusProvider: () -> LocalModelRuntimeStatus =
-        (localModelFallback as? LocalModelRuntimeGate)?.let { gate -> { gate.status } } ?: { localModelStatus },
+        localModelRuntimeProvider?.let { provider -> { provider.status } }
+            ?: (localModelFallback as? LocalModelRuntimeGate)?.let { gate -> { gate.status } }
+            ?: { localModelStatus },
 ) : ViewModel() {
-    constructor(context: Context) : this(
+    constructor(context: Context) : this(createAndroidGoffyDependencies(context.applicationContext))
+
+    private constructor(dependencies: AndroidGoffyDependencies) : this(
         gateway = OkHttpHubGateway(),
         pairingGateway = OkHttpHubPairingGateway(),
         credentialStore = AndroidHubCredentialStore(
-            context,
+            dependencies.context,
             allowInsecureLoopback = BuildConfig.DEBUG,
         ),
         phoneGateway = DefaultPhoneToolGateway(
-            batteryStatusSource = AndroidBatteryStatusSource(context),
+            batteryStatusSource = AndroidBatteryStatusSource(dependencies.context),
             deviceInfoSource = AndroidDeviceInfoSource(),
-            noteStore = AndroidSqliteNoteStore(context),
-            timerSource = AndroidSystemTimerSource(context),
-            flashlightSource = AndroidFlashlightSource(context),
+            noteStore = AndroidSqliteNoteStore(dependencies.context),
+            timerSource = AndroidSystemTimerSource(dependencies.context),
+            flashlightSource = AndroidFlashlightSource(dependencies.context),
         ),
         codec = GoffyProtocolCodec(),
         allowInsecureLoopback = BuildConfig.DEBUG,
@@ -107,7 +127,11 @@ class GoffyViewModel internal constructor(
             .take(80)
             .ifBlank { "GOFFY Android" },
         nextTaskId = UUID::randomUUID,
-        auditStore = AndroidSqliteTerminalAuditStore(context),
+        auditStore = AndroidSqliteTerminalAuditStore(dependencies.context),
+        localModelSettingsStore = dependencies.localModelSettingsStore,
+        localModelSettingsSource = dependencies.localModelSettingsSource,
+        localModelRuntimeProvider = dependencies.localModelRuntimeProvider,
+        localModelControlsAvailable = dependencies.localModelControlsAvailable,
     )
 
     private val mutableUiState = MutableStateFlow(
@@ -115,6 +139,8 @@ class GoffyViewModel internal constructor(
             hubEndpoint = defaultEndpoint,
             developmentTokenAllowed = allowDevelopmentTokenConfiguration,
             localModelStatus = currentLocalModelStatus(),
+            localModelControlsAvailable = localModelControlsAvailable,
+            localModelSettingsLoaded = false,
         ),
     )
     val uiState: StateFlow<GoffyUiState> = mutableUiState.asStateFlow()
@@ -126,12 +152,14 @@ class GoffyViewModel internal constructor(
     private var deviceId: String = deviceId
     private var activeJob: Job? = null
     private var linkJob: Job? = null
+    private var localModelSettingsJob: Job? = null
     private var linkRevision = 0L
     private var pendingExecution: PendingPhoneExecution? = null
     private var approvalExpiryJob: Job? = null
 
     init {
         require(approvalTtlMillis > 0) { "approvalTtlMillis must be positive" }
+        restoreLocalModelSettings()
         restoreHubCredential()
         observeTerminalAudit()
     }
@@ -234,6 +262,99 @@ class GoffyViewModel internal constructor(
                 }
             }
         }
+    }
+
+    private fun restoreLocalModelSettings() {
+        localModelSettingsJob = viewModelScope.launch {
+            val loaded = try {
+                withContext(localModelSettingsDispatcher) { localModelSettingsStore.load() }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                LocalModelRuntimeSettingsLoadResult.Unavailable
+            }
+            when (loaded) {
+                is LocalModelRuntimeSettingsLoadResult.Loaded -> {
+                    localModelSettingsSource.update(loaded.settings)
+                    mutableUiState.value = mutableUiState.value.copy(
+                        localModelStatus = currentLocalModelStatus(),
+                        localModelControlsAvailable = localModelControlsAvailable,
+                        localModelSettingsLoaded = true,
+                        localModelOperationInProgress = false,
+                    )
+                }
+                LocalModelRuntimeSettingsLoadResult.Unavailable -> {
+                    localModelSettingsSource.update(LocalModelRuntimeSettings())
+                    mutableUiState.value = mutableUiState.value.localModelSettingsRejected(
+                        status = currentLocalModelStatus(),
+                        message = "Local model settings could not be read; runtime remains off.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun setLocalModelEnabled(enabled: Boolean): Boolean {
+        if (!localModelControlsAvailable) {
+            mutableUiState.value = mutableUiState.value.localModelSettingsRejected(
+                status = currentLocalModelStatus(),
+                message = "Local model runtime controls are not available in this APK.",
+            )
+            return false
+        }
+        if (!mutableUiState.value.localModelSettingsLoaded) {
+            mutableUiState.value = mutableUiState.value.localModelSettingsStillLoading(
+                status = currentLocalModelStatus(),
+                message = "Local model settings are still loading; try again after the status settles.",
+            )
+            return false
+        }
+        if (mutableUiState.value.localModelOperationInProgress) return false
+        val previous = localModelSettingsSource.snapshot()
+        val requested = LocalModelRuntimeSettings(enabledByUser = enabled)
+        if (previous == requested) {
+            refreshLocalModelStatus()
+            return true
+        }
+        mutableUiState.value = mutableUiState.value.localModelOperationStarted()
+        localModelSettingsJob?.cancel()
+        localModelSettingsJob = viewModelScope.launch {
+            val saved = try {
+                withContext(localModelSettingsDispatcher) { localModelSettingsStore.save(requested) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                LocalModelRuntimeSettingsSaveResult.Failed
+            }
+            when (saved) {
+                is LocalModelRuntimeSettingsSaveResult.Saved -> {
+                    localModelSettingsSource.update(saved.settings)
+                    val status = currentLocalModelStatus()
+                    mutableUiState.value = mutableUiState.value.localModelSettingsApplied(
+                        status = status,
+                        notice = if (enabled) {
+                            LocalModelNotice(
+                                "Local model runtime setting enabled after verified storage.",
+                                warning = false,
+                            )
+                        } else {
+                            LocalModelNotice(
+                                "Local model runtime setting disabled.",
+                                warning = false,
+                            )
+                        },
+                    )
+                }
+                LocalModelRuntimeSettingsSaveResult.Failed -> {
+                    localModelSettingsSource.update(LocalModelRuntimeSettings())
+                    mutableUiState.value = mutableUiState.value.localModelSettingsRejected(
+                        status = currentLocalModelStatus(),
+                        message = "Local model setting was not verified; runtime was disabled.",
+                    )
+                }
+            }
+        }
+        return true
     }
 
     fun configureHub(endpoint: String, bearerToken: String): Boolean {
@@ -623,7 +744,20 @@ class GoffyViewModel internal constructor(
         mutableUiState.value = mutableUiState.value.copy(localModelStatus = currentLocalModelStatus())
     }
 
-    private fun currentLocalModelStatus(): LocalModelRuntimeStatus = localModelStatusProvider()
+    private fun currentLocalModelStatus(): LocalModelRuntimeStatus {
+        val status = localModelStatusProvider()
+        if (
+            localModelRuntimeProvider != null &&
+            !localModelObservationExecutionAvailable &&
+            status.state == LocalModelRuntimeState.READY
+        ) {
+            return status.copy(
+                state = LocalModelRuntimeState.UNAVAILABLE,
+                summary = "Local model setting is enabled; unsupported-command execution is not wired yet.",
+            )
+        }
+        return status
+    }
 
     private fun RoutingDecision.Unsupported.unsupportedSummary(): String =
         when (val observation = localModelObservation) {
@@ -767,6 +901,7 @@ class GoffyViewModel internal constructor(
 
     override fun onCleared() {
         linkJob?.cancel()
+        localModelSettingsJob?.cancel()
         approvalExpiryJob?.cancel()
         auditStore.close()
         phoneGateway.close()
@@ -807,4 +942,41 @@ class GoffyViewModel internal constructor(
 
         override fun close() = Unit
     }
+
+    private object NoOpLocalModelRuntimeSettingsStore : LocalModelRuntimeSettingsStore {
+        override fun load(): LocalModelRuntimeSettingsLoadResult =
+            LocalModelRuntimeSettingsLoadResult.Loaded(LocalModelRuntimeSettings())
+
+        override fun save(settings: LocalModelRuntimeSettings): LocalModelRuntimeSettingsSaveResult =
+            LocalModelRuntimeSettingsSaveResult.Saved(settings)
+    }
+}
+
+private data class AndroidGoffyDependencies(
+    val context: Context,
+    val localModelSettingsStore: LocalModelRuntimeSettingsStore,
+    val localModelSettingsSource: MutableLocalModelRuntimeSettingsSource,
+    val localModelRuntimeProvider: LocalModelRuntimeProvider?,
+    val localModelControlsAvailable: Boolean,
+)
+
+private fun createAndroidGoffyDependencies(context: Context): AndroidGoffyDependencies {
+    val applicationContext = context.applicationContext
+    val localModelSettingsSource = MutableLocalModelRuntimeSettingsSource(
+        LocalModelRuntimeSettings(
+            enabledByUser = BuildConfig.GOFFY_LOCAL_MODEL_USER_ENABLED_DEFAULT,
+        ),
+    )
+    val localModelRuntimeProvider = LocalModelRuntimeProviderLoader.create(
+        applicationContext,
+        localModelSettingsSource,
+    )
+    return AndroidGoffyDependencies(
+        context = applicationContext,
+        localModelSettingsStore = AndroidLocalModelRuntimeSettingsStore(applicationContext),
+        localModelSettingsSource = localModelSettingsSource,
+        localModelRuntimeProvider = localModelRuntimeProvider,
+        localModelControlsAvailable =
+            BuildConfig.GOFFY_LOCAL_MODEL_DEVELOPER_RUNTIME_ALLOWED && localModelRuntimeProvider != null,
+    )
 }

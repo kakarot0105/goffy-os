@@ -27,10 +27,12 @@ tools are the capability boundary.
 > rejects it as non-authoritative instead of wiring it into executable routing.
 > The app now exposes a fail-closed local-model runtime gate/status rail with
 > at-use model-file rechecks. An optional `modelDebug` LiteRT-LM provider compiles
-> behind that async gate, but default GOFFY LITE still does not ship or load the
-> LiteRT-LM runtime. Automatic rotation scheduling, Android retrieval for Hub
-> audit, certificate-backed Hub identity proof, and trusted LAN operation remain
-> open.
+> behind that async gate, and `modelDebug` has a foreground enable/disable
+> setting backed by verified app-private settings. The UI does not report
+> observe-only readiness until unsupported-command model execution is wired.
+> Default GOFFY LITE still does not ship or load the LiteRT-LM runtime. Automatic
+> rotation scheduling, Android retrieval for Hub audit, certificate-backed Hub
+> identity proof, and trusted LAN operation remain open.
 
 ## Current vertical slice
 
@@ -50,6 +52,8 @@ tools are the capability boundary.
   rail; no model loads in GOFFY LITE
 - Optional `modelDebug` LiteRT-LM provider compile path behind the async
   observe-only gate; default `debug` and `release` stay runtime-free
+- Foreground `modelDebug` local-model runtime setting control with app-private
+  commit/read-back verification; executable model fallback remains disabled
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`

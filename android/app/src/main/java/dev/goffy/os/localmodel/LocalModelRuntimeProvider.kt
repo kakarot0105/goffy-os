@@ -3,7 +3,10 @@ package dev.goffy.os.localmodel
 import android.content.Context
 
 fun interface LocalModelRuntimeProviderFactory {
-    fun create(context: Context): LocalModelRuntimeProvider
+    fun create(
+        context: Context,
+        settingsSource: LocalModelRuntimeSettingsSource,
+    ): LocalModelRuntimeProvider
 }
 
 interface LocalModelRuntimeProvider {
@@ -26,4 +29,28 @@ class GatedLocalModelRuntimeProvider(
         }
         return adapter.observeUnsupportedCommand(command)
     }
+}
+
+object LocalModelRuntimeProviderLoader {
+    fun create(
+        context: Context,
+        settingsSource: LocalModelRuntimeSettingsSource,
+    ): LocalModelRuntimeProvider? =
+        try {
+            val factory = Class.forName(PROVIDER_FACTORY_CLASS)
+                .getDeclaredConstructor()
+                .newInstance() as? LocalModelRuntimeProviderFactory
+            factory?.create(context.applicationContext, settingsSource)
+        } catch (_: ClassNotFoundException) {
+            null
+        } catch (_: ReflectiveOperationException) {
+            null
+        } catch (_: LinkageError) {
+            null
+        } catch (_: SecurityException) {
+            null
+        }
+
+    private const val PROVIDER_FACTORY_CLASS =
+        "dev.goffy.os.localmodel.LiteRtLmLocalModelProviderFactory"
 }

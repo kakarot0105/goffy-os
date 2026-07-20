@@ -226,6 +226,9 @@ fun GoffyApp(viewModel: GoffyViewModel) {
                     viewModel.submitCommand(command)
                     command = ""
                 },
+                onSetLocalModelEnabled = { enabled ->
+                    viewModel.setLocalModelEnabled(enabled)
+                },
                 onCancel = viewModel::cancelActiveTask,
                 onApprove = { taskId -> viewModel.approvePendingTask(taskId) },
                 onDeny = { taskId -> viewModel.denyPendingTask(taskId) },
@@ -390,6 +393,7 @@ private fun GoffyHomeScreen(
     onRotateHub: () -> Unit,
     onForgetHub: () -> Unit,
     onSubmit: () -> Unit,
+    onSetLocalModelEnabled: (Boolean) -> Unit,
     onCancel: () -> Unit,
     onApprove: (UUID) -> Unit,
     onDeny: (UUID) -> Unit,
@@ -411,6 +415,13 @@ private fun GoffyHomeScreen(
         GoffyOrb()
         Spacer(Modifier.height(20.dp))
         StatusRail(state)
+        if (state.localModelControlsAvailable) {
+            Spacer(Modifier.height(12.dp))
+            LocalModelRuntimeSection(
+                state = state,
+                onSetEnabled = onSetLocalModelEnabled,
+            )
+        }
         Spacer(Modifier.height(12.dp))
         HubLinkSection(
             state = state,
@@ -446,6 +457,70 @@ private fun GoffyHomeScreen(
             onApprove = onApprove,
             onDeny = onDeny,
         )
+    }
+}
+
+@Composable
+private fun LocalModelRuntimeSection(
+    state: GoffyUiState,
+    onSetEnabled: (Boolean) -> Unit,
+) {
+    val userEnabled = state.localModelStatus.enabledByUser
+    val actionLabel = when {
+        !state.localModelSettingsLoaded -> stringResource(R.string.local_model_loading)
+        state.localModelOperationInProgress -> stringResource(R.string.local_model_saving)
+        userEnabled -> stringResource(R.string.local_model_disable_runtime)
+        else -> stringResource(R.string.local_model_enable_runtime)
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF091217))
+            .border(1.dp, Line, RoundedCornerShape(18.dp))
+            .padding(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Label(stringResource(R.string.local_model_runtime_title))
+                Text(
+                    text = state.localModelStatus.summary,
+                    color = Mist,
+                    fontSize = 12.sp,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Button(
+                onClick = { onSetEnabled(!userEnabled) },
+                enabled = state.localModelSettingsLoaded &&
+                    !state.isBusy &&
+                    !state.localModelOperationInProgress,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (userEnabled) Line else Signal,
+                    contentColor = if (userEnabled) Bone else Void,
+                ),
+            ) {
+                Text(actionLabel, fontWeight = FontWeight.Bold)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.local_model_runtime_note),
+            color = Mist,
+            fontSize = 11.sp,
+        )
+        state.localModelNotice?.let { notice ->
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = notice.message,
+                color = if (notice.warning) Warning else Signal,
+                fontSize = 12.sp,
+            )
+        }
     }
 }
 

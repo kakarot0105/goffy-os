@@ -33,6 +33,11 @@ in the normal `debugRuntimeClasspath` or `releaseRuntimeClasspath`.
 The optional `modelDebug` build type compiles the LiteRT-LM provider against the
 real Android SDK dependency. It is a developer/runtime-validation variant only;
 the normal `debug` and `release` GOFFY LITE builds do not include that runtime.
+When a `modelDebug` APK is installed, GOFFY shows a foreground local-model
+runtime card. The enable switch stores only one app-private boolean after
+commit/read-back verification. Even with an approved app-owned `router.litertlm`
+file under `noBackupFilesDir/local-models/`, GOFFY masks readiness as not wired
+until unsupported-command model execution is implemented in a future gate.
 The first wrapper run downloads Gradle 9.4.1 and validates the distribution
 checksum. Verify the wrapper JAR checksum separately before replacing it, and
 review both published checksums during any wrapper upgrade.

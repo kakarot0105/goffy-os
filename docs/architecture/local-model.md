@@ -1,11 +1,12 @@
 # Local Phone Model
 
-Status: feasibility and safety boundary only.
+Status: feasibility, safety boundary, and developer-variant runtime setting control.
 
 GOFFY can use a small on-phone model later, but the model must not become the
 authority that executes tools. The current implementation keeps deterministic
-routing as the only executable route and adds a disabled local-model observation
-boundary for unsupported commands.
+routing as the only executable route, adds a local-model observation boundary for
+unsupported commands, and exposes a foreground runtime setting control only in
+the runtime-capable `modelDebug` variant.
 
 ## Role
 
@@ -65,6 +66,14 @@ text into the deterministic quality gate:
 - `GatedLocalModelRuntimeProvider` is a suspend boundary for generated-text
   observations. The synchronous deterministic router remains authoritative and
   does not block the UI thread on model generation.
+- `LocalModelRuntimeSettingsStore` persists the user enablement bit in
+  app-private preferences and applies it only after a synchronous commit plus
+  read-back verification on an IO dispatcher. If storage cannot be read or
+  verified, the runtime stays disabled and the UI reports the failure.
+- `LocalModelRuntimeProviderLoader` resolves the optional LiteRT-LM provider by
+  a fixed local class name. Normal `debug` and `release` builds do not include
+  that class or the LiteRT-LM dependency, so the loader returns `null` and the UI
+  does not expose runtime controls.
 - Model files must be existing `.litertlm` files under the approved app-owned
   model directory and must stay within the 512 MB GOFFY LITE budget.
 - The adapter builds a short strict-JSON routing prompt, rejects candidate
@@ -85,8 +94,10 @@ text into the deterministic quality gate:
   real LiteRT-LM Android provider from `android/app/src/modelDebug`. It uses the
   official `Engine` API on `Dispatchers.Default`, CPU backend, app cache
   directory, bounded output collection, and explicit `use`/close blocks. It
-  still defaults to disabled user activation and is not part of normal `debug` or
-  `release` GOFFY LITE packaging.
+  still defaults to disabled user activation, exposes a foreground enable/disable
+  setting after verified storage, masks `READY` as not yet wired until
+  unsupported-command execution is implemented, and is not part of normal
+  `debug` or `release` GOFFY LITE packaging.
 - `scripts/verify_android_apk_budget.py` is part of `verify_all.py` after the
   release APK build. It blocks the default GOFFY LITE APK when it exceeds 32 MiB
   or packages LiteRT-LM/model APK entries such as `liblitertlm` or `.litertlm`.
@@ -113,9 +124,10 @@ GOFFY LITE remains the default on the Moto G target. The current code enforces
 disabled-by-default observation behavior plus bounded prompt, model output, and
 candidate text. The app now also exposes a fail-closed runtime activation gate
 that rechecks model-file constraints at use time plus a status rail refreshed at
-command boundaries. The remaining values must still be satisfied by a future
-LiteRT-LM production provider before a model binary is shipped. Initial budgets
-are:
+command boundaries. The `modelDebug` runtime setting control stores only the
+user enablement bit and still does not make the model an executable router. The
+remaining values must still be satisfied before a model binary is shipped in any
+default build. Initial budgets are:
 
 - Disabled by default
 - Maximum model file size: 512 MB
@@ -138,6 +150,11 @@ Checked on 2026-07-20:
 - LiteRT-LM: Apache-2.0, current Google AI Edge path for Android/Kotlin local
   LLMs. Preferred runtime candidate after benchmarking because it is the current
   maintained Google path and has Android/Kotlin API coverage.
+- Android Preferences DataStore and Compose settings libraries: not added for
+  this slice because the runtime setting state is one non-sensitive app-private
+  boolean and adding a new default dependency would increase GOFFY LITE footprint.
+  The implementation keeps storage in the ViewModel/data layer and uses Android's
+  built-in private preferences with commit/read-back verification.
 - MediaPipe LLM Inference API: not selected for new work because Google marks it
   maintenance-only and recommends LiteRT-LM for Android/Kotlin projects.
 - llama.cpp: MIT, mature and efficient across platforms. Keep as fallback for
@@ -163,6 +180,9 @@ Sources:
 - https://developers.google.com/edge/mediapipe/solutions/genai/llm_inference/android
 - https://github.com/google-ai-edge/LiteRT-LM
 - https://github.com/ggml-org/llama.cpp
+- https://developer.android.com/topic/libraries/architecture/datastore
+- https://developer.android.com/training/data-storage/shared-preferences
+- https://github.com/alorma/Compose-Settings
 - https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct
 - https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct
 - https://huggingface.co/litert-community/granite-4.0-350m-litert-lm

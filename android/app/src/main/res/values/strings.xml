@@ -54,6 +54,12 @@
     <string name="local_model_unavailable">UNAVAILABLE</string>
     <string name="local_model_blocked">BLOCKED</string>
     <string name="local_model_ready">OBSERVE ONLY</string>
+    <string name="local_model_runtime_title">LOCAL MODEL RUNTIME</string>
+    <string name="local_model_runtime_note">Developer runtime mode only. This stores the observe-only runtime setting for validation. Unsupported-command model execution is still a separate gate; deterministic routing and approvals remain authoritative.</string>
+    <string name="local_model_enable_runtime">Enable setting</string>
+    <string name="local_model_disable_runtime">Disable setting</string>
+    <string name="local_model_loading">Loading</string>
+    <string name="local_model_saving">Saving</string>
     <string name="performance_lite">GOFFY LITE</string>
     <string name="command_hint">Ask GOFFY to do something</string>
     <string name="send_command">Send</string>

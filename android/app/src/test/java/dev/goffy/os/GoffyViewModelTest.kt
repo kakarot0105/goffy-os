@@ -26,8 +26,14 @@ import dev.goffy.os.localmodel.LocalModelIntentObservation
 import dev.goffy.os.localmodel.LocalModelRuntimeGate
 import dev.goffy.os.localmodel.LocalModelRuntimeGateConfig
 import dev.goffy.os.localmodel.LocalModelRuntimePolicy
+import dev.goffy.os.localmodel.LocalModelRuntimeProvider
+import dev.goffy.os.localmodel.LocalModelRuntimeSettings
+import dev.goffy.os.localmodel.LocalModelRuntimeSettingsLoadResult
+import dev.goffy.os.localmodel.LocalModelRuntimeSettingsSaveResult
+import dev.goffy.os.localmodel.LocalModelRuntimeSettingsStore
 import dev.goffy.os.localmodel.LocalModelRuntimeState
 import dev.goffy.os.localmodel.LocalModelRuntimeStatus
+import dev.goffy.os.localmodel.MutableLocalModelRuntimeSettingsSource
 import dev.goffy.os.phone.DefaultPhoneToolGateway
 import dev.goffy.os.phone.FlashlightSource
 import dev.goffy.os.phone.PhoneToolGateway
@@ -541,6 +547,145 @@ class GoffyViewModelTest {
     }
 
     @Test
+    fun localModelSettingsLoadDoesNotShowReadyBeforeObservationExecutionIsWired() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val settingsSource = MutableLocalModelRuntimeSettingsSource()
+        val settingsStore = RecordingLocalModelSettingsStore(
+            loadResult = LocalModelRuntimeSettingsLoadResult.Loaded(
+                LocalModelRuntimeSettings(enabledByUser = true),
+            ),
+        )
+        val viewModel = createViewModel(
+            gateway,
+            localModelSettingsStore = settingsStore,
+            localModelSettingsSource = settingsSource,
+            localModelRuntimeProvider = StatusOnlyLocalModelRuntimeProvider {
+                statusFor(settingsSource.snapshot())
+            },
+            localModelControlsAvailable = true,
+        )
+
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.localModelControlsAvailable)
+        assertEquals(LocalModelRuntimeState.UNAVAILABLE, viewModel.uiState.value.localModelStatus.state)
+        assertEquals(true, viewModel.uiState.value.localModelStatus.enabledByUser)
+        assertTrue(viewModel.uiState.value.localModelStatus.summary.contains("not wired"))
+    }
+
+    @Test
+    fun localModelEnableIsStoredButDoesNotShowReadyBeforeObservationExecutionIsWired() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val settingsSource = MutableLocalModelRuntimeSettingsSource()
+        val settingsStore = RecordingLocalModelSettingsStore()
+        val viewModel = createViewModel(
+            gateway,
+            localModelSettingsStore = settingsStore,
+            localModelSettingsSource = settingsSource,
+            localModelRuntimeProvider = StatusOnlyLocalModelRuntimeProvider {
+                statusFor(settingsSource.snapshot())
+            },
+            localModelControlsAvailable = true,
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.setLocalModelEnabled(true))
+        assertTrue(viewModel.uiState.value.localModelOperationInProgress)
+        advanceUntilIdle()
+
+        assertEquals(listOf(LocalModelRuntimeSettings(enabledByUser = true)), settingsStore.savedSettings)
+        assertEquals(true, settingsSource.snapshot().enabledByUser)
+        assertEquals(LocalModelRuntimeState.UNAVAILABLE, viewModel.uiState.value.localModelStatus.state)
+        assertEquals(false, viewModel.uiState.value.localModelNotice?.warning)
+    }
+
+    @Test
+    fun localModelEnableFailureLeavesRuntimeDisabled() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val settingsSource = MutableLocalModelRuntimeSettingsSource()
+        val settingsStore = RecordingLocalModelSettingsStore(
+            saveResult = { LocalModelRuntimeSettingsSaveResult.Failed },
+        )
+        val viewModel = createViewModel(
+            gateway,
+            localModelSettingsStore = settingsStore,
+            localModelSettingsSource = settingsSource,
+            localModelControlsAvailable = true,
+            localModelStatusProvider = { statusFor(settingsSource.snapshot()) },
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.setLocalModelEnabled(true))
+        advanceUntilIdle()
+
+        assertEquals(false, settingsSource.snapshot().enabledByUser)
+        assertEquals(LocalModelRuntimeState.DISABLED, viewModel.uiState.value.localModelStatus.state)
+        assertEquals(true, viewModel.uiState.value.localModelNotice?.warning)
+    }
+
+    @Test
+    fun localModelDisableFailureForcesRuntimeDisabled() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val settingsSource = MutableLocalModelRuntimeSettingsSource()
+        val settingsStore = RecordingLocalModelSettingsStore(
+            loadResult = LocalModelRuntimeSettingsLoadResult.Loaded(
+                LocalModelRuntimeSettings(enabledByUser = true),
+            ),
+            saveResult = { LocalModelRuntimeSettingsSaveResult.Failed },
+        )
+        val viewModel = createViewModel(
+            gateway,
+            localModelSettingsStore = settingsStore,
+            localModelSettingsSource = settingsSource,
+            localModelControlsAvailable = true,
+            localModelStatusProvider = { statusFor(settingsSource.snapshot()) },
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.setLocalModelEnabled(false))
+        advanceUntilIdle()
+
+        assertEquals(false, settingsSource.snapshot().enabledByUser)
+        assertEquals(LocalModelRuntimeState.DISABLED, viewModel.uiState.value.localModelStatus.state)
+        assertEquals(true, viewModel.uiState.value.localModelNotice?.warning)
+    }
+
+    @Test
+    fun localModelToggleIsRejectedUntilSettingsLoadCompletes() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val settingsStore = RecordingLocalModelSettingsStore(
+            loadResult = LocalModelRuntimeSettingsLoadResult.Loaded(
+                LocalModelRuntimeSettings(enabledByUser = true),
+            ),
+        )
+        val viewModel = createViewModel(
+            gateway,
+            localModelSettingsStore = settingsStore,
+            localModelControlsAvailable = true,
+        )
+
+        assertFalse(viewModel.uiState.value.localModelSettingsLoaded)
+        assertFalse(viewModel.setLocalModelEnabled(false))
+        assertTrue(settingsStore.savedSettings.isEmpty())
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.localModelSettingsLoaded)
+    }
+
+    @Test
+    fun localModelControlsFailClosedWhenRuntimeVariantIsUnavailable() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val viewModel = createViewModel(gateway)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.setLocalModelEnabled(true))
+
+        assertFalse(viewModel.uiState.value.localModelControlsAvailable)
+        assertEquals(LocalModelRuntimeState.DISABLED, viewModel.uiState.value.localModelStatus.state)
+        assertEquals(true, viewModel.uiState.value.localModelNotice?.warning)
+    }
+
+    @Test
     fun batteryStatusRunsAndVerifiesLocallyWithoutHubConfiguration() = runTest(dispatcher) {
         val hubGateway = FakeHubGateway { flowOf() }
         val phoneGateway = DefaultPhoneToolGateway(
@@ -926,6 +1071,13 @@ class GoffyViewModelTest {
         },
         localModelStatus: LocalModelRuntimeStatus =
             (localModelFallback as? LocalModelRuntimeGate)?.status ?: LocalModelRuntimeStatus.disabled(),
+        localModelSettingsStore: LocalModelRuntimeSettingsStore = RecordingLocalModelSettingsStore(),
+        localModelSettingsSource: MutableLocalModelRuntimeSettingsSource =
+            MutableLocalModelRuntimeSettingsSource(),
+        localModelRuntimeProvider: LocalModelRuntimeProvider? = null,
+        localModelControlsAvailable: Boolean = false,
+        localModelObservationExecutionAvailable: Boolean = false,
+        localModelStatusProvider: (() -> LocalModelRuntimeStatus)? = null,
     ): GoffyViewModel {
         val protocolMessageIds = ArrayDeque(
             listOf(
@@ -953,10 +1105,33 @@ class GoffyViewModelTest {
             auditStore = auditStore,
             auditDispatcher = dispatcher,
             credentialDispatcher = dispatcher,
+            localModelSettingsStore = localModelSettingsStore,
+            localModelSettingsSource = localModelSettingsSource,
+            localModelRuntimeProvider = localModelRuntimeProvider,
+            localModelSettingsDispatcher = dispatcher,
+            localModelControlsAvailable = localModelControlsAvailable,
+            localModelObservationExecutionAvailable = localModelObservationExecutionAvailable,
             localModelFallback = localModelFallback,
             localModelStatus = localModelStatus,
+            localModelStatusProvider = localModelStatusProvider
+                ?: localModelRuntimeProvider?.let { provider -> { provider.status } }
+                ?: (localModelFallback as? LocalModelRuntimeGate)?.let { gate -> { gate.status } }
+                ?: { localModelStatus },
         )
     }
+
+    private fun statusFor(settings: LocalModelRuntimeSettings): LocalModelRuntimeStatus =
+        if (settings.enabledByUser) {
+            LocalModelRuntimeStatus(
+                state = LocalModelRuntimeState.READY,
+                summary = "Local model ready for observe-only fallback.",
+                enabledByUser = true,
+                runtimeAvailable = true,
+                modelAvailable = true,
+            )
+        } else {
+            LocalModelRuntimeStatus.disabled()
+        }
 
     private fun storedCredential(): StoredHubCredential = StoredHubCredential.create(
         endpoint = endpoint,
@@ -1231,6 +1406,32 @@ class GoffyViewModelTest {
         ): RotatedHubCredential = error("rotation should not run while pairing is blocked")
 
         override fun close() = Unit
+    }
+
+    private class RecordingLocalModelSettingsStore(
+        private val loadResult: LocalModelRuntimeSettingsLoadResult =
+            LocalModelRuntimeSettingsLoadResult.Loaded(LocalModelRuntimeSettings()),
+        private val saveResult: (LocalModelRuntimeSettings) -> LocalModelRuntimeSettingsSaveResult =
+            { LocalModelRuntimeSettingsSaveResult.Saved(it) },
+    ) : LocalModelRuntimeSettingsStore {
+        val savedSettings = mutableListOf<LocalModelRuntimeSettings>()
+
+        override fun load(): LocalModelRuntimeSettingsLoadResult = loadResult
+
+        override fun save(settings: LocalModelRuntimeSettings): LocalModelRuntimeSettingsSaveResult {
+            savedSettings += settings
+            return saveResult(settings)
+        }
+    }
+
+    private class StatusOnlyLocalModelRuntimeProvider(
+        private val statusProvider: () -> LocalModelRuntimeStatus,
+    ) : LocalModelRuntimeProvider {
+        override val status: LocalModelRuntimeStatus
+            get() = statusProvider()
+
+        override suspend fun observeUnsupportedCommand(command: String): LocalModelIntentObservation =
+            error("local model observation execution is not wired in this test")
     }
 
     private class RecordingCredentialStore(

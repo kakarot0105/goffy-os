@@ -60,7 +60,8 @@
 - [x] Production fail-closed local-model activation gate with at-use rechecks and visible status rail
 - [x] Automated GOFFY LITE release APK size/model-payload guard plus default debug/release LiteRT-LM dependency guard
 - [x] Optional `modelDebug` LiteRT-LM provider compile path behind the async activation gate
-- [ ] User-enabled LiteRT-LM runtime activation without GOFFY LITE APK-size regression
+- [x] Foreground, verified `modelDebug` LiteRT-LM runtime setting control without GOFFY LITE APK-size regression
+- [ ] User-enabled LiteRT-LM unsupported-command observation execution with unload and Moto responsiveness evidence
 
 ## Milestone 3: MCP core - in progress
 

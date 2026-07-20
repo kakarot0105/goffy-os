@@ -13,17 +13,21 @@ import kotlinx.coroutines.withContext
 private const val LOCAL_MODEL_DIRECTORY = "local-models"
 
 class LiteRtLmLocalModelProviderFactory : LocalModelRuntimeProviderFactory {
-    override fun create(context: Context): LocalModelRuntimeProvider {
+    override fun create(
+        context: Context,
+        settingsSource: LocalModelRuntimeSettingsSource,
+    ): LocalModelRuntimeProvider {
         val appContext = context.applicationContext
         val modelRoot = File(appContext.noBackupFilesDir, LOCAL_MODEL_DIRECTORY)
         val modelFile = File(modelRoot, BuildConfig.GOFFY_LOCAL_MODEL_FILE_NAME)
         val policyProvider = {
-            LocalModelRuntimePolicy(enabled = BuildConfig.GOFFY_LOCAL_MODEL_USER_ENABLED_DEFAULT)
+            LocalModelRuntimePolicy(enabled = settingsSource.snapshot().enabledByUser)
         }
         val gate = LocalModelRuntimeGate(
             configProvider = {
+                val settings = settingsSource.snapshot()
                 LocalModelRuntimeGateConfig(
-                    enabledByUser = BuildConfig.GOFFY_LOCAL_MODEL_USER_ENABLED_DEFAULT,
+                    enabledByUser = settings.enabledByUser,
                     developerRuntimeAllowed = BuildConfig.GOFFY_LOCAL_MODEL_DEVELOPER_RUNTIME_ALLOWED,
                     runtimeAvailable = true,
                     modelRoot = modelRoot,
