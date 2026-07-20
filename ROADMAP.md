@@ -35,7 +35,7 @@
 - [x] Strict Kotlin codec with separate `ToolResult` and `VerificationResult`
 - [x] Task-state reducer and progress/result/verification timeline rendering
 - [x] Shared fixture plus Android/Python failure, retry, and cancellation tests
-- [ ] Moto G physical localhost debug verification (`adb reverse` flow)
+- [x] Moto G physical localhost debug verification (`adb reverse` flow)
 
 ## Milestone 2: Phone engine - in progress
 

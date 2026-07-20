@@ -84,6 +84,56 @@ MAC_UI_XML = "\n".join(
 )
 
 
+DEBUG_SETUP_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="SECURE HUB LINK" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,13][205,55]" />',
+        '  <node text="NOT CONFIGURED" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,55][233,97]" />',
+        '  <node text="Hide" class="android.widget.TextView" enabled="true" '
+        'bounds="[582,38][637,73]" />',
+        '  <node text="ws://127.0.0.1:8787/ws/v1" '
+        'class="android.widget.EditText" enabled="true" bounds="[60,301][660,413]" />',
+        '  <node text="" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,427][660,580]" />',
+        '  <node text="Development bearer token" class="android.widget.TextView" '
+        'enabled="true" bounds="[88,735][367,763]" />',
+        '  <node text="" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,776][660,871]" />',
+        "</hierarchy>",
+    ]
+)
+
+
+DEBUG_LINK_BUTTON_UI_XML = DEBUG_SETUP_UI_XML.replace(
+    "</hierarchy>",
+    '  <node text="Debug link" class="android.widget.TextView" enabled="true" '
+    'bounds="[485,890][618,925]" />\n'
+    "</hierarchy>",
+)
+
+
+DEBUG_LINK_CONFIGURED_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="SECURE HUB LINK" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,13][205,55]" />',
+        '  <node text="ws://127.0.0.1:8787/ws/v1" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,55][297,97]" />',
+        '  <node text="" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,175][660,315]" />',
+        '  <node text="Send" class="android.widget.TextView" enabled="true" '
+        'bounds="[520,336][660,420]" />',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,505][260,545]" />',
+        "</hierarchy>",
+    ]
+)
+
+
 def adb_args(command: Sequence[str]) -> tuple[str, ...]:
     if len(command) >= 3 and command[1] == "-s":
         return tuple(command[3:])
@@ -404,6 +454,187 @@ def test_include_mac_requires_mac_visible_markers(
     assert any(
         step.name == "MAC command smoke" and step.status is StepStatus.OK for step in report.steps
     )
+
+
+def test_debug_hub_token_file_must_stay_under_validation_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    apk = tmp_path / smoke.DEBUG_APK_RELATIVE_PATH
+    apk.parent.mkdir(parents=True)
+    apk.write_bytes(b"apk")
+    token_file = tmp_path.parent / f"{tmp_path.name}-outside-token"
+    token_file.write_text("a" * 32, encoding="utf-8")
+    monkeypatch.setattr(smoke, "trusted_adb_path", lambda: adb)
+
+    report = build_report(
+        root=tmp_path,
+        execute=True,
+        confirm_device_mutation=True,
+        include_mac=True,
+        debug_hub_token_file=token_file,
+        trusted_root=tmp_path,
+    )
+
+    assert not report.ok
+    assert any(
+        step.detail == "debug Hub token file must live under .goffy-validation"
+        for step in report.steps
+    )
+
+
+def test_debug_hub_token_file_invalid_utf8_returns_bounded_failure(tmp_path: Path) -> None:
+    token_file = tmp_path / ".goffy-validation" / "runtime" / "dev-hub-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_bytes(b"\xff\xfe\xfd")
+
+    token, failure = smoke.read_debug_hub_token(tmp_path, token_file)
+
+    assert token == ""
+    assert failure is not None
+    assert failure.status is StepStatus.FAIL
+    assert failure.detail == "debug Hub token file could not be read"
+
+
+def test_debug_hub_link_rechecks_after_second_bounded_scroll(tmp_path: Path) -> None:
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    token = "abcdef0123456789abcdef0123456789"  # noqa: S105
+    token_file = tmp_path / ".goffy-validation" / "runtime" / "dev-hub-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text(token, encoding="utf-8")
+    output_directory = tmp_path / "artifacts"
+    output_directory.mkdir()
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    ui_outputs = iter(
+        (
+            DEBUG_SETUP_UI_XML,
+            DEBUG_SETUP_UI_XML,
+            DEBUG_SETUP_UI_XML,
+            DEBUG_LINK_BUTTON_UI_XML,
+            DEBUG_LINK_CONFIGURED_UI_XML,
+        )
+    )
+    seen: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        seen.append(tuple(command))
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            return CommandResult(0, next(ui_outputs), "")
+        return CommandResult(0, "ok", "")
+
+    result = smoke.configure_debug_hub_link(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        token_file=token_file,
+        output_directory=output_directory,
+    )
+
+    assert result.status is StepStatus.OK
+    swipes = [
+        command
+        for command in seen
+        if adb_args(command) == ("shell", "input", "swipe", "360", "1500", "360", "900", "500")
+    ]
+    assert len(swipes) == 2
+
+
+def test_include_mac_can_configure_debug_hub_link_from_local_token_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    apk = tmp_path / smoke.DEBUG_APK_RELATIVE_PATH
+    apk.parent.mkdir(parents=True)
+    apk.write_bytes(b"apk")
+    token = "abcdef0123456789abcdef0123456789"  # noqa: S105
+    token_file = tmp_path / ".goffy-validation" / "runtime" / "dev-hub-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text(token, encoding="utf-8")
+    monkeypatch.setattr(smoke, "trusted_adb_path", lambda: adb)
+    monkeypatch.setattr(
+        smoke,
+        "capture_screenshot",
+        lambda **kwargs: DeviceSmokeStep(
+            name="Capture screenshot",
+            status=StepStatus.OK,
+            artifact="final.png",
+        ),
+    )
+    setup_outputs = iter(
+        (
+            DEBUG_SETUP_UI_XML,
+            DEBUG_LINK_BUTTON_UI_XML,
+            DEBUG_LINK_CONFIGURED_UI_XML,
+            DEBUG_LINK_CONFIGURED_UI_XML,
+            BASE_UI_XML,
+        )
+    )
+    seen: list[tuple[str, ...]] = []
+    submitted_command: str | None = None
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        nonlocal submitted_command
+        seen.append(tuple(command))
+        target = target_runner(command)
+        if target is not None:
+            return target
+        if adb_args(command) == ("shell", "input", "text", "check%smy%sbattery%slevel"):
+            submitted_command = "phone"
+            return CommandResult(0, "ok", "")
+        if adb_args(command) == ("shell", "input", "text", "check%smy%sMac%sstatus"):
+            submitted_command = "mac"
+            return CommandResult(0, "ok", "")
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            try:
+                return CommandResult(0, next(setup_outputs), "")
+            except StopIteration:
+                if submitted_command == "mac":
+                    return CommandResult(0, MAC_UI_XML, "")
+                if submitted_command == "phone":
+                    return CommandResult(0, PHONE_UI_XML, "")
+                return CommandResult(0, BASE_UI_XML, "")
+        if adb_args(command) == ("shell", "pidof", smoke.PACKAGE_NAME):
+            return CommandResult(1, "", "")
+        return CommandResult(0, "ok", "")
+
+    report = build_report(
+        root=tmp_path,
+        execute=True,
+        confirm_device_mutation=True,
+        include_mac=True,
+        debug_hub_token_file=token_file,
+        runner=runner,
+        trusted_root=tmp_path,
+        output_directory=tmp_path / "artifacts",
+    )
+
+    assert report.ok
+    assert any(
+        step.name == "Configure debug Hub link" and step.status is StepStatus.OK
+        for step in report.steps
+    )
+    assert any(
+        step.name == "MAC command smoke" and step.status is StepStatus.OK for step in report.steps
+    )
+    assert (
+        str(adb),
+        "-s",
+        SERIAL,
+        "shell",
+        "input",
+        "text",
+        token,
+    ) in seen
+    assert (tmp_path / "artifacts" / "debug-hub-link.xml").is_file()
+    assert token not in (tmp_path / "artifacts" / "debug-hub-link.xml").read_text(encoding="utf-8")
+    rendered = render_text(report)
+    payload = render_json(report)
+    assert token not in rendered
+    assert token not in payload
 
 
 def test_command_window_requires_markers_after_matching_command() -> None:

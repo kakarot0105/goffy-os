@@ -253,10 +253,25 @@ card if needed, types only `check my battery level`, verifies that a fresh PHONE
 task card appeared with expected markers, captures a screenshot, and saves
 bounded GOFFY process logcat under `.goffy-validation/device-smoke/`. Add
 `--include-mac` only when the Hub is already running and the phone's saved Hub
-link is valid; that optional path types only `check my Mac status` and verifies a
-fresh visible `mac.system_info` task card. The runner does not clear app data,
-tap `Forget link`, start the Hub, accept custom execute commands, or broaden
-network access beyond USB loopback. See
+link is valid, or pass a short-lived local debug token file under
+`.goffy-validation`:
+
+```bash
+.venv/bin/python scripts/run_moto_g_device_smoke.py \
+  --execute \
+  --confirm-device-mutation \
+  --include-mac \
+  --debug-hub-token-file .goffy-validation/runtime/dev-hub-token
+```
+
+That optional path configures only the fixed localhost debug link when a token
+file is provided, types only `check my Mac status`, and verifies a fresh visible
+`mac.system_info` task card. The token file contains the real raw bearer token;
+for ADB-safe entry it must be one line, 24..120 characters, using only
+`A-Z`, `a-z`, `0-9`, `.`, `_`, or `-`. Rendered reports and saved debug-link
+artifacts redact the token. The runner does not clear app data, tap
+`Forget link`, start the Hub, accept custom execute commands, print the debug
+token, or broaden network access beyond USB loopback. See
 [ADR 0024](../adr/0024-fixed-adb-device-smoke.md) for the reuse-first decision.
 
 After the manual phone checks pass, record redacted evidence:
@@ -353,8 +368,11 @@ device pairing exist.
 The Moto G PHONE smoke is verified for debug APK install, GOFFY home-shell
 launch, setup-card collapse, fixed `check my battery level` entry, fresh
 `phone.battery.status` task-card verification, screenshot capture, and bounded
-GOFFY process logcat capture. The MAC localhost smoke is still incomplete, so do
-not treat Milestone 1 as hardware verified yet.
+GOFFY process logcat capture. The Moto G MAC localhost smoke is also verified
+over USB `adb reverse` with a raw ADB-safe debug token file whose reports and
+debug-link artifacts are redacted, fixed `check my Mac status` entry, fresh
+`mac.system_info` task-card verification, screenshot capture, and bounded GOFFY
+process logcat capture.
 
 For the pairing slice, verify that restart restores `PAIRED`, an expired or
 altered challenge saves nothing, and `Forget link` first shows an explicit

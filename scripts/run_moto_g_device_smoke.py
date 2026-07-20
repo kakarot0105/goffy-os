@@ -35,13 +35,16 @@ MAIN_ACTIVITY = f"{PACKAGE_NAME}/.MainActivity"
 HUB_REVERSE_ENDPOINT = "tcp:8787"
 DEFAULT_PHONE_COMMAND = "check my battery level"
 DEFAULT_MAC_COMMAND = "check my Mac status"
+DEBUG_HUB_ENDPOINT = "ws://127.0.0.1:8787/ws/v1"
 REMOTE_UI_XML = "/sdcard/goffy-device-smoke-window.xml"
 MAX_INPUT_TEXT_LENGTH = 120
 INPUT_TEXT_PATTERN = re.compile(r"^[A-Za-z0-9 .,_:-]{1,120}$")
+DEBUG_HUB_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._-]{24,120}$")
 BOUNDS_PATTERN = re.compile(r"\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]")
 MAX_LOGCAT_LINES = 200
 MOTO_G_MODEL_PATTERN = re.compile(r"\bmoto\s*g\b|moto_g", re.IGNORECASE)
 DEVICE_SERIAL_PLACEHOLDER = "<device-serial>"
+DEBUG_HUB_TOKEN_PLACEHOLDER = "<redacted-debug-hub-token>"  # noqa: S105
 
 
 class StepStatus(StrEnum):
@@ -152,6 +155,7 @@ def planned_steps(
     include_mac: bool,
     phone_command: str,
     mac_command: str,
+    debug_hub_token_file: Path | None,
 ) -> tuple[DeviceSmokeStep, ...]:
     adb_path = adb or Path("<adb>")
     apk = root / DEBUG_APK_RELATIVE_PATH
@@ -202,6 +206,18 @@ def planned_steps(
         ),
     ]
     if include_mac:
+        if debug_hub_token_file is not None:
+            steps.append(
+                DeviceSmokeStep(
+                    name="Configure debug Hub link",
+                    status=StepStatus.PLANNED,
+                    mutates_device=True,
+                    detail=(
+                        "would type a redacted token from .goffy-validation and tap "
+                        "`Debug link` for the fixed localhost Hub endpoint"
+                    ),
+                )
+            )
         steps.append(
             DeviceSmokeStep(
                 name="MAC command smoke",
@@ -251,6 +267,7 @@ def build_report(
     output_directory: Path | None = None,
     trusted_root: Path = ROOT,
     device_serial: str | None = None,
+    debug_hub_token_file: Path | None = None,
 ) -> DeviceSmokeReport:
     resolved_root = root.resolve()
     adb = trusted_adb_path()
@@ -267,6 +284,7 @@ def build_report(
                 include_mac=include_mac,
                 phone_command=phone_command,
                 mac_command=mac_command,
+                debug_hub_token_file=debug_hub_token_file,
             ),
             repo_root=resolved_root,
         )
@@ -279,6 +297,7 @@ def build_report(
         phone_command=phone_command,
         mac_command=mac_command,
         trusted_root=trusted_root,
+        debug_hub_token_file=debug_hub_token_file,
     )
     if blockers:
         return DeviceSmokeReport(
@@ -349,6 +368,25 @@ def build_report(
         )
 
     steps.extend(run_launch_steps(resolved_root, adb, target, runner, timeout_seconds))
+    if include_mac and debug_hub_token_file is not None:
+        configure_debug_hub = configure_debug_hub_link(
+            adb=adb,
+            target=target,
+            root=resolved_root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            token_file=debug_hub_token_file,
+            output_directory=artifacts,
+        )
+        steps.append(configure_debug_hub)
+        if configure_debug_hub.status is StepStatus.FAIL:
+            return executed_report(
+                root=resolved_root,
+                output_directory=artifacts,
+                phone_command=phone_command,
+                mac_command=mac_command if include_mac else None,
+                steps=steps,
+            )
     collapse_setup = collapse_setup_card_if_expanded(
         adb=adb,
         target=target,
@@ -461,6 +499,7 @@ def execution_blockers(
     phone_command: str,
     mac_command: str,
     trusted_root: Path,
+    debug_hub_token_file: Path | None,
 ) -> tuple[str, ...]:
     blockers: list[str] = []
     if not confirm_device_mutation:
@@ -473,12 +512,28 @@ def execution_blockers(
         blockers.append(
             "repo-root/mutating mode only supports the checked-out GOFFY repository root"
         )
+    if debug_hub_token_file is not None:
+        if not include_mac:
+            blockers.append("debug Hub token file is only supported with --include-mac")
+        token_file = resolve_debug_hub_token_file(root, debug_hub_token_file)
+        validation_root = (root / ".goffy-validation").resolve()
+        if not token_file.is_relative_to(validation_root):
+            blockers.append("debug Hub token file must live under .goffy-validation")
+        elif not token_file.is_file():
+            blockers.append("debug Hub token file missing")
+        elif token_file.stat().st_size > 256:
+            blockers.append("debug Hub token file is too large for bounded ADB entry")
     if adb is None:
         blockers.append("device/trusted SDK adb executable")
     apk = root / DEBUG_APK_RELATIVE_PATH
     if not apk.is_file():
         blockers.append("android/debug APK missing")
     return tuple(blockers)
+
+
+def resolve_debug_hub_token_file(root: Path, token_file: Path) -> Path:
+    candidate = token_file if token_file.is_absolute() else root / token_file
+    return candidate.expanduser().resolve()
 
 
 def resolve_device_target(
@@ -677,6 +732,249 @@ def collapse_setup_card_if_expanded(
     if step.status is StepStatus.OK:
         time.sleep(1)
     return step
+
+
+def configure_debug_hub_link(
+    *,
+    adb: Path,
+    target: DeviceTarget,
+    root: Path,
+    runner: CommandRunner,
+    timeout_seconds: int,
+    token_file: Path,
+    output_directory: Path,
+) -> DeviceSmokeStep:
+    token, token_error = read_debug_hub_token(root, token_file)
+    if token_error is not None:
+        return token_error
+
+    ui_text = latest_ui_text(
+        adb=adb,
+        target=target,
+        root=root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+    )
+    if DEBUG_HUB_ENDPOINT in ui_text and "NOT CONFIGURED" not in ui_text:
+        write_debug_hub_link_artifact(output_directory, ui_text, token)
+        return DeviceSmokeStep(
+            name="Configure debug Hub link",
+            status=StepStatus.OK,
+            mutates_device=True,
+            detail="fixed localhost debug Hub link was already configured",
+            artifact="debug-hub-link.xml",
+        )
+
+    if "Development bearer token" not in ui_text:
+        edit = find_node(ui_text, text="Edit")
+        if edit is not None:
+            tap_edit = tap_center(
+                adb,
+                target,
+                root,
+                runner,
+                timeout_seconds,
+                edit,
+                step_name="Configure debug Hub link: Open setup",
+            )
+            if tap_edit.status is not StepStatus.OK:
+                return tap_edit
+            time.sleep(1)
+            ui_text = latest_ui_text(
+                adb=adb,
+                target=target,
+                root=root,
+                runner=runner,
+                timeout_seconds=timeout_seconds,
+            )
+
+    if DEBUG_HUB_ENDPOINT not in ui_text or "Development bearer token" not in ui_text:
+        write_debug_hub_link_artifact(output_directory, ui_text, token)
+        return DeviceSmokeStep(
+            name="Configure debug Hub link",
+            status=StepStatus.FAIL,
+            mutates_device=True,
+            detail="debug Hub setup fields were not visible",
+            remediation="Launch GOFFY debug APK and confirm the Hub setup card is available.",
+            artifact="debug-hub-link.xml",
+        )
+
+    token_field = find_debug_token_field(ui_text)
+    if token_field is None:
+        write_debug_hub_link_artifact(output_directory, ui_text, token)
+        return DeviceSmokeStep(
+            name="Configure debug Hub link",
+            status=StepStatus.FAIL,
+            mutates_device=True,
+            detail="development bearer token input field not found",
+            remediation="Check the saved UI XML for Compose hierarchy changes.",
+            artifact="debug-hub-link.xml",
+        )
+
+    tap_token = tap_center(
+        adb,
+        target,
+        root,
+        runner,
+        timeout_seconds,
+        token_field,
+        step_name="Configure debug Hub link: Focus token input",
+    )
+    if tap_token.status is not StepStatus.OK:
+        return tap_token
+
+    typed = execute_step(
+        name="Configure debug Hub link: Type token",
+        command=adb_command(adb, target, "shell", "input", "text", token),
+        root=root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+        mutates_device=True,
+        display_command=display_adb_command(
+            adb,
+            "shell",
+            "input",
+            "text",
+            DEBUG_HUB_TOKEN_PLACEHOLDER,
+        ),
+    )
+    if typed.status is not StepStatus.OK:
+        return typed
+
+    hidden_keyboard = execute_step(
+        name="Configure debug Hub link: Hide keyboard",
+        command=adb_command(adb, target, "shell", "input", "keyevent", "BACK"),
+        root=root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+        mutates_device=True,
+        display_command=display_adb_command(adb, "shell", "input", "keyevent", "BACK"),
+    )
+    if hidden_keyboard.status is not StepStatus.OK:
+        return hidden_keyboard
+    time.sleep(1)
+
+    debug_link = None
+    for attempt in range(3):
+        ui_text = latest_ui_text(
+            adb=adb,
+            target=target,
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+        )
+        debug_link = find_node(ui_text, text="Debug link")
+        if debug_link is not None:
+            break
+        if attempt == 2:
+            break
+        scroll = execute_step(
+            name="Configure debug Hub link: Reveal Debug link",
+            command=adb_command(
+                adb, target, "shell", "input", "swipe", "360", "1500", "360", "900", "500"
+            ),
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            mutates_device=True,
+            display_command=display_adb_command(
+                adb,
+                "shell",
+                "input",
+                "swipe",
+                "360",
+                "1500",
+                "360",
+                "900",
+                "500",
+            ),
+        )
+        if scroll.status is not StepStatus.OK:
+            return scroll
+        time.sleep(1)
+
+    if debug_link is None:
+        write_debug_hub_link_artifact(output_directory, ui_text, token)
+        return DeviceSmokeStep(
+            name="Configure debug Hub link",
+            status=StepStatus.FAIL,
+            mutates_device=True,
+            detail="Debug link button was not visible after bounded scroll",
+            remediation="Check the saved UI XML for setup-card layout changes.",
+            artifact="debug-hub-link.xml",
+        )
+
+    tapped_debug = tap_center(
+        adb,
+        target,
+        root,
+        runner,
+        timeout_seconds,
+        debug_link,
+        step_name="Configure debug Hub link: Tap Debug link",
+    )
+    if tapped_debug.status is not StepStatus.OK:
+        return tapped_debug
+    time.sleep(1)
+
+    ui_text = latest_ui_text(
+        adb=adb,
+        target=target,
+        root=root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+    )
+    write_debug_hub_link_artifact(output_directory, ui_text, token)
+    if DEBUG_HUB_ENDPOINT in ui_text and "NOT CONFIGURED" not in ui_text:
+        return DeviceSmokeStep(
+            name="Configure debug Hub link",
+            status=StepStatus.OK,
+            mutates_device=True,
+            detail="configured fixed localhost debug Hub link with a redacted token",
+            artifact="debug-hub-link.xml",
+        )
+
+    return DeviceSmokeStep(
+        name="Configure debug Hub link",
+        status=StepStatus.FAIL,
+        mutates_device=True,
+        detail="debug Hub link did not become configured after tapping Debug link",
+        remediation="Verify the token matches the running Hub and inspect the saved UI XML.",
+        artifact="debug-hub-link.xml",
+    )
+
+
+def write_debug_hub_link_artifact(output_directory: Path, ui_text: str, token: str) -> None:
+    safe_ui_text = ui_text.replace(token, DEBUG_HUB_TOKEN_PLACEHOLDER)
+    (output_directory / "debug-hub-link.xml").write_text(safe_ui_text, encoding="utf-8")
+
+
+def read_debug_hub_token(root: Path, token_file: Path) -> tuple[str, DeviceSmokeStep | None]:
+    resolved = resolve_debug_hub_token_file(root, token_file)
+    try:
+        token = resolved.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return "", DeviceSmokeStep(
+            name="Configure debug Hub link",
+            status=StepStatus.FAIL,
+            mutates_device=True,
+            detail="debug Hub token file could not be read",
+            remediation="Create the token file under .goffy-validation and retry.",
+        )
+    if DEBUG_HUB_TOKEN_PATTERN.fullmatch(token) is None:
+        return "", DeviceSmokeStep(
+            name="Configure debug Hub link",
+            status=StepStatus.FAIL,
+            mutates_device=True,
+            detail=(
+                "debug Hub token must be 24..120 chars using only A-Z, a-z, 0-9, "
+                "dot, underscore, or dash"
+            ),
+            remediation=(
+                "Use a short-lived ADB-safe development token; do not use a production secret."
+            ),
+        )
+    return token, None
 
 
 def submit_and_verify_command(
@@ -909,6 +1207,19 @@ def find_command_field(xml_text: str) -> UiNode | None:
         if node.class_name == "android.widget.EditText" and node.enabled:
             return node
     return None
+
+
+def find_debug_token_field(xml_text: str) -> UiNode | None:
+    if "Development bearer token" not in xml_text:
+        return None
+    fields = [
+        node
+        for node in nodes_from_xml(xml_text)
+        if node.class_name == "android.widget.EditText" and node.enabled
+    ]
+    if len(fields) < 2:
+        return None
+    return max(fields, key=lambda node: node.bounds[1])
 
 
 def find_node(xml_text: str, *, text: str) -> UiNode | None:
@@ -1194,6 +1505,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Required with --execute because the flow mutates connected phone state.",
     )
     parser.add_argument("--include-mac", action="store_true", help="Also submit the MAC command.")
+    parser.add_argument(
+        "--debug-hub-token-file",
+        type=Path,
+        help=(
+            "Optional short-lived token file under .goffy-validation used to configure "
+            "the fixed localhost debug Hub link before --include-mac."
+        ),
+    )
     parser.add_argument("--phone-command", default=DEFAULT_PHONE_COMMAND)
     parser.add_argument("--mac-command", default=DEFAULT_MAC_COMMAND)
     parser.add_argument(
@@ -1217,6 +1536,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         timeout_seconds=args.timeout_seconds,
         wait_timeout_seconds=args.wait_timeout_seconds,
         device_serial=args.device_serial,
+        debug_hub_token_file=args.debug_hub_token_file,
     )
     print(render_json(report) if args.json else render_text(report))
     return 0 if report.ok else 1

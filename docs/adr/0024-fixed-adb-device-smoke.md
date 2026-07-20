@@ -30,6 +30,12 @@ automation service, and no broad command input surface.
   `-s <device-serial>`.
 - Restrict mutating mode to the fixed smoke commands: `check my battery level`
   and optional `check my Mac status`.
+- When `--include-mac` receives `--debug-hub-token-file`, accept only a
+  short-lived ADB-safe raw token file under `.goffy-validation`; the token must
+  be one line, 24..120 characters, using only `A-Z`, `a-z`, `0-9`, `.`, `_`, or
+  `-`. Type it into the foreground debug-only Hub setup field, and verify the
+  fixed `ws://127.0.0.1:8787/ws/v1` endpoint becomes configured before
+  submitting the MAC command.
 - Use `adb shell uiautomator dump` only to locate the command field, tap the
   fixed UI elements, and verify markers that appear after the matching command
   text.
@@ -38,13 +44,14 @@ automation service, and no broad command input surface.
 - Save bounded artifacts under `.goffy-validation/device-smoke/`: UI XML,
   screenshot, and at most the last 200 GOFFY process logcat lines.
 - Do not clear app data, forget a saved Hub link, start the Hub, or broaden Hub
-  network exposure.
+  network exposure. Do not print or save the debug token in rendered reports.
 
 ## Consequences
 
 The script can verify the first Moto G PHONE smoke path and, when the Hub link is
-already ready, the MAC smoke path without importing or installing an automation
-framework. The command surface remains narrow and reviewable.
+already ready or a redacted local debug token file is provided, the MAC smoke
+path without importing or installing an automation framework. The command
+surface remains narrow and reviewable.
 
 This is less expressive than Appium or a full UIAutomator instrumentation test.
 It may need app-specific maintenance if the GOFFY Compose hierarchy changes. A

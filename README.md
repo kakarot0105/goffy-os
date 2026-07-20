@@ -17,9 +17,10 @@ tools are the capability boundary.
 > a foreground-only QR pairing panel, reject bundles without the fingerprint, and
 > restore the pinned identity from encrypted paired credentials. The Hub also
 > keeps a bounded, hash-chained paired-mode operator audit for pairing,
-> WebSocket, and MCP control-plane events. Physical Moto G PHONE smoke now
-> verifies the home shell and `phone.battery.status`; MAC localhost smoke,
-> automatic rotation scheduling, Android retrieval for Hub audit,
+> WebSocket, and MCP control-plane events. Physical Moto G PHONE and MAC
+> localhost smoke now verify the home shell, `phone.battery.status`, and
+> `mac.system_info` over USB `adb reverse`; automatic rotation scheduling,
+> Android retrieval for Hub audit,
 > certificate-backed Hub identity proof, and trusted LAN operation remain open.
 
 ## Current vertical slice
@@ -154,7 +155,7 @@ Run the preflight first. It checks JDK 17+, Android SDK Platform 36, Build Tools
 36.0.0, `adb`, and the pinned Gradle wrapper before Gradle starts.
 
 See [Android setup](docs/setup/android.md) for the USB localhost debug flow.
-The physical Moto G PHONE smoke is verified; the MAC localhost smoke is still open.
+The physical Moto G PHONE and MAC localhost smoke paths are verified.
 
 To exercise the local mutation path, enter `Create a note saying Buy milk`. GOFFY
 must show an approval card and perform no write until `Approve once` is tapped.
@@ -334,10 +335,25 @@ card if needed, types only the fixed `check my battery level` smoke command,
 verifies that a fresh PHONE task card appeared with expected markers, captures a
 screenshot, and saves bounded GOFFY process logcat under
 `.goffy-validation/device-smoke/`. Add `--include-mac` only when the Hub is
-already running and the phone's saved Hub link is valid; the MAC path types only
-`check my Mac status` and verifies a fresh visible `mac.system_info` task card.
-The script does not clear app data, tap `Forget link`, start the Hub, accept
-custom execute commands, or broaden network access beyond USB loopback.
+already running and the phone's saved Hub link is valid, or pass a short-lived
+local debug token file under `.goffy-validation`:
+
+```bash
+.venv/bin/python scripts/run_moto_g_device_smoke.py \
+  --execute \
+  --confirm-device-mutation \
+  --include-mac \
+  --debug-hub-token-file .goffy-validation/runtime/dev-hub-token
+```
+
+The MAC path configures only the fixed localhost debug link when a token file is
+provided, types only `check my Mac status`, and verifies a fresh visible
+`mac.system_info` task card. The token file contains the real raw bearer token;
+for ADB-safe entry it must be one line, 24..120 characters, using only
+`A-Z`, `a-z`, `0-9`, `.`, `_`, or `-`. Rendered reports and saved debug-link
+artifacts redact the token. The script does not clear app data, tap
+`Forget link`, start the Hub, accept custom execute commands, print the debug
+token, or broaden network access beyond USB loopback.
 
 After the manual phone pass, record redacted evidence:
 
