@@ -74,7 +74,35 @@ Sources:
 
 ## Next Benchmark Gate
 
-Before adding a runtime dependency or model asset:
+Before adding a runtime dependency or model asset, run the dependency
+compatibility probe:
+
+```bash
+.venv/bin/python scripts/verify_litertlm_android_dependency.py --version 0.14.0 --mode resolve
+```
+
+For a stronger gate before app integration, run:
+
+```bash
+.venv/bin/python scripts/verify_litertlm_android_dependency.py --version 0.14.0 --mode build
+```
+
+The probe checks Google Maven metadata, rejects dynamic Gradle versions such as
+`latest.release`, uses an isolated Android project, and reports blocked or
+failing toolchain states without changing the GOFFY app.
+
+Latest compatibility evidence, checked on 2026-07-20:
+
+- `com.google.ai.edge.litertlm:litertlm-android:0.14.0`
+- JDK `17.0.19`
+- Gradle `9.4.1`
+- `--mode resolve`: passed
+- `--mode build`: passed in an isolated Android debug APK probe
+
+This proves dependency/toolchain compatibility only. It does not prove model
+latency, memory pressure, battery impact, or UI responsiveness on the Moto G.
+
+After dependency compatibility is proven:
 
 1. Create a standalone benchmark build variant or isolated sample path.
 2. Run one text-only candidate at a time.
