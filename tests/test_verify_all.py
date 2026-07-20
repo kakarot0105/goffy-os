@@ -120,6 +120,7 @@ def test_verifier_runs_android_gradle_when_preflight_passes(tmp_path: Path) -> N
     assert report.ok
     assert seen[-2] == android_gradle_command(tmp_path)
     assert ":app:lintDebug" in seen[-2]
+    assert ":app:assembleDebugAndroidTest" in seen[-2]
     assert ":app:assembleRelease" in seen[-2]
     assert seen[-1] == merged_manifest_security_command("python")
 

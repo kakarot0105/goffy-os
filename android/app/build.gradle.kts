@@ -54,6 +54,7 @@ android {
 dependencies {
     val cameraxVersion = "1.6.1"
     val composeBom = platform("androidx.compose:compose-bom:2026.06.00")
+    val litertLmVersion = "0.14.0"
 
     implementation(composeBom)
     implementation("androidx.activity:activity-compose:1.13.0")
@@ -78,4 +79,8 @@ dependencies {
     testImplementation("com.squareup.okhttp3:mockwebserver3:5.4.0")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
     testImplementation("org.robolectric:robolectric:4.16")
+
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("com.google.ai.edge.litertlm:litertlm-android:$litertLmVersion")
+    androidTestImplementation("junit:junit:4.13.2")
 }

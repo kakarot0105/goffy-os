@@ -104,7 +104,24 @@ latency, memory pressure, battery impact, or UI responsiveness on the Moto G.
 
 After dependency compatibility is proven:
 
-1. Create a standalone benchmark build variant or isolated sample path.
+1. Run the benchmark-only Android instrumentation harness:
+
+   ```bash
+   .venv/bin/python scripts/run_moto_g_litertlm_benchmark.py \
+     --execute \
+     --confirm-device-mutation \
+     --model /path/to/tiny-model.litertlm
+   ```
+
+   To use a model that is already on the phone, pass an app-owned path such as:
+
+   ```bash
+   .venv/bin/python scripts/run_moto_g_litertlm_benchmark.py \
+     --execute \
+     --confirm-device-mutation \
+     --device-model-path /sdcard/Android/data/dev.goffy.os/files/models/tiny-model.litertlm
+   ```
+
 2. Run one text-only candidate at a time.
 3. Record device model, Android version, battery state, thermal state, model
    file size, backend, peak memory, first-token latency, decode tokens per
@@ -113,3 +130,13 @@ After dependency compatibility is proven:
    thermal throttling, or sustained battery drain.
 5. Only then wire a candidate behind `LocalModelIntentFallback`, still returning
    observations rather than executable plans.
+
+The current harness is intentionally `androidTest`-only. It installs a debug test
+APK, requires explicit `--confirm-device-mutation`, accepts only `.litertlm`
+files under GOFFY app-owned model directories, uses the CPU backend first, and
+stores benchmark JSON under `.goffy-validation/litertlm-benchmark/`.
+The JSON records initialization latency, first-chunk latency, total generation
+time, output chunk count, character-rate, battery and thermal snapshots, and
+managed/native memory snapshots. True token-per-second reporting, peak memory,
+UI responsiveness scoring, and battery-drain acceptance still belong to the real
+Moto runtime benchmark item.

@@ -98,6 +98,7 @@ def android_gradle_command(root: Path) -> tuple[str, ...]:
         "android",
         ":app:lintDebug",
         ":app:testDebugUnitTest",
+        ":app:assembleDebugAndroidTest",
         ":app:assembleDebug",
         ":app:assembleRelease",
         "--no-daemon",

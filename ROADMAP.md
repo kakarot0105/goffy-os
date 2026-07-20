@@ -52,6 +52,7 @@
 - [x] Physical Moto G battery-status verification
 - [x] Disabled-by-default local-model intent fallback safety boundary
 - [x] LiteRT-LM Android dependency compatibility probe before runtime wiring
+- [x] Benchmark-only Moto G LiteRT-LM instrumentation harness
 - [ ] Moto G local-model runtime benchmark for one tiny text model
 
 ## Milestone 3: MCP core - in progress
