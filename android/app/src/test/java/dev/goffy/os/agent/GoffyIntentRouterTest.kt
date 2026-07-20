@@ -1,5 +1,8 @@
 package dev.goffy.os.agent
 
+import dev.goffy.os.localmodel.LocalModelIntentCandidate
+import dev.goffy.os.localmodel.LocalModelIntentFallback
+import dev.goffy.os.localmodel.LocalModelIntentObservation
 import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
@@ -30,6 +33,20 @@ class GoffyIntentRouterTest {
     @Test
     fun acceptsCheckVariantWithoutModelReasoning() {
         assertTrue(GoffyIntentRouter.route("check my mac status?") is RoutingDecision.Routed)
+    }
+
+    @Test
+    fun deterministicRoutesDoNotConsultLocalModelFallback() {
+        val throwingFallback = LocalModelIntentFallback {
+            error("deterministic routes must not consult the local model")
+        }
+
+        assertTrue(
+            GoffyIntentRouter.route(
+                "show my battery status",
+                localModelFallback = throwingFallback,
+            ) is RoutingDecision.Routed,
+        )
     }
 
     @Test
@@ -72,6 +89,49 @@ class GoffyIntentRouterTest {
     fun rejectsBlankAndUnrelatedCommandsLocally() {
         assertTrue(GoffyIntentRouter.route("   ") is RoutingDecision.Unsupported)
         assertTrue(GoffyIntentRouter.route("open Terminal") is RoutingDecision.Unsupported)
+    }
+
+    @Test
+    fun unsafeCommandsNeverReachLocalModelFallback() {
+        val throwingFallback = LocalModelIntentFallback {
+            error("unsafe commands must not become model prompts")
+        }
+
+        val rejected = listOf(
+            "   ",
+            "open settings\u202E",
+            "open settings\u2066",
+            "open\u200Bsettings",
+            "explain ${"x".repeat(600)}",
+        )
+
+        rejected.forEach { command ->
+            val decision = GoffyIntentRouter.route(command, localModelFallback = throwingFallback)
+            assertTrue(decision is RoutingDecision.Unsupported)
+            val observation = (decision as RoutingDecision.Unsupported).localModelObservation
+            assertTrue(observation is LocalModelIntentObservation.Rejected)
+        }
+    }
+
+    @Test
+    fun localModelCandidateRemainsNonExecutable() {
+        val fallback = LocalModelIntentFallback { command ->
+            LocalModelIntentObservation.Candidate(
+                LocalModelIntentCandidate(
+                    intentLabel = "open_settings",
+                    confidence = 0.91f,
+                    normalizedCommand = command,
+                    rationale = "The user appears to want settings.",
+                ),
+            )
+        }
+
+        val decision = GoffyIntentRouter.route("open settings", localModelFallback = fallback)
+
+        assertTrue(decision is RoutingDecision.Unsupported)
+        val unsupported = decision as RoutingDecision.Unsupported
+        assertEquals("open settings", unsupported.normalizedCommand)
+        assertTrue(unsupported.localModelObservation is LocalModelIntentObservation.Candidate)
     }
 
     @Test

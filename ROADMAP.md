@@ -50,6 +50,8 @@
 - [x] API 26 and API 33+ system Clock intent tests
 - [x] Approval-gated, callback-verified `phone.flashlight.set`
 - [x] Physical Moto G battery-status verification
+- [x] Disabled-by-default local-model intent fallback safety boundary
+- [ ] Moto G local-model runtime benchmark for one tiny text model
 
 ## Milestone 3: MCP core - in progress
 

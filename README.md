@@ -20,7 +20,7 @@ tools are the capability boundary.
 > WebSocket, and MCP control-plane events. Physical Moto G PHONE and MAC
 > localhost smoke now verify the home shell, `phone.battery.status`, and
 > `mac.system_info` over USB `adb reverse`; automatic rotation scheduling,
-> Android retrieval for Hub audit,
+> Android retrieval for Hub audit, real local-model runtime benchmarking,
 > certificate-backed Hub identity proof, and trusted LAN operation remain open.
 
 ## Current vertical slice
@@ -35,6 +35,8 @@ tools are the capability boundary.
 - Approval-gated `CONFIRM phone.flashlight.set` with CameraManager callback verification
 - Immutable, bounded PHONE capability registry with MCP-shaped closed schemas
 - Exact-task, exact-arguments, expiring, single-use phone approval grants
+- Disabled-by-default local-model intent fallback boundary for unsupported
+  commands, with deterministic routes still authoritative
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
@@ -73,6 +75,8 @@ tools are the capability boundary.
 - Unit, integration, type, lint, and security checks
 
 The previous browser concept is preserved in [`prototype/web-shell`](prototype/web-shell).
+The local phone model feasibility note is in
+[`docs/architecture/local-model.md`](docs/architecture/local-model.md).
 
 ## Repository map
 

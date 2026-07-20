@@ -1,6 +1,10 @@
 package dev.goffy.os.agent
 
 import dev.goffy.os.capability.PhoneCapabilityRegistry
+import dev.goffy.os.localmodel.DisabledLocalModelIntentFallback
+import dev.goffy.os.localmodel.LocalModelIntentFallback
+import dev.goffy.os.localmodel.LocalModelIntentObservation
+import dev.goffy.os.localmodel.isSafeLocalModelPrompt
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.MAX_TIMER_SECONDS
@@ -29,7 +33,10 @@ data class GoffyExecutionPlan(
 sealed interface RoutingDecision {
     data class Routed(val plan: GoffyExecutionPlan) : RoutingDecision
 
-    data class Unsupported(val normalizedCommand: String) : RoutingDecision
+    data class Unsupported(
+        val normalizedCommand: String,
+        val localModelObservation: LocalModelIntentObservation? = null,
+    ) : RoutingDecision
 }
 
 object GoffyIntentRouter {
@@ -66,7 +73,10 @@ object GoffyIntentRouter {
         option = RegexOption.IGNORE_CASE,
     )
 
-    fun route(command: String): RoutingDecision {
+    fun route(
+        command: String,
+        localModelFallback: LocalModelIntentFallback = DisabledLocalModelIntentFallback,
+    ): RoutingDecision {
         noteCreatePlan(command)?.let { return RoutingDecision.Routed(it) }
         val normalized = command.trim().replace(whitespace, " ")
         val plan = when {
@@ -75,11 +85,25 @@ object GoffyIntentRouter {
             deviceInfoCommand.matches(normalized) -> deviceInfoPlan(normalized)
             flashlightSetCommand.matches(normalized) -> flashlightSetPlan(normalized)
             timerCreateCommand.matches(normalized) -> timerCreatePlan(normalized)
-                ?: return RoutingDecision.Unsupported(normalized)
-            else -> return RoutingDecision.Unsupported(normalized)
+                ?: return unsupported(normalized, localModelFallback)
+            else -> return unsupported(normalized, localModelFallback)
         }
 
         return RoutingDecision.Routed(plan)
+    }
+
+    private fun unsupported(
+        normalizedCommand: String,
+        localModelFallback: LocalModelIntentFallback,
+    ): RoutingDecision.Unsupported {
+        val observation = if (!isSafeLocalModelPrompt(normalizedCommand)) {
+            LocalModelIntentObservation.Rejected(
+                "Command is outside local model prompt safety bounds.",
+            )
+        } else {
+            localModelFallback.observeUnsupportedCommand(normalizedCommand)
+        }
+        return RoutingDecision.Unsupported(normalizedCommand, observation)
     }
 
     private fun noteCreatePlan(command: String): GoffyExecutionPlan? {
