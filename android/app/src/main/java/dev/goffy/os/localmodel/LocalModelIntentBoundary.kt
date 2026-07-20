@@ -8,7 +8,7 @@ private const val DEFAULT_IDLE_UNLOAD_MILLIS = 60_000L
 private const val MIN_ROUTING_CONFIDENCE = 0.70f
 private val allowedRoutingLabels = setOf("PHONE", "MAC", "CLOUD")
 private val strictRoutingJson = Regex(
-    pattern = """\A\{\s*"route"\s*:\s*"(PHONE|MAC|CLOUD)"\s*,\s*"confidence"\s*:\s*(0(?:\.\d+)?|1(?:\.0+)?)\s*}\z""",
+    pattern = """\{\s*"route"\s*:\s*"(PHONE|MAC|CLOUD)"\s*,\s*"confidence"\s*:\s*(0(?:\.\d+)?|1(?:\.0+)?)\s*\}""",
 )
 
 data class LocalModelRuntimePolicy(

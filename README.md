@@ -20,14 +20,14 @@ tools are the capability boundary.
 > WebSocket, and MCP control-plane events. Physical Moto G PHONE and MAC
 > localhost smoke now verify the home shell, `phone.battery.status`, and
 > `mac.system_info` over USB `adb reverse`; physical Moto G LiteRT-LM
-> benchmarking now proves Qwen3 0.6B mixed INT4 can run on CPU, but it is not
-> runtime-enabled because its constrained-label output is still too verbose.
-> The local-model routing quality gate helper now rejects verbose or non-JSON
-> output, and the disabled local-model adapter can feed generated text into
-> that gate without wiring model output into executable routing. Automatic
-> rotation scheduling, Android retrieval for Hub audit, developer-controlled
-> LiteRT-LM activation, certificate-backed Hub identity proof, and trusted LAN
-> operation remain open.
+> benchmarking now proves Qwen3 0.6B mixed INT4 can run on CPU, and the
+> developer-controlled adapter smoke proves real generated text reaches the
+> deterministic quality gate. The model is not runtime-enabled because its
+> constrained-label output is still too verbose, and the adapter correctly
+> rejects it as non-authoritative instead of wiring it into executable routing.
+> Automatic rotation scheduling, Android retrieval for Hub audit,
+> production-gated LiteRT-LM activation, certificate-backed Hub identity proof,
+> and trusted LAN operation remain open.
 
 ## Current vertical slice
 

@@ -56,7 +56,8 @@
 - [x] Moto G local-model runtime benchmark for one tiny text model
 - [x] Local-model routing quality gate before any runtime fallback wiring
 - [x] Disabled generated-text adapter into the local-model quality gate
-- [ ] Developer-controlled LiteRT-LM adapter activation and physical Moto smoke
+- [x] Developer-controlled `androidTest` LiteRT-LM adapter smoke on the physical Moto G
+- [ ] Production-gated LiteRT-LM runtime activation without GOFFY LITE APK-size regression
 
 ## Milestone 3: MCP core - in progress
 

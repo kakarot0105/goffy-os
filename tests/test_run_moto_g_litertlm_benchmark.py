@@ -7,7 +7,9 @@ from pathlib import Path
 import scripts.run_moto_g_litertlm_benchmark as benchmark
 from scripts.run_moto_g_device_smoke import CommandResult
 from scripts.run_moto_g_litertlm_benchmark import (
+    DEVICE_ADAPTER_SMOKE_RESULT_PATH,
     DEVICE_RESULT_PATH,
+    InstrumentationMode,
     StepStatus,
     build_report,
     is_allowed_device_model_path,
@@ -203,6 +205,139 @@ def test_execute_runs_fixed_instrumentation_and_pulls_result(
         step.name == "Verify benchmark JSON" and step.status is StepStatus.OK
         for step in report.steps
     )
+
+
+def test_execute_can_run_adapter_smoke_instrumentation_mode(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    write_apks(tmp_path)
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    adb.parent.mkdir(parents=True)
+    adb.write_text("", encoding="utf-8")
+    monkeypatch.setattr(benchmark, "trusted_adb_path", lambda: adb)
+    seen: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        normalized = tuple(str(part) for part in command)
+        seen.append(normalized)
+        if normalized == (str(adb), "devices", "-l"):
+            return CommandResult(0, ADB_DEVICES, "")
+        if normalized[-3:] == ("shell", "getprop", "ro.product.model"):
+            return CommandResult(0, "moto g - 2025\n", "")
+        if ":app:assembleDebugAndroidTest" in normalized:
+            return CommandResult(0, "BUILD SUCCESSFUL\n", "")
+        if normalized[-3:-1] == ("install", "-r"):
+            return CommandResult(0, "Success\n", "")
+        if any("instrument" in part for part in normalized):
+            remote_command = normalized[-1]
+            assert "LiteRtLmRoutingAdapterInstrumentedTest" in remote_command
+            assert DEVICE_ADAPTER_SMOKE_RESULT_PATH in remote_command
+            return CommandResult(0, "OK (1 test)\n", "")
+        if "pull" in normalized:
+            destination = Path(normalized[-1])
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(
+                (
+                    '{"status":"PASS","outputChunkCount":12,'
+                    '"observationType":"Rejected","observationReason":"bounded",'
+                    '"nonAuthoritative":true}\n'
+                ),
+                encoding="utf-8",
+            )
+            return CommandResult(0, "1 file pulled\n", "")
+        return CommandResult(1, "", f"unexpected command: {normalized}")
+
+    report = build_report(
+        root=tmp_path,
+        execute=True,
+        confirm_device_mutation=True,
+        device_model_path="/sdcard/Android/data/dev.goffy.os/files/models/tiny.litertlm",
+        prompt="show my battery status",
+        instrumentation_mode=InstrumentationMode.ADAPTER_SMOKE,
+        runner=runner,
+        output_directory=tmp_path / "artifacts",
+    )
+
+    assert report.ok
+    assert report.instrumentation_mode == "adapter-smoke"
+    assert report.result_artifact is not None
+    assert report.result_artifact.endswith("litertlm-adapter-smoke.json")
+    assert any("adapter-smoke" in step.name or "adapter" in step.name for step in report.steps)
+    assert any(
+        any("LiteRtLmRoutingAdapterInstrumentedTest" in part for part in command)
+        for command in seen
+    )
+
+
+def test_adapter_smoke_json_requires_non_authoritative_terminal_observation(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    write_apks(tmp_path)
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    adb.parent.mkdir(parents=True)
+    adb.write_text("", encoding="utf-8")
+    monkeypatch.setattr(benchmark, "trusted_adb_path", lambda: adb)
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        normalized = tuple(str(part) for part in command)
+        if normalized == (str(adb), "devices", "-l"):
+            return CommandResult(0, ADB_DEVICES, "")
+        if normalized[-3:] == ("shell", "getprop", "ro.product.model"):
+            return CommandResult(0, "moto g - 2025\n", "")
+        if ":app:assembleDebugAndroidTest" in normalized:
+            return CommandResult(0, "BUILD SUCCESSFUL\n", "")
+        if normalized[-3:-1] == ("install", "-r"):
+            return CommandResult(0, "Success\n", "")
+        if any("instrument" in part for part in normalized):
+            return CommandResult(0, "OK (1 test)\n", "")
+        if "pull" in normalized:
+            destination = Path(normalized[-1])
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(
+                '{"status":"PASS","outputChunkCount":12,"observationType":"Rejected"}\n',
+                encoding="utf-8",
+            )
+            return CommandResult(0, "1 file pulled\n", "")
+        return CommandResult(1, "", f"unexpected command: {normalized}")
+
+    report = build_report(
+        root=tmp_path,
+        execute=True,
+        confirm_device_mutation=True,
+        device_model_path="/sdcard/Android/data/dev.goffy.os/files/models/tiny.litertlm",
+        prompt="show my battery status",
+        instrumentation_mode=InstrumentationMode.ADAPTER_SMOKE,
+        runner=runner,
+        output_directory=tmp_path / "artifacts",
+    )
+
+    verify_step = next(step for step in report.steps if step.name == "Verify benchmark JSON")
+    assert not report.ok
+    assert verify_step.status is StepStatus.FAIL
+    assert "non-authoritative" in verify_step.detail
+
+
+def test_adapter_smoke_json_requires_rejection_reason(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "litertlm-adapter-smoke.json"
+    artifact.write_text(
+        (
+            '{"status":"PASS","outputChunkCount":12,'
+            '"observationType":"Rejected","nonAuthoritative":true}\n'
+        ),
+        encoding="utf-8",
+    )
+
+    step = benchmark.benchmark_json_step(
+        artifact,
+        InstrumentationMode.ADAPTER_SMOKE,
+    )
+
+    assert step.status is StepStatus.FAIL
+    assert "rejected observation" in step.detail
 
 
 def test_execute_surfaces_json_level_benchmark_failure(

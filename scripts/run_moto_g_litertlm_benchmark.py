@@ -33,9 +33,21 @@ DEBUG_TEST_APK_RELATIVE_PATH = Path(
 )
 PACKAGE_NAME = "dev.goffy.os"
 TEST_RUNNER = f"{PACKAGE_NAME}.test/androidx.test.runner.AndroidJUnitRunner"
-TEST_CLASS = "dev.goffy.os.localmodel.LiteRtLmMotoBenchmarkInstrumentedTest#benchmarkOnePromptOnCpu"
+BENCHMARK_TEST_CLASS = (
+    "dev.goffy.os.localmodel.LiteRtLmMotoBenchmarkInstrumentedTest#benchmarkOnePromptOnCpu"
+)
+ADAPTER_SMOKE_TEST_CLASS = (
+    "dev.goffy.os.localmodel.LiteRtLmRoutingAdapterInstrumentedTest"
+    "#smokeRealLiteRtLmThroughAdapterGate"
+)
 DEVICE_MODEL_DIR = "/sdcard/Android/data/dev.goffy.os/files/models"
-DEVICE_RESULT_PATH = "/sdcard/Android/data/dev.goffy.os/files/benchmarks/litertlm-benchmark.json"
+DEVICE_BENCHMARK_RESULT_PATH = (
+    "/sdcard/Android/data/dev.goffy.os/files/benchmarks/litertlm-benchmark.json"
+)
+DEVICE_ADAPTER_SMOKE_RESULT_PATH = (
+    "/sdcard/Android/data/dev.goffy.os/files/benchmarks/litertlm-adapter-smoke.json"
+)
+DEVICE_RESULT_PATH = DEVICE_BENCHMARK_RESULT_PATH
 DEFAULT_PROMPT = "Classify this GOFFY command: show my battery status"
 MAX_MODEL_BYTES = 512 * 1024 * 1024
 MAX_PROMPT_CHARS = 512
@@ -54,6 +66,41 @@ class StepStatus(StrEnum):
     SKIP = "SKIP"
 
 
+class InstrumentationMode(StrEnum):
+    BENCHMARK = "benchmark"
+    ADAPTER_SMOKE = "adapter-smoke"
+
+
+@dataclass(frozen=True)
+class InstrumentationSpec:
+    mode: InstrumentationMode
+    test_class: str
+    device_result_path: str
+    artifact_name: str
+    run_step_name: str
+    planned_detail: str
+
+
+INSTRUMENTATION_SPECS = {
+    InstrumentationMode.BENCHMARK: InstrumentationSpec(
+        mode=InstrumentationMode.BENCHMARK,
+        test_class=BENCHMARK_TEST_CLASS,
+        device_result_path=DEVICE_BENCHMARK_RESULT_PATH,
+        artifact_name="litertlm-benchmark.json",
+        run_step_name="Run LiteRT-LM benchmark",
+        planned_detail="would run one CPU LiteRT-LM prompt and write JSON metrics",
+    ),
+    InstrumentationMode.ADAPTER_SMOKE: InstrumentationSpec(
+        mode=InstrumentationMode.ADAPTER_SMOKE,
+        test_class=ADAPTER_SMOKE_TEST_CLASS,
+        device_result_path=DEVICE_ADAPTER_SMOKE_RESULT_PATH,
+        artifact_name="litertlm-adapter-smoke.json",
+        run_step_name="Run LiteRT-LM adapter smoke",
+        planned_detail="would run LiteRT-LM through the generated-text adapter quality gate",
+    ),
+}
+
+
 @dataclass(frozen=True)
 class BenchmarkStep:
     name: str
@@ -68,6 +115,7 @@ class BenchmarkStep:
 class BenchmarkReport:
     executed: bool
     ok: bool
+    instrumentation_mode: str
     model_source: str | None
     device_model_path: str | None
     result_artifact: str | None
@@ -85,7 +133,9 @@ def planned_steps(
     root: Path,
     host_model: Path | None,
     device_model_path: str | None,
+    instrumentation_mode: InstrumentationMode = InstrumentationMode.BENCHMARK,
 ) -> tuple[BenchmarkStep, ...]:
+    spec = INSTRUMENTATION_SPECS[instrumentation_mode]
     apk = root / DEBUG_APK_RELATIVE_PATH
     test_apk = root / DEBUG_TEST_APK_RELATIVE_PATH
     device_path = device_model_path or f"{DEVICE_MODEL_DIR}/<model>.litertlm"
@@ -161,7 +211,7 @@ def planned_steps(
     steps.extend(
         [
             BenchmarkStep(
-                name="Run LiteRT-LM benchmark",
+                name=spec.run_step_name,
                 status=StepStatus.PLANNED,
                 command=(
                     "adb",
@@ -174,17 +224,17 @@ def planned_steps(
                     "-r",
                     "-e",
                     "class",
-                    TEST_CLASS,
+                    spec.test_class,
                     "-e",
                     "modelPath",
                     device_path,
                     "-e",
                     "resultPath",
-                    DEVICE_RESULT_PATH,
+                    spec.device_result_path,
                     TEST_RUNNER,
                 ),
                 mutates_device=True,
-                detail="would run one CPU LiteRT-LM prompt and write JSON metrics",
+                detail=spec.planned_detail,
             ),
             BenchmarkStep(
                 name="Pull benchmark JSON",
@@ -194,15 +244,15 @@ def planned_steps(
                     "-s",
                     DEVICE_SERIAL_PLACEHOLDER,
                     "pull",
-                    DEVICE_RESULT_PATH,
-                    "<artifact-dir>/litertlm-benchmark.json",
+                    spec.device_result_path,
+                    f"<artifact-dir>/{spec.artifact_name}",
                 ),
                 detail="would pull the JSON metrics artifact from the Moto",
             ),
             BenchmarkStep(
                 name="Verify benchmark JSON",
                 status=StepStatus.PLANNED,
-                detail="would require status PASS and at least one output chunk",
+                detail=json_validation_goal(instrumentation_mode),
             ),
         ]
     )
@@ -217,6 +267,7 @@ def build_report(
     model: Path | None = None,
     device_model_path: str | None = None,
     prompt: str = DEFAULT_PROMPT,
+    instrumentation_mode: InstrumentationMode = InstrumentationMode.BENCHMARK,
     runner: CommandRunner = default_command_runner,
     output_directory: Path | None = None,
     device_serial: str | None = None,
@@ -229,6 +280,7 @@ def build_report(
         return BenchmarkReport(
             executed=False,
             ok=True,
+            instrumentation_mode=instrumentation_mode.value,
             model_source=str(resolved_model) if resolved_model else None,
             device_model_path=planned_device_path,
             result_artifact=None,
@@ -237,6 +289,7 @@ def build_report(
                 root=resolved_root,
                 host_model=resolved_model,
                 device_model_path=planned_device_path,
+                instrumentation_mode=instrumentation_mode,
             ),
         )
 
@@ -250,6 +303,7 @@ def build_report(
         return BenchmarkReport(
             executed=False,
             ok=False,
+            instrumentation_mode=instrumentation_mode.value,
             model_source=str(resolved_model) if resolved_model else None,
             device_model_path=planned_device_path,
             result_artifact=None,
@@ -270,6 +324,7 @@ def build_report(
             model=resolved_model,
             device_model_path=planned_device_path,
             prompt=prompt,
+            instrumentation_mode=instrumentation_mode,
             blocker="trusted Android SDK adb executable is unavailable",
         )
 
@@ -284,6 +339,7 @@ def build_report(
         return BenchmarkReport(
             executed=False,
             ok=False,
+            instrumentation_mode=instrumentation_mode.value,
             model_source=str(resolved_model) if resolved_model else None,
             device_model_path=planned_device_path,
             result_artifact=None,
@@ -300,7 +356,8 @@ def build_report(
 
     artifacts = output_directory or default_output_directory(resolved_root)
     artifacts.mkdir(parents=True, exist_ok=True)
-    result_artifact = artifacts / "litertlm-benchmark.json"
+    spec = INSTRUMENTATION_SPECS[instrumentation_mode]
+    result_artifact = artifacts / spec.artifact_name
 
     steps: list[BenchmarkStep] = [
         BenchmarkStep(
@@ -318,6 +375,7 @@ def build_report(
             model=resolved_model,
             device_model_path=require_device_model_path(planned_device_path),
             prompt=prompt,
+            instrumentation_mode=instrumentation_mode,
             runner=runner,
             timeout_seconds=timeout_seconds,
             result_artifact=result_artifact,
@@ -327,6 +385,7 @@ def build_report(
     return BenchmarkReport(
         executed=True,
         ok=ok,
+        instrumentation_mode=instrumentation_mode.value,
         model_source=str(resolved_model) if resolved_model else None,
         device_model_path=planned_device_path,
         result_artifact=str(result_artifact) if result_artifact.exists() else None,
@@ -340,11 +399,13 @@ def failed_gate(
     model: Path | None,
     device_model_path: str | None,
     prompt: str,
+    instrumentation_mode: InstrumentationMode = InstrumentationMode.BENCHMARK,
     blocker: str,
 ) -> BenchmarkReport:
     return BenchmarkReport(
         executed=False,
         ok=False,
+        instrumentation_mode=instrumentation_mode.value,
         model_source=str(model) if model else None,
         device_model_path=device_model_path,
         result_artifact=None,
@@ -426,10 +487,12 @@ def run_benchmark_steps(
     model: Path | None,
     device_model_path: str,
     prompt: str,
+    instrumentation_mode: InstrumentationMode,
     runner: CommandRunner,
     timeout_seconds: int,
     result_artifact: Path,
 ) -> tuple[BenchmarkStep, ...]:
+    spec = INSTRUMENTATION_SPECS[instrumentation_mode]
     steps: list[BenchmarkStep] = []
     build_step = run_step(
         name="Build benchmark test APK",
@@ -534,7 +597,7 @@ def run_benchmark_steps(
         "-r",
         "-e",
         "class",
-        TEST_CLASS,
+        spec.test_class,
         "-e",
         "modelPath",
         device_model_path,
@@ -543,7 +606,7 @@ def run_benchmark_steps(
         prompt,
         "-e",
         "resultPath",
-        DEVICE_RESULT_PATH,
+        spec.device_result_path,
         "-e",
         "timeoutMillis",
         str(timeout_seconds * 1000),
@@ -557,7 +620,7 @@ def run_benchmark_steps(
         "-r",
         "-e",
         "class",
-        TEST_CLASS,
+        spec.test_class,
         "-e",
         "modelPath",
         device_model_path,
@@ -566,14 +629,14 @@ def run_benchmark_steps(
         "<prompt>",
         "-e",
         "resultPath",
-        DEVICE_RESULT_PATH,
+        spec.device_result_path,
         "-e",
         "timeoutMillis",
         str(timeout_seconds * 1000),
         TEST_RUNNER,
     )
     instrument_step = run_step(
-        name="Run LiteRT-LM benchmark",
+        name=spec.run_step_name,
         command=instrument_command,
         display_command=instrument_display,
         root=root,
@@ -587,12 +650,12 @@ def run_benchmark_steps(
 
     pull_step = run_step(
         name="Pull benchmark JSON",
-        command=adb_command(adb, target, "pull", DEVICE_RESULT_PATH, str(result_artifact)),
+        command=adb_command(adb, target, "pull", spec.device_result_path, str(result_artifact)),
         display_command=display_adb_command(
             adb,
             "pull",
-            DEVICE_RESULT_PATH,
-            "<artifact-dir>/litertlm-benchmark.json",
+            spec.device_result_path,
+            f"<artifact-dir>/{spec.artifact_name}",
         ),
         root=root,
         runner=runner,
@@ -601,7 +664,7 @@ def run_benchmark_steps(
     )
     steps.append(pull_step)
     if pull_step.status is StepStatus.OK:
-        steps.append(benchmark_json_step(result_artifact))
+        steps.append(benchmark_json_step(result_artifact, instrumentation_mode))
     return tuple(steps)
 
 
@@ -640,7 +703,10 @@ def run_step(
     )
 
 
-def benchmark_json_step(path: Path) -> BenchmarkStep:
+def benchmark_json_step(
+    path: Path,
+    instrumentation_mode: InstrumentationMode = InstrumentationMode.BENCHMARK,
+) -> BenchmarkStep:
     if not path.is_file():
         return BenchmarkStep(
             name="Verify benchmark JSON",
@@ -664,36 +730,88 @@ def benchmark_json_step(path: Path) -> BenchmarkStep:
             artifact=str(path),
         )
     payload_dict = cast("dict[str, object]", payload)
-    status = payload_dict.get("status")
-    output_chunk_count = payload_dict.get("outputChunkCount")
-    if status == "PASS" and isinstance(output_chunk_count, int) and output_chunk_count > 0:
+    validation_failure = validate_benchmark_json_payload(
+        payload_dict,
+        instrumentation_mode,
+    )
+    if validation_failure is None:
         return BenchmarkStep(
             name="Verify benchmark JSON",
             status=StepStatus.OK,
-            detail=benchmark_json_summary(payload_dict),
+            detail=benchmark_json_summary(payload_dict, instrumentation_mode),
             artifact=str(path),
         )
     return BenchmarkStep(
         name="Verify benchmark JSON",
         status=StepStatus.FAIL,
-        detail=benchmark_json_failure_summary(payload_dict),
+        detail=f"{validation_failure}: {benchmark_json_failure_summary(payload_dict)}",
         artifact=str(path),
     )
 
 
-def benchmark_json_summary(payload: dict[str, object]) -> str:
-    return (
+def validate_benchmark_json_payload(
+    payload: dict[str, object],
+    instrumentation_mode: InstrumentationMode,
+) -> str | None:
+    status = payload.get("status")
+    output_chunk_count = payload.get("outputChunkCount")
+    if status != "PASS":
+        return "benchmark JSON did not report PASS"
+    if not isinstance(output_chunk_count, int) or output_chunk_count <= 0:
+        return "benchmark JSON did not report streamed output chunks"
+    if instrumentation_mode is InstrumentationMode.ADAPTER_SMOKE:
+        return validate_adapter_smoke_json_payload(payload)
+    return None
+
+
+def validate_adapter_smoke_json_payload(payload: dict[str, object]) -> str | None:
+    if payload.get("nonAuthoritative") is not True:
+        return "adapter smoke JSON did not prove non-authoritative output"
+    observation_type = payload.get("observationType")
+    if observation_type not in {"Candidate", "Rejected"}:
+        return "adapter smoke JSON did not report a terminal adapter observation"
+    if observation_type == "Rejected":
+        observation_reason = payload.get("observationReason")
+        if not isinstance(observation_reason, str) or not observation_reason:
+            return "adapter smoke JSON did not explain the rejected observation"
+    if observation_type == "Candidate":
+        observation_route = payload.get("observationRoute")
+        observation_confidence = payload.get("observationConfidence")
+        if observation_route not in {"PHONE", "MAC", "CLOUD"}:
+            return "adapter smoke JSON candidate did not include an allowed route"
+        if (
+            isinstance(observation_confidence, bool)
+            or not isinstance(observation_confidence, int | float)
+            or observation_confidence < 0.70
+        ):
+            return "adapter smoke JSON candidate did not meet the routing confidence gate"
+    return None
+
+
+def benchmark_json_summary(
+    payload: dict[str, object],
+    instrumentation_mode: InstrumentationMode = InstrumentationMode.BENCHMARK,
+) -> str:
+    summary = (
         "benchmark JSON PASS: "
         f"outputChunkCount={payload.get('outputChunkCount')}, "
         f"firstChunkMillis={payload.get('firstChunkMillis')}, "
         f"generationMillis={payload.get('generationMillis')}"
     )
+    if instrumentation_mode is InstrumentationMode.ADAPTER_SMOKE:
+        summary += (
+            f", observationType={payload.get('observationType')}, "
+            f"nonAuthoritative={payload.get('nonAuthoritative')}"
+        )
+    return summary
 
 
 def benchmark_json_failure_summary(payload: dict[str, object]) -> str:
     parts = [
         f"status={payload.get('status')!r}",
         f"outputChunkCount={payload.get('outputChunkCount')!r}",
+        f"observationType={payload.get('observationType')!r}",
+        f"nonAuthoritative={payload.get('nonAuthoritative')!r}",
     ]
     error_class = payload.get("errorClass")
     if isinstance(error_class, str) and error_class:
@@ -702,6 +820,15 @@ def benchmark_json_failure_summary(payload: dict[str, object]) -> str:
     if isinstance(error_message, str) and error_message:
         parts.append(f"errorMessage={tail(error_message, max_chars=240)}")
     return "benchmark JSON FAIL: " + ", ".join(parts)
+
+
+def json_validation_goal(instrumentation_mode: InstrumentationMode) -> str:
+    if instrumentation_mode is InstrumentationMode.ADAPTER_SMOKE:
+        return (
+            "would require status PASS, output chunks, non-authoritative adapter output, "
+            "and a terminal observation"
+        )
+    return "would require status PASS and at least one output chunk"
 
 
 def tail(text: str, max_chars: int = 2000) -> str:
@@ -713,6 +840,7 @@ def render_text(report: BenchmarkReport) -> str:
         "GOFFY Moto G LiteRT-LM benchmark",
         f"executed: {report.executed}",
         f"overall: {'PASS' if report.ok else 'FAIL'}",
+        f"instrumentation mode: {report.instrumentation_mode}",
         f"device model path: {report.device_model_path or '<not set>'}",
         f"prompt chars: {report.prompt_chars}",
     ]
@@ -753,6 +881,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Use an already-pushed model under GOFFY's app-owned model directory.",
     )
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, help="Short benchmark prompt.")
+    parser.add_argument(
+        "--instrumentation-mode",
+        choices=[mode.value for mode in InstrumentationMode],
+        default=InstrumentationMode.BENCHMARK.value,
+        help="Instrumentation flow to run.",
+    )
     parser.add_argument("--device-serial", help="ADB serial when more than one device is attached.")
     parser.add_argument("--output-directory", type=Path, help="Artifact output directory.")
     parser.add_argument("--timeout-seconds", type=int, default=300)
@@ -768,6 +902,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         model=args.model,
         device_model_path=args.device_model_path,
         prompt=args.prompt,
+        instrumentation_mode=InstrumentationMode(args.instrumentation_mode),
         output_directory=args.output_directory,
         device_serial=args.device_serial,
         timeout_seconds=args.timeout_seconds,

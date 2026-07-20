@@ -73,9 +73,9 @@ text into the deterministic quality gate:
   background loop yet.
 
 The concrete LiteRT-LM Android runtime dependency remains benchmark/test-only
-until developer-controlled activation, startup/install-size evidence, and
-physical Moto smoke testing are complete. No model binary is packaged in the APK
-or committed to the repository.
+until production-gated activation, startup/install-size evidence, idle-unload
+behavior, and UI-responsiveness evidence are complete. No model binary is
+packaged in the APK or committed to the repository.
 
 Standard GOFFY LITE packaging evidence checked on 2026-07-20 after keeping
 LiteRT-LM out of the main runtime classpath:
@@ -257,8 +257,33 @@ Qwen3 0.6B mixed INT4 result:
 
 A stricter label-only prompt against the same Qwen3 model also produced verbose
 reasoning text in the output preview. Do not wire this model into executable
-routing until GOFFY has developer-controlled activation, short response stopping
+routing until GOFFY has production-gated activation, short response stopping
 criteria, idle unload behavior, and UI responsiveness evidence. The
 deterministic output-quality gate is now in place and the disabled
 generated-text adapter calls it, so the observed verbose Qwen3 output would be
 rejected rather than treated as a route.
+
+Qwen3 generated-text adapter smoke result:
+
+- Artifact:
+  `.goffy-validation/litertlm-benchmark/20260720T190929Z/litertlm-adapter-smoke.json`
+- Command:
+  `show my battery status`
+- Model:
+  `qwen3_0_6b_mixed_int4.litertlm`
+- Size: 497,664,000 bytes
+- CPU init: 1,715 ms
+- First chunk: 5,040 ms
+- Generation window: 8,613 ms
+- Output chunks: 62
+- Output characters before bounded stop: 257
+- Observation: `Rejected`
+- Reason: `Model output exceeded the local routing output budget.`
+- Result: adapter smoke passed because real model output reached the deterministic
+  quality gate and was rejected as non-authoritative instead of becoming an
+  executable route. The smoke stops collecting generated text after the
+  256-character routing budget is exceeded.
+
+This physical smoke also found Android regex portability bugs in the first
+quality-gate pattern. The pattern now avoids JVM-only anchors and escapes both
+literal braces; `matchEntire` continues to enforce whole-string matching.
