@@ -110,6 +110,9 @@ private data class PairingScannerNotice(
 fun GoffyApp(viewModel: GoffyViewModel) {
     val context = LocalContext.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val scannerPermissionDenied = stringResource(R.string.pairing_scanner_permission_denied)
+    val scannerCaptured = stringResource(R.string.pairing_scanner_captured)
+    val scannerStartFailed = stringResource(R.string.pairing_scanner_start_failed)
     var command by remember { mutableStateOf("") }
     var endpoint by rememberSaveable(state.hubEndpoint) { mutableStateOf(state.hubEndpoint) }
     var pairingChallenge by remember { mutableStateOf("") }
@@ -127,7 +130,7 @@ fun GoffyApp(viewModel: GoffyViewModel) {
             showPairingScanner = true
         } else {
             pairingScannerNotice = PairingScannerNotice(
-                message = context.getString(R.string.pairing_scanner_permission_denied),
+                message = scannerPermissionDenied,
                 warning = true,
             )
         }
@@ -163,14 +166,14 @@ fun GoffyApp(viewModel: GoffyViewModel) {
                     onScanned = { payload ->
                         pairingChallenge = payload.take(MAX_PAIRING_CHALLENGE_LENGTH)
                         pairingScannerNotice = PairingScannerNotice(
-                            message = context.getString(R.string.pairing_scanner_captured),
+                            message = scannerCaptured,
                             warning = false,
                         )
                         showPairingScanner = false
                     },
                     onCameraFailure = {
                         pairingScannerNotice = PairingScannerNotice(
-                            message = context.getString(R.string.pairing_scanner_start_failed),
+                            message = scannerStartFailed,
                             warning = true,
                         )
                         showPairingScanner = false

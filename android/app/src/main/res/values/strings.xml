@@ -34,7 +34,7 @@
     <string name="configure_hub">Debug link</string>
     <string name="rotate_hub">Rotate token</string>
     <string name="rotate_hub_title">Rotate Hub token?</string>
-    <string name="rotate_hub_explanation">GOFFY will ask the Hub once to replace this phone's bearer, then save the new bearer in Keystore before Mac access continues. If storage or transport is ambiguous, GOFFY disables Mac access and you must pair again.</string>
+    <string name="rotate_hub_explanation">GOFFY will ask the Hub once to replace this phone bearer, then save the new bearer in Keystore before Mac access continues. If storage or transport is ambiguous, GOFFY disables Mac access and you must pair again.</string>
     <string name="rotate_hub_confirm">Rotate token</string>
     <string name="rotate_hub_cancel">Keep current token</string>
     <string name="forget_hub">Forget link</string>

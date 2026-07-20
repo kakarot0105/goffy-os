@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Size
 import android.view.ViewGroup
+import androidx.annotation.OptIn
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis

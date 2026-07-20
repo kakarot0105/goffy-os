@@ -2,6 +2,7 @@ from pathlib import Path
 
 from scripts.security_scan import (
     ALLOWED_ANDROID_PERMISSIONS,
+    ALLOWED_MERGED_ANDROID_PERMISSIONS,
     PAIRING_QR_ARTIFACT_MARKER,
     validate_manifest,
     validate_no_pairing_qr_artifact,
@@ -33,6 +34,22 @@ def test_manifest_allowlist_accepts_exact_structure(tmp_path: Path) -> None:
     manifest = write_manifest(tmp_path, EXPECTED_MANIFEST)
 
     assert validate_manifest(manifest, ALLOWED_ANDROID_PERMISSIONS) == []
+
+
+def test_merged_manifest_allowlist_accepts_dependency_permissions(tmp_path: Path) -> None:
+    manifest = write_manifest(
+        tmp_path,
+        EXPECTED_MANIFEST.replace(
+            "    <uses-feature",
+            '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />\n'
+            '    <uses-permission android:name="'
+            'dev.goffy.os.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />\n'
+            "    <uses-feature",
+            1,
+        ),
+    )
+
+    assert validate_manifest(manifest, ALLOWED_MERGED_ANDROID_PERMISSIONS) == []
 
 
 def test_manifest_allowlist_rejects_permission_variants_and_non_intent_queries(

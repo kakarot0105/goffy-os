@@ -1044,7 +1044,7 @@ class GoffyViewModelTest {
         override fun close() = Unit
     }
 
-    private class RecordingPairingGateway(
+    private inner class RecordingPairingGateway(
         private val failRevocation: Boolean = false,
         private val failRotation: Boolean = false,
     ) : HubPairingGateway {
