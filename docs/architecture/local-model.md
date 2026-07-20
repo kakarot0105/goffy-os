@@ -62,6 +62,13 @@ Checked on 2026-07-20:
   must remain assistive and verified.
 - Qwen2.5-0.5B-Instruct: Apache-2.0, second text-only benchmark candidate. Its
   long-context capability is not a reason to use long prompts on the Moto.
+- litert-community/granite-4.0-350m-litert-lm: Apache-2.0 LiteRT-LM artifact
+  evaluated on the physical Moto G. It initialized without OOM but returned no
+  output chunks, so it is rejected for GOFFY routing.
+- litert-community/Qwen3-0.6B `qwen3_0_6b_mixed_int4.litertlm`: Apache-2.0
+  LiteRT-LM artifact evaluated on the physical Moto G. It produced output on
+  CPU and remains a benchmark-only candidate until quality, latency, unload, and
+  UI-responsiveness gates pass.
 
 Sources:
 
@@ -71,6 +78,8 @@ Sources:
 - https://github.com/ggml-org/llama.cpp
 - https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct
 - https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct
+- https://huggingface.co/litert-community/granite-4.0-350m-litert-lm
+- https://huggingface.co/litert-community/Qwen3-0.6B
 
 ## Next Benchmark Gate
 
@@ -138,5 +147,49 @@ stores benchmark JSON under `.goffy-validation/litertlm-benchmark/`.
 The JSON records initialization latency, first-chunk latency, total generation
 time, output chunk count, character-rate, battery and thermal snapshots, and
 managed/native memory snapshots. True token-per-second reporting, peak memory,
-UI responsiveness scoring, and battery-drain acceptance still belong to the real
-Moto runtime benchmark item.
+UI responsiveness scoring, battery-drain acceptance, unload behavior, and
+label-quality checks still belong to the local-model routing quality gate.
+
+## Physical Moto G LiteRT-LM Evidence
+
+Checked on 2026-07-20 with USB-connected `moto g - 2025`, Android SDK 36,
+charging at 100 percent. Model files were downloaded into ignored
+`.goffy-validation/models/`, hash-verified against Hugging Face LFS metadata,
+then pushed to app-owned external storage for benchmarking. No model binary is
+committed.
+
+Granite 350M result:
+
+- Artifact:
+  `.goffy-validation/litertlm-benchmark/20260720T180113Z/litertlm-benchmark.json`
+- Model:
+  `granite-4.0-350m_q8_ekv1280.litertlm`
+- Size: 468,209,584 bytes
+- SHA-256:
+  `c8e9a29493f62b7c44461fb36980987c4c1454c75e95f57ba0539a8edc9dce76`
+- CPU init: 3,426 ms
+- Generation window: 7,001 ms
+- Output chunks: 0
+- Result: rejected with `NoModelOutput`
+
+Qwen3 0.6B mixed INT4 result:
+
+- Artifact:
+  `.goffy-validation/litertlm-benchmark/20260720T174956Z/litertlm-benchmark.json`
+- Model:
+  `qwen3_0_6b_mixed_int4.litertlm`
+- Size: 497,664,000 bytes
+- SHA-256:
+  `b1baab462f6be49d70eada79d715c2c52cd9ece0cad00bddf6a2c097d23498e9`
+- CPU init: 3,679 ms
+- First chunk: 5,188 ms
+- Generation window: 27,020 ms
+- Output chunks: 267
+- Output rate: 44.34 chars/s
+- Memory snapshot after benchmark: about 1.16 GB available of 3.82 GB total
+- Result: runtime viable, not routing-approved
+
+A stricter label-only prompt against the same Qwen3 model also produced verbose
+reasoning text in the output preview. Do not wire this model into executable
+routing until GOFFY has an output-quality gate, short response stopping criteria,
+idle unload behavior, and UI responsiveness evidence.

@@ -19,9 +19,12 @@ tools are the capability boundary.
 > keeps a bounded, hash-chained paired-mode operator audit for pairing,
 > WebSocket, and MCP control-plane events. Physical Moto G PHONE and MAC
 > localhost smoke now verify the home shell, `phone.battery.status`, and
-> `mac.system_info` over USB `adb reverse`; automatic rotation scheduling,
-> Android retrieval for Hub audit, real local-model runtime benchmarking,
-> certificate-backed Hub identity proof, and trusted LAN operation remain open.
+> `mac.system_info` over USB `adb reverse`; physical Moto G LiteRT-LM
+> benchmarking now proves Qwen3 0.6B mixed INT4 can run on CPU, but it is not
+> routing-approved because its constrained-label output is still too verbose.
+> Automatic rotation scheduling, Android retrieval for Hub audit,
+> local-model routing-quality gates, certificate-backed Hub identity proof, and
+> trusted LAN operation remain open.
 
 ## Current vertical slice
 

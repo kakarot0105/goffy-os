@@ -4,6 +4,7 @@ import argparse
 import json
 import posixpath
 import re
+import shlex
 import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
@@ -198,6 +199,11 @@ def planned_steps(
                 ),
                 detail="would pull the JSON metrics artifact from the Moto",
             ),
+            BenchmarkStep(
+                name="Verify benchmark JSON",
+                status=StepStatus.PLANNED,
+                detail="would require status PASS and at least one output chunk",
+            ),
         ]
     )
     return tuple(steps)
@@ -317,9 +323,7 @@ def build_report(
             result_artifact=result_artifact,
         )
     )
-    ok = all(step.status is StepStatus.OK for step in steps) and benchmark_json_passed(
-        result_artifact
-    )
+    ok = all(step.status is StepStatus.OK for step in steps)
     return BenchmarkReport(
         executed=True,
         ok=ok,
@@ -488,8 +492,13 @@ def run_benchmark_steps(
     if model is not None:
         prepare_step = run_step(
             name="Prepare app-owned model directory",
-            command=adb_command(adb, target, "shell", "mkdir", "-p", DEVICE_MODEL_DIR),
-            display_command=display_adb_command(adb, "shell", "mkdir", "-p", DEVICE_MODEL_DIR),
+            command=adb_shell_command(adb, target, "mkdir", "-p", DEVICE_MODEL_DIR),
+            display_command=display_adb_shell_command(
+                adb,
+                "mkdir",
+                "-p",
+                DEVICE_MODEL_DIR,
+            ),
             root=root,
             runner=runner,
             timeout_seconds=30,
@@ -516,10 +525,9 @@ def run_benchmark_steps(
         if push_step.status is StepStatus.FAIL:
             return tuple(steps)
 
-    instrument_command = adb_command(
+    instrument_command = adb_shell_command(
         adb,
         target,
-        "shell",
         "am",
         "instrument",
         "-w",
@@ -541,9 +549,8 @@ def run_benchmark_steps(
         str(timeout_seconds * 1000),
         TEST_RUNNER,
     )
-    instrument_display = display_adb_command(
+    instrument_display = display_adb_shell_command(
         adb,
-        "shell",
         "am",
         "instrument",
         "-w",
@@ -565,17 +572,18 @@ def run_benchmark_steps(
         str(timeout_seconds * 1000),
         TEST_RUNNER,
     )
-    steps.append(
-        run_step(
-            name="Run LiteRT-LM benchmark",
-            command=instrument_command,
-            display_command=instrument_display,
-            root=root,
-            runner=runner,
-            timeout_seconds=timeout_seconds,
-            mutates_device=True,
-        )
+    instrument_step = run_step(
+        name="Run LiteRT-LM benchmark",
+        command=instrument_command,
+        display_command=instrument_display,
+        root=root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+        mutates_device=True,
     )
+    steps.append(instrument_step)
+    if instrument_step.status is StepStatus.FAIL:
+        return tuple(steps)
 
     pull_step = run_step(
         name="Pull benchmark JSON",
@@ -592,7 +600,21 @@ def run_benchmark_steps(
         artifact=str(result_artifact),
     )
     steps.append(pull_step)
+    if pull_step.status is StepStatus.OK:
+        steps.append(benchmark_json_step(result_artifact))
     return tuple(steps)
+
+
+def adb_shell_command(adb: Path, target: DeviceTarget, *remote_args: str) -> tuple[str, ...]:
+    return adb_command(adb, target, "shell", quote_remote_args(remote_args))
+
+
+def display_adb_shell_command(adb: Path, *remote_args: str) -> tuple[str, ...]:
+    return display_adb_command(adb, "shell", quote_remote_args(remote_args))
+
+
+def quote_remote_args(remote_args: Sequence[str]) -> str:
+    return " ".join(shlex.quote(arg) for arg in remote_args)
 
 
 def run_step(
@@ -618,20 +640,68 @@ def run_step(
     )
 
 
-def benchmark_json_passed(path: Path) -> bool:
+def benchmark_json_step(path: Path) -> BenchmarkStep:
     if not path.is_file():
-        return False
+        return BenchmarkStep(
+            name="Verify benchmark JSON",
+            status=StepStatus.FAIL,
+            detail="benchmark JSON artifact was not pulled",
+        )
     try:
         payload: object = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return False
+    except json.JSONDecodeError as exc:
+        return BenchmarkStep(
+            name="Verify benchmark JSON",
+            status=StepStatus.FAIL,
+            detail=f"benchmark JSON is invalid: {exc.msg}",
+            artifact=str(path),
+        )
     if not isinstance(payload, dict):
-        return False
+        return BenchmarkStep(
+            name="Verify benchmark JSON",
+            status=StepStatus.FAIL,
+            detail="benchmark JSON root must be an object",
+            artifact=str(path),
+        )
     payload_dict = cast("dict[str, object]", payload)
+    status = payload_dict.get("status")
     output_chunk_count = payload_dict.get("outputChunkCount")
-    return payload_dict.get("status") == "PASS" and (
-        isinstance(output_chunk_count, int) and output_chunk_count > 0
+    if status == "PASS" and isinstance(output_chunk_count, int) and output_chunk_count > 0:
+        return BenchmarkStep(
+            name="Verify benchmark JSON",
+            status=StepStatus.OK,
+            detail=benchmark_json_summary(payload_dict),
+            artifact=str(path),
+        )
+    return BenchmarkStep(
+        name="Verify benchmark JSON",
+        status=StepStatus.FAIL,
+        detail=benchmark_json_failure_summary(payload_dict),
+        artifact=str(path),
     )
+
+
+def benchmark_json_summary(payload: dict[str, object]) -> str:
+    return (
+        "benchmark JSON PASS: "
+        f"outputChunkCount={payload.get('outputChunkCount')}, "
+        f"firstChunkMillis={payload.get('firstChunkMillis')}, "
+        f"generationMillis={payload.get('generationMillis')}"
+    )
+
+
+def benchmark_json_failure_summary(payload: dict[str, object]) -> str:
+    parts = [
+        f"status={payload.get('status')!r}",
+        f"outputChunkCount={payload.get('outputChunkCount')!r}",
+    ]
+    error_class = payload.get("errorClass")
+    if isinstance(error_class, str) and error_class:
+        parts.append(f"errorClass={error_class}")
+    error_message = payload.get("errorMessage")
+    if isinstance(error_message, str) and error_message:
+        parts.append(f"errorMessage={tail(error_message, max_chars=240)}")
+    return "benchmark JSON FAIL: " + ", ".join(parts)
 
 
 def tail(text: str, max_chars: int = 2000) -> str:
