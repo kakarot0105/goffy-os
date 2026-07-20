@@ -25,9 +25,10 @@ tools are the capability boundary.
 > deterministic quality gate. The model is not runtime-enabled because its
 > constrained-label output is still too verbose, and the adapter correctly
 > rejects it as non-authoritative instead of wiring it into executable routing.
-> Automatic rotation scheduling, Android retrieval for Hub audit,
-> production-gated LiteRT-LM activation, certificate-backed Hub identity proof,
-> and trusted LAN operation remain open.
+> The app now exposes a fail-closed local-model runtime gate/status rail with
+> at-use model-file rechecks, but the LiteRT-LM production provider remains
+> unshipped. Automatic rotation scheduling, Android retrieval for Hub audit,
+> certificate-backed Hub identity proof, and trusted LAN operation remain open.
 
 ## Current vertical slice
 
@@ -43,6 +44,8 @@ tools are the capability boundary.
 - Exact-task, exact-arguments, expiring, single-use phone approval grants
 - Disabled-by-default local-model intent fallback boundary for unsupported
   commands, with deterministic routes still authoritative
+- Fail-closed local-model runtime gate with at-use rechecks and visible status
+  rail; no model loads in GOFFY LITE
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`

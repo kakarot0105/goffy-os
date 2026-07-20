@@ -67,6 +67,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.goffy.os.agent.TaskEventKind
 import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
+import dev.goffy.os.localmodel.LocalModelRuntimeState
 import dev.goffy.os.qr.PairingQrScanner
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.MacSystemInfo
@@ -532,6 +533,19 @@ private fun StatusRail(state: GoffyUiState) {
         ExecutionTarget.MAC -> stringResource(R.string.target_mac)
         ExecutionTarget.CLOUD -> stringResource(R.string.target_cloud)
     }
+    val localModelValue = when (state.localModelStatus.state) {
+        LocalModelRuntimeState.DISABLED -> stringResource(R.string.local_model_disabled)
+        LocalModelRuntimeState.UNAVAILABLE -> stringResource(R.string.local_model_unavailable)
+        LocalModelRuntimeState.BLOCKED -> stringResource(R.string.local_model_blocked)
+        LocalModelRuntimeState.READY -> stringResource(R.string.local_model_ready)
+    }
+    val localModelAccent = when (state.localModelStatus.state) {
+        LocalModelRuntimeState.READY -> Signal
+        LocalModelRuntimeState.BLOCKED -> Warning
+        LocalModelRuntimeState.DISABLED,
+        LocalModelRuntimeState.UNAVAILABLE,
+        -> Mist
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -547,6 +561,12 @@ private fun StatusRail(state: GoffyUiState) {
             label = stringResource(R.string.target_label),
             value = targetValue,
             accent = Signal,
+            modifier = Modifier.weight(1f),
+        )
+        StatusCard(
+            label = stringResource(R.string.local_model_label),
+            value = localModelValue,
+            accent = localModelAccent,
             modifier = Modifier.weight(1f),
         )
     }

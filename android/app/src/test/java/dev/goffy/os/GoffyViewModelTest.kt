@@ -20,6 +20,14 @@ import dev.goffy.os.hub.IssuedHubCredential
 import dev.goffy.os.hub.RotatedHubCredential
 import dev.goffy.os.hub.SelfRevocationResult
 import dev.goffy.os.hub.StoredHubCredential
+import dev.goffy.os.localmodel.LocalModelIntentCandidate
+import dev.goffy.os.localmodel.LocalModelIntentFallback
+import dev.goffy.os.localmodel.LocalModelIntentObservation
+import dev.goffy.os.localmodel.LocalModelRuntimeGate
+import dev.goffy.os.localmodel.LocalModelRuntimeGateConfig
+import dev.goffy.os.localmodel.LocalModelRuntimePolicy
+import dev.goffy.os.localmodel.LocalModelRuntimeState
+import dev.goffy.os.localmodel.LocalModelRuntimeStatus
 import dev.goffy.os.phone.DefaultPhoneToolGateway
 import dev.goffy.os.phone.FlashlightSource
 import dev.goffy.os.phone.PhoneToolGateway
@@ -41,6 +49,8 @@ import dev.goffy.os.protocol.PhoneTimerDispatched
 import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import dev.goffy.os.protocol.ToolInvocationRequest
 import dev.goffy.os.protocol.ToolProgress
+import java.io.File
+import java.nio.file.Files
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -456,6 +466,81 @@ class GoffyViewModelTest {
     }
 
     @Test
+    fun localModelObservationDoesNotBecomeExecutableRoute() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val fallback = RecordingLocalModelFallback(
+            LocalModelIntentObservation.Candidate(
+                LocalModelIntentCandidate(
+                    intentLabel = "PHONE",
+                    confidence = 0.91f,
+                    normalizedCommand = "open settings",
+                    rationale = "test observation",
+                ),
+            ),
+        )
+        val viewModel = createViewModel(
+            gateway,
+            localModelFallback = fallback,
+            localModelStatus = LocalModelRuntimeStatus(
+                state = LocalModelRuntimeState.READY,
+                summary = "Local model ready for observe-only fallback.",
+                enabledByUser = true,
+                runtimeAvailable = true,
+                modelAvailable = true,
+            ),
+        )
+
+        viewModel.configureHub(endpoint, token)
+        viewModel.submitCommand("open settings")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(1, fallback.calls)
+        assertTrue(gateway.requests.isEmpty())
+        assertEquals(TaskPhase.FAILED, entry.phase)
+        assertTrue(entry.summary.contains("Local model suggested PHONE"))
+        assertTrue(entry.summary.contains("deterministic route"))
+        assertEquals(LocalModelRuntimeState.READY, viewModel.uiState.value.localModelStatus.state)
+    }
+
+    @Test
+    fun localModelRuntimeGateStatusIsShownAndRecheckedByDefault() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val modelRoot = Files.createTempDirectory("goffy-local-model").toFile()
+        try {
+            val modelFile = File(modelRoot, "tiny.litertlm").also {
+                it.writeText("model", charset = Charsets.UTF_8)
+            }
+            val delegate = RecordingLocalModelFallback(
+                LocalModelIntentObservation.Rejected("test observation"),
+            )
+            val gate = LocalModelRuntimeGate(
+                config = LocalModelRuntimeGateConfig(
+                    enabledByUser = true,
+                    developerRuntimeAllowed = true,
+                    runtimeAvailable = true,
+                    modelRoot = modelRoot,
+                    modelFile = modelFile,
+                    policy = LocalModelRuntimePolicy(enabled = true),
+                ),
+                delegate = delegate,
+            )
+
+            val viewModel = createViewModel(gateway, localModelFallback = gate)
+
+            assertEquals(LocalModelRuntimeState.READY, viewModel.uiState.value.localModelStatus.state)
+            assertTrue(modelFile.delete())
+            viewModel.submitCommand("open settings")
+            advanceUntilIdle()
+
+            assertEquals(LocalModelRuntimeState.UNAVAILABLE, viewModel.uiState.value.localModelStatus.state)
+            assertEquals(0, delegate.calls)
+        } finally {
+            modelRoot.deleteRecursively()
+        }
+    }
+
+    @Test
     fun batteryStatusRunsAndVerifiesLocallyWithoutHubConfiguration() = runTest(dispatcher) {
         val hubGateway = FakeHubGateway { flowOf() }
         val phoneGateway = DefaultPhoneToolGateway(
@@ -834,6 +919,13 @@ class GoffyViewModelTest {
         allowDevelopmentTokenConfiguration: Boolean = true,
         nowMillis: () -> Long = System::currentTimeMillis,
         auditStore: TerminalAuditStore = RecordingAuditStore(),
+        localModelFallback: LocalModelIntentFallback = LocalModelIntentFallback {
+            LocalModelIntentObservation.Disabled(
+                "Local model is off; deterministic routing is authoritative.",
+            )
+        },
+        localModelStatus: LocalModelRuntimeStatus =
+            (localModelFallback as? LocalModelRuntimeGate)?.status ?: LocalModelRuntimeStatus.disabled(),
     ): GoffyViewModel {
         val protocolMessageIds = ArrayDeque(
             listOf(
@@ -861,6 +953,8 @@ class GoffyViewModelTest {
             auditStore = auditStore,
             auditDispatcher = dispatcher,
             credentialDispatcher = dispatcher,
+            localModelFallback = localModelFallback,
+            localModelStatus = localModelStatus,
         )
     }
 
@@ -974,6 +1068,18 @@ class GoffyViewModelTest {
         }
 
         override fun close() = Unit
+    }
+
+    private class RecordingLocalModelFallback(
+        private val observation: LocalModelIntentObservation,
+    ) : LocalModelIntentFallback {
+        var calls = 0
+            private set
+
+        override fun observeUnsupportedCommand(command: String): LocalModelIntentObservation {
+            calls += 1
+            return observation
+        }
     }
 
     private class RecordingAuditStore(

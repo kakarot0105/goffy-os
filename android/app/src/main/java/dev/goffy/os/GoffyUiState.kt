@@ -3,6 +3,8 @@ package dev.goffy.os
 import dev.goffy.os.agent.GoffyExecutionPlan
 import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.agent.TaskTimelineState
+import dev.goffy.os.localmodel.LocalModelRuntimeGate
+import dev.goffy.os.localmodel.LocalModelRuntimeStatus
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import java.util.UUID
@@ -43,6 +45,7 @@ data class GoffyUiState(
     val auditPersistence: AuditPersistenceState = AuditPersistenceState.LOADING,
     val discardedAuditRecords: Int = 0,
     val hubIdentityFingerprint: String? = null,
+    val localModelStatus: LocalModelRuntimeStatus = LocalModelRuntimeGate.goffyLiteDefault().status,
 ) {
     val hubConfigured: Boolean
         get() = hubLinkState == HubLinkState.PAIRED || hubLinkState == HubLinkState.DEVELOPMENT

@@ -25,6 +25,10 @@ import dev.goffy.os.hub.AndroidHubCredentialStore
 import dev.goffy.os.hub.OkHttpHubGateway
 import dev.goffy.os.hub.OkHttpHubPairingGateway
 import dev.goffy.os.hub.StoredHubCredential
+import dev.goffy.os.localmodel.LocalModelIntentFallback
+import dev.goffy.os.localmodel.LocalModelIntentObservation
+import dev.goffy.os.localmodel.LocalModelRuntimeGate
+import dev.goffy.os.localmodel.LocalModelRuntimeStatus
 import dev.goffy.os.phone.AndroidBatteryStatusSource
 import dev.goffy.os.phone.AndroidDeviceInfoSource
 import dev.goffy.os.phone.AndroidFlashlightSource
@@ -74,6 +78,10 @@ class GoffyViewModel internal constructor(
     private val auditStore: TerminalAuditStore = NoOpTerminalAuditStore,
     private val auditDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val credentialDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val localModelFallback: LocalModelIntentFallback = LocalModelRuntimeGate.goffyLiteDefault(),
+    localModelStatus: LocalModelRuntimeStatus = LocalModelRuntimeStatus.disabled(),
+    private val localModelStatusProvider: () -> LocalModelRuntimeStatus =
+        (localModelFallback as? LocalModelRuntimeGate)?.let { gate -> { gate.status } } ?: { localModelStatus },
 ) : ViewModel() {
     constructor(context: Context) : this(
         gateway = OkHttpHubGateway(),
@@ -106,6 +114,7 @@ class GoffyViewModel internal constructor(
         GoffyUiState(
             hubEndpoint = defaultEndpoint,
             developmentTokenAllowed = allowDevelopmentTokenConfiguration,
+            localModelStatus = currentLocalModelStatus(),
         ),
     )
     val uiState: StateFlow<GoffyUiState> = mutableUiState.asStateFlow()
@@ -507,6 +516,7 @@ class GoffyViewModel internal constructor(
     }
 
     fun submitCommand(command: String) {
+        refreshLocalModelStatus()
         if (mutableUiState.value.isBusy) {
             mutableUiState.value = mutableUiState.value.rejectCommand(
                 command,
@@ -515,11 +525,12 @@ class GoffyViewModel internal constructor(
             )
             return
         }
-        val decision = GoffyIntentRouter.route(command)
+        val decision = GoffyIntentRouter.route(command, localModelFallback)
+        refreshLocalModelStatus()
         if (decision is RoutingDecision.Unsupported) {
             mutableUiState.value = mutableUiState.value.rejectCommand(
                 command,
-                "No safe deterministic route is available for this command yet",
+                decision.unsupportedSummary(),
                 nowMillis(),
             )
             return
@@ -607,6 +618,24 @@ class GoffyViewModel internal constructor(
                 "GOFFY will not open the camera or capture images."
         else -> null
     }
+
+    private fun refreshLocalModelStatus() {
+        mutableUiState.value = mutableUiState.value.copy(localModelStatus = currentLocalModelStatus())
+    }
+
+    private fun currentLocalModelStatus(): LocalModelRuntimeStatus = localModelStatusProvider()
+
+    private fun RoutingDecision.Unsupported.unsupportedSummary(): String =
+        when (val observation = localModelObservation) {
+            is LocalModelIntentObservation.Candidate ->
+                "Local model suggested ${observation.candidate.intentLabel}, but GOFFY needs " +
+                    "a deterministic route before execution"
+            is LocalModelIntentObservation.Disabled ->
+                "No safe deterministic route is available for this command yet. ${observation.reason}"
+            is LocalModelIntentObservation.Rejected ->
+                "No safe deterministic route is available for this command yet. ${observation.reason}"
+            null -> "No safe deterministic route is available for this command yet"
+        }
 
     private fun Int.displayDuration(): String = when {
         this % 3_600 == 0 -> "${this / 3_600} ${if (this == 3_600) "hour" else "hours"}"

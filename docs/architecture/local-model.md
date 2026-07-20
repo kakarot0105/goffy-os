@@ -69,8 +69,15 @@ text into the deterministic quality gate:
   prompts outside the 512-character prompt budget.
 - Runtime failures become `Rejected` observations; caller cancellation is not
   swallowed.
-- The adapter is not connected to `GoffyIntentRouter`, the UI, startup, or any
-  background loop yet.
+- `LocalModelRuntimeGate` is wired into `GoffyIntentRouter` from the ViewModel as
+  an observe-only fallback boundary. The default GOFFY LITE gate is disabled,
+  exposes `OFF` in the status rail, and does not load a model.
+- The gate re-checks model-file availability and approved-root constraints each
+  time an unsupported command reaches the fallback boundary. The status rail is
+  refreshed at command boundaries instead of using continuous background polling.
+- A future LiteRT-LM production provider may delegate through this gate only when
+  user enablement, policy enablement, runtime availability, approved app-owned
+  model-file validation, and size bounds all pass.
 
 The concrete LiteRT-LM Android runtime dependency remains benchmark/test-only
 until production-gated activation, startup/install-size evidence, idle-unload
@@ -89,8 +96,10 @@ LiteRT-LM out of the main runtime classpath:
 
 GOFFY LITE remains the default on the Moto G target. The current code enforces
 disabled-by-default observation behavior plus bounded prompt, model output, and
-candidate text. The remaining values are declared gates for the future runtime
-integration and must be wired before a model binary is shipped. Initial budgets
+candidate text. The app now also exposes a fail-closed runtime activation gate
+that rechecks model-file constraints at use time plus a status rail refreshed at
+command boundaries. The remaining values must still be satisfied by a future
+LiteRT-LM production provider before a model binary is shipped. Initial budgets
 are:
 
 - Disabled by default
@@ -211,10 +220,11 @@ The JSON records initialization latency, first-chunk latency, total generation
 time, output chunk count, character-rate, battery and thermal snapshots, and
 managed/native memory snapshots. True token-per-second reporting, peak memory,
 UI responsiveness scoring, battery-drain acceptance, reusable idle-unload
-behavior, and developer-controlled activation still belong to future runtime
+behavior, and the production LiteRT-LM provider still belong to future runtime
 integration work. Label-quality checks are implemented in the deterministic
-routing quality gate above and the disabled generated-text adapter calls that
-gate, but live app routing still does not call the adapter.
+routing quality gate above; live app routing calls the fail-closed activation
+gate, but the default gate is disabled and no production LiteRT-LM provider is
+packaged.
 
 ## Physical Moto G LiteRT-LM Evidence
 
