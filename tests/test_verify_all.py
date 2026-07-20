@@ -11,6 +11,7 @@ from scripts.verify_all import (
     StepStatus,
     android_apk_budget_command,
     android_gradle_command,
+    android_local_model_provider_command,
     merged_manifest_security_command,
     render_verification_report,
     run_verification,
@@ -72,9 +73,11 @@ def test_verifier_skips_android_gradle_when_preflight_is_blocked_and_allowed(
         step.name == "android preflight" and step.status is StepStatus.BLOCKED
         for step in report.steps
     )
-    assert report.steps[-3].name == "android gradle"
+    assert report.steps[-4].name == "android gradle"
+    assert report.steps[-4].status is StepStatus.SKIP
+    assert report.steps[-3].name == "android APK budget"
     assert report.steps[-3].status is StepStatus.SKIP
-    assert report.steps[-2].name == "android APK budget"
+    assert report.steps[-2].name == "android local model provider"
     assert report.steps[-2].status is StepStatus.SKIP
     assert report.steps[-1].name == "merged manifest security scan"
     assert report.steps[-1].status is StepStatus.SKIP
@@ -121,11 +124,12 @@ def test_verifier_runs_android_gradle_when_preflight_passes(tmp_path: Path) -> N
     )
 
     assert report.ok
-    assert seen[-3] == android_gradle_command(tmp_path)
-    assert ":app:lintDebug" in seen[-3]
-    assert ":app:assembleDebugAndroidTest" in seen[-3]
-    assert ":app:assembleRelease" in seen[-3]
-    assert seen[-2] == android_apk_budget_command("python")
+    assert seen[-4] == android_gradle_command(tmp_path)
+    assert ":app:lintDebug" in seen[-4]
+    assert ":app:assembleDebugAndroidTest" in seen[-4]
+    assert ":app:assembleRelease" in seen[-4]
+    assert seen[-3] == android_apk_budget_command("python")
+    assert seen[-2] == android_local_model_provider_command(tmp_path)
     assert seen[-1] == merged_manifest_security_command("python")
 
 
@@ -142,9 +146,11 @@ def test_verifier_fails_when_android_gradle_is_skipped_on_ready_toolchain(
     )
 
     assert not report.ok
-    assert report.steps[-3].name == "android gradle"
+    assert report.steps[-4].name == "android gradle"
+    assert report.steps[-4].status is StepStatus.SKIP
+    assert report.steps[-3].name == "android APK budget"
     assert report.steps[-3].status is StepStatus.SKIP
-    assert report.steps[-2].name == "android APK budget"
+    assert report.steps[-2].name == "android local model provider"
     assert report.steps[-2].status is StepStatus.SKIP
     assert report.steps[-1].name == "merged manifest security scan"
     assert report.steps[-1].status is StepStatus.SKIP
@@ -162,8 +168,9 @@ def test_verifier_records_command_failures_and_keeps_running(tmp_path: Path) -> 
 
     assert not report.ok
     assert failed[0].name == "pytest"
-    assert report.steps[-3].name == "android gradle"
-    assert report.steps[-2].name == "android APK budget"
+    assert report.steps[-4].name == "android gradle"
+    assert report.steps[-3].name == "android APK budget"
+    assert report.steps[-2].name == "android local model provider"
     assert report.steps[-1].name == "merged manifest security scan"
 
 
@@ -181,6 +188,27 @@ def test_verifier_fails_when_android_apk_budget_fails(tmp_path: Path) -> None:
     apk_budget = apk_budget_matches[0]
     assert not report.ok
     assert apk_budget.status is StepStatus.FAIL
+    assert report.steps[-2].name == "android local model provider"
+    assert report.steps[-2].status is StepStatus.OK
+    assert report.steps[-1].name == "merged manifest security scan"
+    assert report.steps[-1].status is StepStatus.OK
+
+
+def test_verifier_fails_when_android_local_model_provider_fails(tmp_path: Path) -> None:
+    report = run_verification(
+        root=tmp_path,
+        python="python",
+        runner=failing_runner(":app:compileModelDebugKotlin"),
+        preflight_collector=preflight(True),
+    )
+
+    provider_matches = [
+        step for step in report.steps if step.name == "android local model provider"
+    ]
+
+    assert len(provider_matches) == 1
+    assert not report.ok
+    assert provider_matches[0].status is StepStatus.FAIL
     assert report.steps[-1].name == "merged manifest security scan"
     assert report.steps[-1].status is StepStatus.OK
 

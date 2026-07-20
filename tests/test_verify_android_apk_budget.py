@@ -7,7 +7,9 @@ from pathlib import Path
 from scripts.verify_android_apk_budget import (
     JSON_SCHEMA_VERSION,
     ReleaseDependencyCheck,
+    RuntimeClasspathCheck,
     find_forbidden_release_dependencies,
+    find_forbidden_runtime_dependencies,
     render_json,
     render_text,
     verify_android_apk_budget,
@@ -40,6 +42,7 @@ def test_apk_budget_fails_when_release_runtime_classpath_includes_litertlm(
         max_apk_bytes=apk.stat().st_size + 1,
         repo_root=tmp_path,
         release_dependencies=ReleaseDependencyCheck(
+            configuration="releaseRuntimeClasspath",
             checked=True,
             forbidden_matches=("+--- com.google.ai.edge.litertlm:litertlm-android:0.14.0",),
         ),
@@ -49,12 +52,48 @@ def test_apk_budget_fails_when_release_runtime_classpath_includes_litertlm(
     assert "[FAIL] releaseRuntimeClasspath LiteRT-LM dependencies:" in render_text(report)
 
 
+def test_apk_budget_fails_when_debug_runtime_classpath_includes_litertlm(
+    tmp_path: Path,
+) -> None:
+    apk = tmp_path / "app-release-unsigned.apk"
+    write_apk(apk, {"classes.dex": b"dex"})
+
+    report = verify_android_apk_budget(
+        apk_path=apk,
+        max_apk_bytes=apk.stat().st_size + 1,
+        repo_root=tmp_path,
+        runtime_classpaths=(
+            RuntimeClasspathCheck(
+                configuration="debugRuntimeClasspath",
+                checked=True,
+                forbidden_matches=("\\--- com.google.ai.edge.litertlm:litertlm-android:0.14.0",),
+            ),
+            RuntimeClasspathCheck.passed("releaseRuntimeClasspath"),
+        ),
+    )
+
+    assert not report.ok
+    assert "[FAIL] debugRuntimeClasspath LiteRT-LM dependencies:" in render_text(report)
+
+
 def test_release_runtime_dependency_parser_detects_litertlm_coordinates() -> None:
     matches = find_forbidden_release_dependencies(
         "releaseRuntimeClasspath\n"
         "+--- androidx.compose.ui:ui:1.11.3\n"
         "+--- com.google.ai.edge.litertlm:litertlm-android:0.14.0\n"
         "\\--- com.squareup.okhttp3:okhttp:5.4.0\n"
+    )
+
+    assert matches == ("+--- com.google.ai.edge.litertlm:litertlm-android:0.14.0",)
+
+
+def test_runtime_dependency_parser_deduplicates_default_classpath_matches() -> None:
+    matches = find_forbidden_runtime_dependencies(
+        "debugRuntimeClasspath\n"
+        "+--- com.google.ai.edge.litertlm:litertlm-android:0.14.0\n"
+        "+--- com.google.ai.edge.litertlm:litertlm-android:0.14.0\n"
+        "releaseRuntimeClasspath\n"
+        "\\--- androidx.compose.ui:ui:1.11.3\n"
     )
 
     assert matches == ("+--- com.google.ai.edge.litertlm:litertlm-android:0.14.0",)
@@ -126,6 +165,10 @@ def test_apk_budget_json_is_machine_readable_and_path_scoped(tmp_path: Path) -> 
     assert payload["ok"] is True
     assert payload["apkPath"] == "android/app-release-unsigned.apk"
     assert payload["forbiddenEntries"] == []
+    assert [check["configuration"] for check in payload["runtimeClasspathChecks"]] == [
+        "debugRuntimeClasspath",
+        "releaseRuntimeClasspath",
+    ]
     assert payload["releaseDependencyForbiddenMatches"] == []
 
 

@@ -17,7 +17,12 @@ from scripts.android_preflight import Check, collect_checks, render_report  # no
 
 REPO_OWNED_ANDROID_PREFLIGHT_CHECKS = frozenset({"Gradle wrapper"})
 ANDROID_DEPENDENT_STEPS = frozenset(
-    {"android gradle", "android APK budget", "merged manifest security scan"}
+    {
+        "android gradle",
+        "android APK budget",
+        "android local model provider",
+        "merged manifest security scan",
+    }
 )
 
 
@@ -94,6 +99,17 @@ def merged_manifest_security_command(python: str) -> tuple[str, ...]:
 
 def android_apk_budget_command(python: str) -> tuple[str, ...]:
     return (python, "scripts/verify_android_apk_budget.py")
+
+
+def android_local_model_provider_command(root: Path) -> tuple[str, ...]:
+    wrapper = root / "android" / ("gradlew.bat" if os.name == "nt" else "gradlew")
+    return (
+        str(wrapper),
+        "-p",
+        "android",
+        ":app:compileModelDebugKotlin",
+        "--no-daemon",
+    )
 
 
 def android_gradle_command(root: Path) -> tuple[str, ...]:
@@ -193,6 +209,14 @@ def run_verification(
         )
         results.append(
             StepResult(
+                name="android local model provider",
+                status=StepStatus.SKIP,
+                command=android_local_model_provider_command(root),
+                detail="Skipped because Android Gradle did not run.",
+            )
+        )
+        results.append(
+            StepResult(
                 name="merged manifest security scan",
                 status=StepStatus.SKIP,
                 command=merged_manifest_security_command(python),
@@ -218,6 +242,14 @@ def run_verification(
             )
             results.append(
                 run_command_step(
+                    "android local model provider",
+                    android_local_model_provider_command(root),
+                    root,
+                    runner,
+                )
+            )
+            results.append(
+                run_command_step(
                     "merged manifest security scan",
                     merged_manifest_security_command(python),
                     root,
@@ -230,6 +262,14 @@ def run_verification(
                     name="android APK budget",
                     status=StepStatus.SKIP,
                     command=android_apk_budget_command(python),
+                    detail="Skipped because Android Gradle did not complete successfully.",
+                )
+            )
+            results.append(
+                StepResult(
+                    name="android local model provider",
+                    status=StepStatus.SKIP,
+                    command=android_local_model_provider_command(root),
                     detail="Skipped because Android Gradle did not complete successfully.",
                 )
             )
@@ -255,6 +295,14 @@ def run_verification(
                 name="android APK budget",
                 status=StepStatus.SKIP,
                 command=android_apk_budget_command(python),
+                detail="Skipped because Android Gradle did not run.",
+            )
+        )
+        results.append(
+            StepResult(
+                name="android local model provider",
+                status=StepStatus.SKIP,
+                command=android_local_model_provider_command(root),
                 detail="Skipped because Android Gradle did not run.",
             )
         )

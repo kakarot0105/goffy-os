@@ -45,29 +45,71 @@ data class LocalModelRuntimeGateConfig(
     val policy: LocalModelRuntimePolicy = LocalModelRuntimePolicy(),
 )
 
-class LocalModelRuntimeGate(
-    private val config: LocalModelRuntimeGateConfig = LocalModelRuntimeGateConfig(),
-    private val delegate: LocalModelIntentFallback? = null,
+class LocalModelRuntimeGate private constructor(
+    private val configProvider: () -> LocalModelRuntimeGateConfig,
+    private val delegate: LocalModelIntentFallback?,
+    private val delegateAvailableProvider: () -> Boolean,
 ) : LocalModelIntentFallback {
+    constructor(
+        config: LocalModelRuntimeGateConfig = LocalModelRuntimeGateConfig(),
+        delegate: LocalModelIntentFallback? = null,
+    ) : this(
+        configProvider = { config },
+        delegate = delegate,
+        delegateAvailableProvider = { delegate != null },
+    )
+
+    constructor(
+        configProvider: () -> LocalModelRuntimeGateConfig,
+        delegateAvailableProvider: () -> Boolean,
+    ) : this(
+        configProvider = configProvider,
+        delegate = null,
+        delegateAvailableProvider = delegateAvailableProvider,
+    )
+
     val status: LocalModelRuntimeStatus
         get() = currentStatus()
 
     override fun observeUnsupportedCommand(command: String): LocalModelIntentObservation {
         val currentStatus = status
-        if (currentStatus.state != LocalModelRuntimeState.READY || delegate == null) {
+        if (currentStatus.state != LocalModelRuntimeState.READY) {
             return LocalModelIntentObservation.Disabled(currentStatus.summary)
         }
-        return delegate.observeUnsupportedCommand(command)
+        val synchronousDelegate = delegate ?: return LocalModelIntentObservation.Disabled(
+            "Local model runtime requires an asynchronous observation boundary.",
+        )
+        return synchronousDelegate.observeUnsupportedCommand(command)
     }
 
-    private fun currentStatus(): LocalModelRuntimeStatus =
-        try {
-            config.toStatus(delegateAvailable = delegate != null)
+    private fun currentStatus(): LocalModelRuntimeStatus {
+        val config = try {
+            configProvider()
+        } catch (_: SecurityException) {
+            return LocalModelRuntimeStatus(
+                state = LocalModelRuntimeState.BLOCKED,
+                summary = "Local model runtime configuration was blocked by Android security policy.",
+                enabledByUser = false,
+                runtimeAvailable = false,
+                modelAvailable = false,
+            )
+        } catch (_: IOException) {
+            return LocalModelRuntimeStatus(
+                state = LocalModelRuntimeState.UNAVAILABLE,
+                summary = "Local model runtime configuration could not be verified.",
+                enabledByUser = false,
+                runtimeAvailable = false,
+                modelAvailable = false,
+            )
+        }
+        return try {
+            config.toStatus(delegateAvailable = delegateAvailableProvider())
         } catch (_: SecurityException) {
             config.blockedStatus("Local model path access was blocked by Android security policy.")
         } catch (_: IOException) {
             config.unavailableStatus("Local model path could not be verified.")
         }
+    }
 
     companion object {
         fun goffyLiteDefault(): LocalModelRuntimeGate = LocalModelRuntimeGate()

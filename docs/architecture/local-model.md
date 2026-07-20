@@ -62,6 +62,9 @@ text into the deterministic quality gate:
   `evaluateLocalModelRoutingOutput`.
 - The adapter returns `Disabled` unless `LocalModelRuntimePolicy.enabled` is
   explicitly true.
+- `GatedLocalModelRuntimeProvider` is a suspend boundary for generated-text
+  observations. The synchronous deterministic router remains authoritative and
+  does not block the UI thread on model generation.
 - Model files must be existing `.litertlm` files under the approved app-owned
   model directory and must stay within the 512 MB GOFFY LITE budget.
 - The adapter builds a short strict-JSON routing prompt, rejects candidate
@@ -78,16 +81,23 @@ text into the deterministic quality gate:
 - A future LiteRT-LM production provider may delegate through this gate only when
   user enablement, policy enablement, runtime availability, approved app-owned
   model-file validation, and size bounds all pass.
+- `modelDebug` is a developer/runtime-validation build type that compiles the
+  real LiteRT-LM Android provider from `android/app/src/modelDebug`. It uses the
+  official `Engine` API on `Dispatchers.Default`, CPU backend, app cache
+  directory, bounded output collection, and explicit `use`/close blocks. It
+  still defaults to disabled user activation and is not part of normal `debug` or
+  `release` GOFFY LITE packaging.
 - `scripts/verify_android_apk_budget.py` is part of `verify_all.py` after the
   release APK build. It blocks the default GOFFY LITE APK when it exceeds 32 MiB
-  or packages LiteRT-LM/model APK entries such as `liblitertlm` or `.litertlm`,
-  or lists LiteRT-LM in `releaseRuntimeClasspath`, so local-model provider work
-  cannot silently regress the Moto build.
+  or packages LiteRT-LM/model APK entries such as `liblitertlm` or `.litertlm`.
+  It also rejects LiteRT-LM in the normal `debugRuntimeClasspath` or
+  `releaseRuntimeClasspath`, so local-model provider work cannot silently regress
+  default Moto builds.
 
-The concrete LiteRT-LM Android runtime dependency remains benchmark/test-only
-until production-gated activation, startup/install-size evidence, idle-unload
-behavior, and UI-responsiveness evidence are complete. No model binary is
-packaged in the APK or committed to the repository.
+The concrete LiteRT-LM Android runtime dependency remains outside default
+GOFFY LITE packaging until production-gated activation, startup/install-size
+evidence, idle-unload behavior, and UI-responsiveness evidence are complete. No
+model binary is packaged in the APK or committed to the repository.
 
 Standard GOFFY LITE packaging evidence checked on 2026-07-20 after keeping
 LiteRT-LM out of the main runtime classpath:

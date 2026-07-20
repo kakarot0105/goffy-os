@@ -51,10 +51,13 @@ jobs:
       - name: Verify GOFFY LITE APK budget
         id: android_apk_budget
         run: python3 scripts/verify_android_apk_budget.py
+      - name: Compile optional LiteRT-LM provider
+        id: android_local_model_provider
+        run: ./android/gradlew -p android :app:compileModelDebugKotlin --no-daemon
       - name: Verify merged Android manifests
         id: merged_manifest_security
         run: python3 scripts/security_scan.py --require-merged-manifests
       - name: Setup diagnostics on failure
-        if: ${{ failure() && (steps.android_preflight.conclusion == 'failure' || steps.android_gradle.conclusion == 'failure' || steps.android_apk_budget.conclusion == 'failure' || steps.merged_manifest_security.conclusion == 'failure') }}
+        if: ${{ failure() && (steps.android_preflight.conclusion == 'failure' || steps.android_gradle.conclusion == 'failure' || steps.android_apk_budget.conclusion == 'failure' || steps.android_local_model_provider.conclusion == 'failure' || steps.merged_manifest_security.conclusion == 'failure') }}
         run: python3 scripts/setup_doctor.py --android-only --include-device --json
         continue-on-error: true

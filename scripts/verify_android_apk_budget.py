@@ -20,7 +20,11 @@ FORBIDDEN_ENTRY_PATTERNS = (
     ".litertlm",
     "litertlm",
 )
-FORBIDDEN_RELEASE_DEPENDENCY_PATTERNS = ("com.google.ai.edge.litertlm", "litertlm-android")
+DEFAULT_RUNTIME_CLASSPATH_CONFIGURATIONS = (
+    "debugRuntimeClasspath",
+    "releaseRuntimeClasspath",
+)
+FORBIDDEN_RUNTIME_DEPENDENCY_PATTERNS = ("com.google.ai.edge.litertlm", "litertlm-android")
 DEPENDENCY_REPORT_TIMEOUT_SECONDS = 120
 
 
@@ -36,7 +40,8 @@ CommandRunner = Callable[[Sequence[str], Path, int], CommandResult]
 
 
 @dataclass(frozen=True)
-class ReleaseDependencyCheck:
+class RuntimeClasspathCheck:
+    configuration: str
     checked: bool
     command: tuple[str, ...] = ()
     forbidden_matches: tuple[str, ...] = ()
@@ -47,8 +52,11 @@ class ReleaseDependencyCheck:
         return self.error is None and not self.forbidden_matches
 
     @classmethod
-    def passed(cls) -> ReleaseDependencyCheck:
-        return cls(checked=True)
+    def passed(cls, configuration: str = "releaseRuntimeClasspath") -> RuntimeClasspathCheck:
+        return cls(configuration=configuration, checked=True)
+
+
+ReleaseDependencyCheck = RuntimeClasspathCheck
 
 
 @dataclass(frozen=True)
@@ -57,7 +65,10 @@ class AndroidApkBudgetReport:
     max_apk_bytes: int
     apk_bytes: int | None
     forbidden_entries: tuple[str, ...]
-    release_dependencies: ReleaseDependencyCheck = ReleaseDependencyCheck.passed()
+    runtime_classpaths: tuple[RuntimeClasspathCheck, ...] = tuple(
+        RuntimeClasspathCheck.passed(configuration)
+        for configuration in DEFAULT_RUNTIME_CLASSPATH_CONFIGURATIONS
+    )
     error: str | None = None
     repo_root: Path = ROOT
 
@@ -68,7 +79,7 @@ class AndroidApkBudgetReport:
             and self.apk_bytes is not None
             and self.apk_bytes <= self.max_apk_bytes
             and not self.forbidden_entries
-            and self.release_dependencies.ok
+            and all(check.ok for check in self.runtime_classpaths)
         )
 
     @property
@@ -82,15 +93,23 @@ def verify_android_apk_budget(
     max_apk_bytes: int = DEFAULT_MAX_RELEASE_APK_BYTES,
     repo_root: Path = ROOT,
     release_dependencies: ReleaseDependencyCheck | None = None,
+    runtime_classpaths: tuple[RuntimeClasspathCheck, ...] | None = None,
 ) -> AndroidApkBudgetReport:
-    dependency_check = release_dependencies or ReleaseDependencyCheck.passed()
+    dependency_checks = runtime_classpaths or (
+        (release_dependencies,)
+        if release_dependencies is not None
+        else tuple(
+            RuntimeClasspathCheck.passed(configuration)
+            for configuration in DEFAULT_RUNTIME_CLASSPATH_CONFIGURATIONS
+        )
+    )
     if max_apk_bytes <= 0:
         return AndroidApkBudgetReport(
             apk_path=apk_path,
             max_apk_bytes=max_apk_bytes,
             apk_bytes=None,
             forbidden_entries=(),
-            release_dependencies=dependency_check,
+            runtime_classpaths=dependency_checks,
             error="APK byte budget must be positive.",
             repo_root=repo_root,
         )
@@ -100,7 +119,7 @@ def verify_android_apk_budget(
             max_apk_bytes=max_apk_bytes,
             apk_bytes=None,
             forbidden_entries=(),
-            release_dependencies=dependency_check,
+            runtime_classpaths=dependency_checks,
             error="Release APK is missing; run the Android release build first.",
             repo_root=repo_root,
         )
@@ -113,7 +132,7 @@ def verify_android_apk_budget(
             max_apk_bytes=max_apk_bytes,
             apk_bytes=apk_path.stat().st_size,
             forbidden_entries=(),
-            release_dependencies=dependency_check,
+            runtime_classpaths=dependency_checks,
             error="Release APK is not a readable ZIP archive.",
             repo_root=repo_root,
         )
@@ -123,7 +142,7 @@ def verify_android_apk_budget(
         max_apk_bytes=max_apk_bytes,
         apk_bytes=apk_path.stat().st_size,
         forbidden_entries=forbidden_entries,
-        release_dependencies=dependency_check,
+        runtime_classpaths=dependency_checks,
         repo_root=repo_root,
     )
 
@@ -133,43 +152,82 @@ def is_forbidden_apk_entry(entry_name: str) -> bool:
     return any(pattern in normalized for pattern in FORBIDDEN_ENTRY_PATTERNS)
 
 
+def collect_runtime_classpath_checks(
+    *,
+    repo_root: Path = ROOT,
+    runner: CommandRunner | None = None,
+    timeout_seconds: int = DEPENDENCY_REPORT_TIMEOUT_SECONDS,
+) -> tuple[RuntimeClasspathCheck, ...]:
+    return tuple(
+        collect_runtime_classpath_check(
+            configuration=configuration,
+            repo_root=repo_root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+        )
+        for configuration in DEFAULT_RUNTIME_CLASSPATH_CONFIGURATIONS
+    )
+
+
+def collect_runtime_classpath_check(
+    *,
+    configuration: str,
+    repo_root: Path = ROOT,
+    runner: CommandRunner | None = None,
+    timeout_seconds: int = DEPENDENCY_REPORT_TIMEOUT_SECONDS,
+) -> RuntimeClasspathCheck:
+    command = runtime_classpath_dependency_command(repo_root, configuration)
+    wrapper = Path(command[0])
+    if not wrapper.is_file():
+        return RuntimeClasspathCheck(
+            configuration=configuration,
+            checked=False,
+            command=command,
+            error=f"Gradle wrapper is missing; cannot inspect {configuration}.",
+        )
+    active_runner = runner or default_command_runner
+    result = active_runner(command, repo_root, timeout_seconds)
+    if result.timed_out:
+        return RuntimeClasspathCheck(
+            configuration=configuration,
+            checked=False,
+            command=command,
+            error=f"{configuration} dependency report timed out.",
+        )
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
+    if result.exit_code != 0:
+        return RuntimeClasspathCheck(
+            configuration=configuration,
+            checked=False,
+            command=command,
+            error=f"{configuration} dependency report failed.",
+        )
+    return RuntimeClasspathCheck(
+        configuration=configuration,
+        checked=True,
+        command=command,
+        forbidden_matches=find_forbidden_runtime_dependencies(output),
+    )
+
+
 def collect_release_dependency_check(
     *,
     repo_root: Path = ROOT,
     runner: CommandRunner | None = None,
     timeout_seconds: int = DEPENDENCY_REPORT_TIMEOUT_SECONDS,
 ) -> ReleaseDependencyCheck:
-    command = release_dependency_command(repo_root)
-    wrapper = Path(command[0])
-    if not wrapper.is_file():
-        return ReleaseDependencyCheck(
-            checked=False,
-            command=command,
-            error="Gradle wrapper is missing; cannot inspect releaseRuntimeClasspath.",
-        )
-    active_runner = runner or default_command_runner
-    result = active_runner(command, repo_root, timeout_seconds)
-    if result.timed_out:
-        return ReleaseDependencyCheck(
-            checked=False,
-            command=command,
-            error="releaseRuntimeClasspath dependency report timed out.",
-        )
-    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
-    if result.exit_code != 0:
-        return ReleaseDependencyCheck(
-            checked=False,
-            command=command,
-            error="releaseRuntimeClasspath dependency report failed.",
-        )
-    return ReleaseDependencyCheck(
-        checked=True,
-        command=command,
-        forbidden_matches=find_forbidden_release_dependencies(output),
+    return collect_runtime_classpath_check(
+        configuration="releaseRuntimeClasspath",
+        repo_root=repo_root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
     )
 
 
-def release_dependency_command(repo_root: Path) -> tuple[str, ...]:
+def runtime_classpath_dependency_command(
+    repo_root: Path,
+    configuration: str,
+) -> tuple[str, ...]:
     wrapper = repo_root / "android" / ("gradlew.bat" if os.name == "nt" else "gradlew")
     return (
         str(wrapper),
@@ -177,10 +235,14 @@ def release_dependency_command(repo_root: Path) -> tuple[str, ...]:
         "android",
         ":app:dependencies",
         "--configuration",
-        "releaseRuntimeClasspath",
+        configuration,
         "--no-daemon",
         "--quiet",
     )
+
+
+def release_dependency_command(repo_root: Path) -> tuple[str, ...]:
+    return runtime_classpath_dependency_command(repo_root, "releaseRuntimeClasspath")
 
 
 def default_command_runner(
@@ -204,13 +266,17 @@ def default_command_runner(
     return CommandResult(completed.returncode, completed.stdout, completed.stderr)
 
 
-def find_forbidden_release_dependencies(report_text: str) -> tuple[str, ...]:
+def find_forbidden_runtime_dependencies(report_text: str) -> tuple[str, ...]:
     matches = []
     for line in report_text.splitlines():
         normalized = line.lower()
-        if any(pattern in normalized for pattern in FORBIDDEN_RELEASE_DEPENDENCY_PATTERNS):
+        if any(pattern in normalized for pattern in FORBIDDEN_RUNTIME_DEPENDENCY_PATTERNS):
             matches.append(line.strip()[:240])
     return tuple(dict.fromkeys(matches))
+
+
+def find_forbidden_release_dependencies(report_text: str) -> tuple[str, ...]:
+    return find_forbidden_runtime_dependencies(report_text)
 
 
 def render_text(report: AndroidApkBudgetReport) -> str:
@@ -233,22 +299,31 @@ def render_text(report: AndroidApkBudgetReport) -> str:
             lines.append(f"       ... {omitted} more entries omitted ...")
     else:
         lines.append("[OK] forbidden LiteRT-LM/model payloads: none")
-    dependency_status = report.release_dependencies
-    if dependency_status.error is not None:
-        lines.append(f"[FAIL] releaseRuntimeClasspath: {dependency_status.error}")
-    elif dependency_status.forbidden_matches:
-        lines.append("[FAIL] releaseRuntimeClasspath LiteRT-LM dependencies:")
-        lines.extend(f"       {match}" for match in dependency_status.forbidden_matches[:20])
-        if len(dependency_status.forbidden_matches) > 20:
-            omitted = len(dependency_status.forbidden_matches) - 20
-            lines.append(f"       ... {omitted} more matches omitted ...")
-    else:
-        lines.append("[OK] releaseRuntimeClasspath LiteRT-LM dependencies: none")
+    for dependency_status in report.runtime_classpaths:
+        configuration = dependency_status.configuration
+        if dependency_status.error is not None:
+            lines.append(f"[FAIL] {configuration}: {dependency_status.error}")
+        elif dependency_status.forbidden_matches:
+            lines.append(f"[FAIL] {configuration} LiteRT-LM dependencies:")
+            lines.extend(f"       {match}" for match in dependency_status.forbidden_matches[:20])
+            if len(dependency_status.forbidden_matches) > 20:
+                omitted = len(dependency_status.forbidden_matches) - 20
+                lines.append(f"       ... {omitted} more matches omitted ...")
+        else:
+            lines.append(f"[OK] {configuration} LiteRT-LM dependencies: none")
     lines.append("Overall: PASS" if report.ok else "Overall: FAIL")
     return "\n".join(lines)
 
 
 def render_json(report: AndroidApkBudgetReport) -> str:
+    release_status = next(
+        (
+            check
+            for check in report.runtime_classpaths
+            if check.configuration == "releaseRuntimeClasspath"
+        ),
+        RuntimeClasspathCheck.passed("releaseRuntimeClasspath"),
+    )
     payload: dict[str, Any] = {
         "schemaVersion": JSON_SCHEMA_VERSION,
         "ok": report.ok,
@@ -257,10 +332,20 @@ def render_json(report: AndroidApkBudgetReport) -> str:
         "maxApkBytes": report.max_apk_bytes,
         "sizeOk": report.size_ok,
         "forbiddenEntries": list(report.forbidden_entries),
-        "releaseDependencyChecked": report.release_dependencies.checked,
-        "releaseDependencyCommand": list(report.release_dependencies.command),
-        "releaseDependencyForbiddenMatches": list(report.release_dependencies.forbidden_matches),
-        "releaseDependencyError": report.release_dependencies.error,
+        "runtimeClasspathChecks": [
+            {
+                "configuration": check.configuration,
+                "checked": check.checked,
+                "command": list(check.command),
+                "forbiddenMatches": list(check.forbidden_matches),
+                "error": check.error,
+            }
+            for check in report.runtime_classpaths
+        ],
+        "releaseDependencyChecked": release_status.checked,
+        "releaseDependencyCommand": list(release_status.command),
+        "releaseDependencyForbiddenMatches": list(release_status.forbidden_matches),
+        "releaseDependencyError": release_status.error,
         "error": report.error,
     }
     return json.dumps(payload, indent=2, sort_keys=True)
@@ -304,12 +389,12 @@ def main(argv: list[str] | None = None) -> int:
     apk_path = (
         Path(args.apk).resolve() if args.apk else repo_root / DEFAULT_RELEASE_APK.relative_to(ROOT)
     )
-    release_dependencies = collect_release_dependency_check(repo_root=repo_root)
+    runtime_classpaths = collect_runtime_classpath_checks(repo_root=repo_root)
     report = verify_android_apk_budget(
         apk_path=apk_path,
         max_apk_bytes=args.max_release_apk_bytes,
         repo_root=repo_root,
-        release_dependencies=release_dependencies,
+        runtime_classpaths=runtime_classpaths,
     )
     print(render_json(report) if args.json else render_text(report))
     return 0 if report.ok else 1

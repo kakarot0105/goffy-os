@@ -8,17 +8,30 @@ fun interface LocalModelTextGenerator {
 }
 
 class GatedLocalModelRuntimeAdapter(
-    private val policy: LocalModelRuntimePolicy = LocalModelRuntimePolicy(),
+    private val policyProvider: () -> LocalModelRuntimePolicy,
     private val modelFile: File,
     private val modelRoot: File,
     private val textGenerator: LocalModelTextGenerator,
 ) {
+    constructor(
+        policy: LocalModelRuntimePolicy = LocalModelRuntimePolicy(),
+        modelFile: File,
+        modelRoot: File,
+        textGenerator: LocalModelTextGenerator,
+    ) : this(
+        policyProvider = { policy },
+        modelFile = modelFile,
+        modelRoot = modelRoot,
+        textGenerator = textGenerator,
+    )
+
     suspend fun observeUnsupportedCommand(command: String): LocalModelIntentObservation {
+        val policy = policyProvider()
         val disabled = disabledObservationIfNeeded(policy)
         if (disabled != null) return disabled
 
         val normalizedCommand = command.trim()
-        validateRuntimeInput(normalizedCommand)?.let { return it }
+        validateRuntimeInput(normalizedCommand, policy)?.let { return it }
 
         val prompt = localModelRoutingPrompt(normalizedCommand)
         if (!isSafeLocalModelPrompt(prompt, policy)) {
@@ -51,7 +64,10 @@ class GatedLocalModelRuntimeAdapter(
         )
     }
 
-    private fun validateRuntimeInput(command: String): LocalModelIntentObservation.Rejected? {
+    private fun validateRuntimeInput(
+        command: String,
+        policy: LocalModelRuntimePolicy,
+    ): LocalModelIntentObservation.Rejected? {
         if (!isSafeLocalModelPrompt(command, policy)) {
             return LocalModelIntentObservation.Rejected(
                 "Command is outside local model prompt safety bounds.",

@@ -16,6 +16,9 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+        buildConfigField("boolean", "GOFFY_LOCAL_MODEL_DEVELOPER_RUNTIME_ALLOWED", "false")
+        buildConfigField("boolean", "GOFFY_LOCAL_MODEL_USER_ENABLED_DEFAULT", "false")
+        buildConfigField("String", "GOFFY_LOCAL_MODEL_FILE_NAME", "\"router.litertlm\"")
     }
 
     buildTypes {
@@ -26,6 +29,13 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+        }
+        create("modelDebug") {
+            initWith(getByName("debug"))
+            matchingFallbacks += listOf("debug")
+            applicationIdSuffix = ".model"
+            versionNameSuffix = "-model"
+            buildConfigField("boolean", "GOFFY_LOCAL_MODEL_DEVELOPER_RUNTIME_ALLOWED", "true")
         }
     }
 
@@ -82,5 +92,6 @@ dependencies {
 
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("com.google.ai.edge.litertlm:litertlm-android:$litertLmVersion")
+    add("modelDebugImplementation", "com.google.ai.edge.litertlm:litertlm-android:$litertLmVersion")
     androidTestImplementation("junit:junit:4.13.2")
 }

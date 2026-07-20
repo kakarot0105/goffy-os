@@ -15,6 +15,7 @@ From the repository root, run the pinned Gradle wrapper:
 python3 scripts/android_preflight.py
 ./android/gradlew -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon
 python3 scripts/verify_android_apk_budget.py
+./android/gradlew -p android :app:compileModelDebugKotlin --no-daemon
 python3 scripts/security_scan.py --require-merged-manifests
 ```
 
@@ -28,7 +29,10 @@ The release APK is written to
 `android/app/build/outputs/apk/release/app-release-unsigned.apk`; the APK budget
 guard fails if that default GOFFY LITE artifact exceeds 32 MiB, packages a
 LiteRT-LM/model APK entry such as `liblitertlm` or `.litertlm`, or lists LiteRT-LM
-in `releaseRuntimeClasspath`.
+in the normal `debugRuntimeClasspath` or `releaseRuntimeClasspath`.
+The optional `modelDebug` build type compiles the LiteRT-LM provider against the
+real Android SDK dependency. It is a developer/runtime-validation variant only;
+the normal `debug` and `release` GOFFY LITE builds do not include that runtime.
 The first wrapper run downloads Gradle 9.4.1 and validates the distribution
 checksum. Verify the wrapper JAR checksum separately before replacing it, and
 review both published checksums during any wrapper upgrade.
@@ -147,8 +151,10 @@ Run the unified verifier before relying on an Android change:
 ```
 
 `verify_all.py` runs `scripts/verify_android_apk_budget.py` immediately after the
-release APK build. Use the standalone command when investigating APK-size drift
-or accidental local-model packaging before a full verifier pass.
+release APK build, then compiles `:app:compileModelDebugKotlin` to keep the
+optional LiteRT-LM provider source healthy. Use the standalone APK-budget command
+when investigating APK-size drift or accidental local-model packaging before a
+full verifier pass.
 
 The verifier runs the Python/Hub checks, then Android preflight. If the JDK,
 Android SDK, Build Tools, and `adb` are present, it continues into Gradle lint,

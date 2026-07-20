@@ -132,6 +132,33 @@ class LocalModelRuntimeGateTest {
         assertEquals(0, delegate.calls)
     }
 
+    @Test
+    fun gateRecomputesDynamicConfiguration() {
+        val modelRoot = temporaryFolder.newFolder("models")
+        val modelFile = writeModel(modelRoot)
+        var enabledByUser = false
+        val gate = LocalModelRuntimeGate(
+            configProvider = {
+                LocalModelRuntimeGateConfig(
+                    enabledByUser = enabledByUser,
+                    developerRuntimeAllowed = true,
+                    runtimeAvailable = true,
+                    modelRoot = modelRoot,
+                    modelFile = modelFile,
+                    policy = LocalModelRuntimePolicy(enabled = enabledByUser),
+                )
+            },
+            delegateAvailableProvider = { true },
+        )
+
+        assertEquals(LocalModelRuntimeState.DISABLED, gate.status.state)
+        enabledByUser = true
+
+        assertEquals(LocalModelRuntimeState.READY, gate.status.state)
+        val observation = gate.observeUnsupportedCommand("open settings")
+        assertTrue(observation is LocalModelIntentObservation.Disabled)
+    }
+
     private fun writeModel(modelRoot: File): File =
         File(modelRoot, "tiny.litertlm").also {
             it.writeText("model", charset = Charsets.UTF_8)

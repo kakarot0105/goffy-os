@@ -13,12 +13,14 @@ CRITICAL_STEP_NAMES = {
     "Android preflight",
     "Lint, test, and assemble",
     "Verify GOFFY LITE APK budget",
+    "Compile optional LiteRT-LM provider",
     "Verify merged Android manifests",
 }
 ANDROID_DIAGNOSTIC_CONDITION = (
     "${{ failure() && (steps.android_preflight.conclusion == 'failure' || "
     "steps.android_gradle.conclusion == 'failure' || "
     "steps.android_apk_budget.conclusion == 'failure' || "
+    "steps.android_local_model_provider.conclusion == 'failure' || "
     "steps.merged_manifest_security.conclusion == 'failure') }}"
 )
 
@@ -60,6 +62,7 @@ def test_android_ci_preflights_before_gradle_and_manifest_security() -> None:
     preflight = step_by_name(steps, "Android preflight")
     gradle = step_by_name(steps, "Lint, test, and assemble")
     apk_budget = step_by_name(steps, "Verify GOFFY LITE APK budget")
+    provider_compile = step_by_name(steps, "Compile optional LiteRT-LM provider")
     manifest_scan = step_by_name(steps, "Verify merged Android manifests")
     diagnostics = step_by_name(steps, "Setup diagnostics on failure")
 
@@ -69,6 +72,11 @@ def test_android_ci_preflights_before_gradle_and_manifest_security() -> None:
     assert gradle["id"] == "android_gradle"
     assert apk_budget["run"] == "python3 scripts/verify_android_apk_budget.py"
     assert apk_budget["id"] == "android_apk_budget"
+    assert (
+        provider_compile["run"]
+        == "./android/gradlew -p android :app:compileModelDebugKotlin --no-daemon"
+    )
+    assert provider_compile["id"] == "android_local_model_provider"
     assert manifest_scan["run"] == "python3 scripts/security_scan.py --require-merged-manifests"
     assert manifest_scan["id"] == "merged_manifest_security"
     assert (
@@ -80,13 +88,16 @@ def test_android_ci_preflights_before_gradle_and_manifest_security() -> None:
     assert names.index("Android preflight") < names.index("Lint, test, and assemble")
     assert names.index("Lint, test, and assemble") < names.index("Verify GOFFY LITE APK budget")
     assert names.index("Verify GOFFY LITE APK budget") < names.index(
+        "Compile optional LiteRT-LM provider"
+    )
+    assert names.index("Compile optional LiteRT-LM provider") < names.index(
         "Verify merged Android manifests"
     )
     assert names.index("Verify merged Android manifests") < names.index(
         "Setup diagnostics on failure"
     )
 
-    for step in (preflight, gradle, apk_budget, manifest_scan):
+    for step in (preflight, gradle, apk_budget, provider_compile, manifest_scan):
         assert_blocking_step(step)
 
 
