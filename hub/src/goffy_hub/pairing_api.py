@@ -24,7 +24,7 @@ from goffy_hub.credentials import (
     PairedCredential,
 )
 from goffy_hub.identity import HUB_IDENTITY_SCHEMA_VERSION, HubIdentity, HubIdentitySchemaVersion
-from goffy_hub.operator_audit import OperatorAuditLog
+from goffy_hub.operator_audit import OperatorAuditLog, OperatorAuditStoreError
 from goffy_hub.pairing import (
     InvalidPairingChallengeError,
     PairingAttemptLimitError,
@@ -230,6 +230,7 @@ def build_pairing_router(
     ) -> PairingSuccessResponse:
         _require_loopback(request)
         redemption = await _read_redemption(request)
+        _require_audit_ready_for_credential_mutation(audit_log)
         try:
             issued = await pairing_service.complete(
                 redemption.challenge_id,
@@ -268,6 +269,7 @@ def build_pairing_router(
             outcome="succeeded",
             principal=None,
             credential_id=issued.credential.credential_id,
+            fail_closed=False,
         )
         return PairingSuccessResponse(
             credential_id=issued.credential.credential_id,
@@ -313,6 +315,7 @@ def build_pairing_router(
         credential_id = principal.credential_id
         if credential_id is None:
             raise _api_error(403, "paired_principal_required", "Paired authentication required.")
+        _require_audit_ready_for_credential_mutation(audit_log)
         try:
             revoked = await pairing_service.revoke(credential_id)
         except CredentialStoreError as error:
@@ -328,6 +331,7 @@ def build_pairing_router(
             outcome="succeeded",
             principal=principal,
             credential_id=credential_id,
+            fail_closed=False,
         )
         return RevocationResponse(credential_id=credential_id, revoked=True)
 
@@ -350,6 +354,7 @@ def build_pairing_router(
         if current_token is None:
             raise _api_error(401, "authentication_required", "Paired authentication required.")
 
+        _require_audit_ready_for_credential_mutation(audit_log)
         try:
             rotated = await pairing_service.rotate(credential_id, current_token)
         except CredentialStoreError as error:
@@ -370,6 +375,7 @@ def build_pairing_router(
             outcome="succeeded",
             principal=principal,
             credential_id=credential_id,
+            fail_closed=False,
         )
         return TokenRotationResponse(
             credential_id=rotated.credential.credential_id,
@@ -387,6 +393,7 @@ def build_pairing_router(
         credential_id: UUID,
     ) -> RevocationResponse:
         principal = await _require_loopback_admin(request, authenticator)
+        _require_audit_ready_for_credential_mutation(audit_log)
         try:
             revoked = await pairing_service.revoke(credential_id)
         except CredentialStoreError as error:
@@ -401,6 +408,7 @@ def build_pairing_router(
             outcome="succeeded",
             principal=principal,
             credential_id=credential_id,
+            fail_closed=False,
         )
         return RevocationResponse(credential_id=credential_id, revoked=True)
 
@@ -493,17 +501,38 @@ def _audit(
     principal: AuthenticatedPrincipal | None,
     credential_id: UUID | None = None,
     detail_code: str | None = None,
+    fail_closed: bool = True,
 ) -> None:
     if audit_log is None:
         return
-    audit_log.record(
-        source=source,
-        action=action,
-        outcome=outcome,
-        principal_kind=principal.kind.value if principal else "none",
-        credential_id=credential_id or (principal.credential_id if principal else None),
-        detail_code=detail_code,
-    )
+    try:
+        audit_log.record(
+            source=source,
+            action=action,
+            outcome=outcome,
+            principal_kind=principal.kind.value if principal else "none",
+            credential_id=credential_id or (principal.credential_id if principal else None),
+            detail_code=detail_code,
+        )
+    except OperatorAuditStoreError:
+        if fail_closed:
+            raise
+        # Credential mutations may already be committed. Do not return a false
+        # HTTP failure after changing credential state.
+        return
+
+
+def _require_audit_ready_for_credential_mutation(audit_log: OperatorAuditLog | None) -> None:
+    if audit_log is None:
+        return
+    try:
+        audit_log.check_store()
+    except OperatorAuditStoreError as error:
+        raise _api_error(
+            503,
+            "operator_audit_unavailable",
+            "Operator audit storage is temporarily unavailable.",
+        ) from error
 
 
 def _hub_identity_response(hub_identity: HubIdentity) -> HubIdentityResponse:

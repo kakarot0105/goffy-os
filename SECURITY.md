@@ -74,16 +74,24 @@ include real credentials or unrelated personal data.
   and 8 KiB per structured output.
 - MCP execution defaults to two concurrent calls with a bounded one-second queue.
   Registry tool timeouts remain authoritative after admission.
-- The Hub keeps a bounded in-memory operator audit for pairing, WebSocket, and
-  MCP control-plane events. `GET /admin/v1/audit/events` is loopback-only,
+- The Hub keeps a bounded operator audit for pairing, WebSocket, and MCP
+  control-plane events. `GET /admin/v1/audit/events` is loopback-only,
   bootstrap-admin-only, no-store, newest-first, and limited to 256 returned rows.
   Stored fields are closed metadata only: sequence, timestamp, source, action,
-  outcome, principal kind, optional credential ID, and bounded detail code.
+  outcome, principal kind, optional credential ID, bounded detail code,
+  previous hash, and event hash.
+- In paired mode, the Hub persists operator audit rows to owner-only
+  `operator-audit.sqlite3` beside the credential store. Rows are hash-chained
+  with a domain-separated SHA-256 digest over closed metadata and the previous
+  row hash. Retrieval reports `verified`, `retention_gap`, or
+  `tamper_detected`. The DB-local chain tip detects simple tail truncation, but
+  this is not a defense against full database rollback or a coordinated rewrite
+  by a local operator with filesystem access. Legacy non-paired mode remains
+  memory-only and reports `volatile`.
 - The Hub operator audit never stores bearer tokens, pairing tokens, request
   bodies, command text, typed arguments, tool outputs, stack traces, free-form
   summaries, or arbitrary header values. Retention is bounded by
-  `GOFFY_OPERATOR_AUDIT_MAX_EVENTS`, defaults to 256, and is intentionally
-  memory-only in this slice.
+  `GOFFY_OPERATOR_AUDIT_MAX_EVENTS` and defaults to 256.
 - Paired credentials are not MCP OAuth. Loopback token rotation is implemented for
   the Hub and a confirmed Android foreground action, but automatic rotation
   schedules and trusted LAN onboarding remain unimplemented.
@@ -241,9 +249,9 @@ include real credentials or unrelated personal data.
   background retry or WorkManager recovery.
 - Android backup and device-to-device transfer are disabled for app data, and
   uninstall removes local audit records.
-- Persistent, tamper-evident Hub/MCP operator audit and Android-side audit
-  retrieval remain future work. The current Hub operator audit is volatile and
-  diagnostic, not forensic evidence.
+- Android-side Hub/MCP audit retrieval, user-directed export/deletion, and full
+  forensic policy remain future work. A retained hash chain with
+  `retention_gap` proves only the retained segment, not pruned rows.
 - CI validates both the strict source manifest and freshly merged debug and release
   manifests, rejecting permission variants, undeclared hardware features, and
   non-intent package queries.
@@ -274,9 +282,9 @@ include real credentials or unrelated personal data.
   or verification checks in the Android audit trail
 - Restoring audit rows as pending approval state, active execution, structured
   result data, or resumable authority
-- Treating the bounded in-memory Hub operator audit as persistent, tamper-evident,
-  or complete forensic evidence
-- Persisting Hub operator audit events before retention, deletion, export, and
-  tamper-evidence policy are defined
+- Treating a `retention_gap` Hub operator audit chain as complete forensic
+  evidence for pruned rows
+- Exposing Hub operator audit to Android before user-visible retrieval,
+  deletion/export controls, and redaction policy are implemented
 
 See [the initial threat model](docs/security/threat-model.md) for remaining risks.

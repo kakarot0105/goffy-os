@@ -127,12 +127,16 @@ def test_pairing_database_path_must_be_absolute() -> None:
         HubSettings(pairing_database_path=Path("relative.sqlite3"))
 
 
-def test_hub_identity_path_is_derived_only_in_paired_mode(tmp_path: Path) -> None:
+def test_state_paths_are_derived_only_in_paired_mode(tmp_path: Path) -> None:
     database_path = tmp_path / "state" / "credentials.sqlite3"
 
     assert HubSettings().resolved_hub_identity_path is None
+    assert HubSettings().resolved_operator_audit_path is None
     assert HubSettings(pairing_database_path=database_path).resolved_hub_identity_path == (
         tmp_path / "state" / "hub-identity.json"
+    )
+    assert HubSettings(pairing_database_path=database_path).resolved_operator_audit_path == (
+        tmp_path / "state" / "operator-audit.sqlite3"
     )
 
 

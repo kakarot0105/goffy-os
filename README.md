@@ -16,9 +16,9 @@ tools are the capability boundary.
 > public loopback identity fingerprint, and Android can scan that bundle through
 > a foreground-only QR pairing panel, reject bundles without the fingerprint, and
 > restore the pinned identity from encrypted paired credentials. The Hub also
-> keeps a bounded in-memory operator audit for pairing, WebSocket, and MCP
-> control-plane events. Physical Moto G verification, automatic rotation
-> scheduling, persistent/tamper-evident Hub audit with Android retrieval,
+> keeps a bounded, hash-chained paired-mode operator audit for pairing,
+> WebSocket, and MCP control-plane events. Physical Moto G verification,
+> automatic rotation scheduling, Android retrieval for Hub audit,
 > certificate-backed Hub identity proof, and trusted LAN operation remain open.
 
 ## Current vertical slice
@@ -61,6 +61,8 @@ tools are the capability boundary.
   or automatic pairing after scan
 - Bounded, loopback-admin Hub operator audit event retrieval for pairing,
   WebSocket, and MCP control-plane activity
+- Persistent, hash-chained paired-mode Hub operator audit storage with integrity
+  reporting
 - Allowlisted, read-only `SAFE mac.system_info` tool
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
@@ -204,14 +206,18 @@ verify it, the phone reports local deletion with remote revocation unverified.
 work, asks the Hub once to rotate the credential, and activates the new bearer
 only after encrypted read-back verification. Ambiguous rotation or storage
 failure disables Mac access and requires re-pairing.
-The Hub keeps a bounded in-memory operator audit for pairing, WebSocket, and MCP
-control-plane events. It exposes newest-first events only to loopback bootstrap
-administrators at `GET /admin/v1/audit/events`, returns no-store responses, and
-stores closed metadata such as source, action, outcome, principal kind,
-credential ID, and bounded detail codes. It does not store tokens, pairing
-tokens, request bodies, command text, tool outputs, or free-form summaries.
-Persistent, tamper-evident storage and Android-side retrieval remain future
-work.
+The Hub keeps a bounded operator audit for pairing, WebSocket, and MCP
+control-plane events. In paired mode, events persist to owner-only
+`operator-audit.sqlite3` beside the credential store and carry a hash chain with
+`previousHash`, `eventHash`, and integrity reporting. It exposes newest-first
+events only to loopback bootstrap administrators at `GET /admin/v1/audit/events`
+and returns no-store responses. The audit stores closed metadata such as source,
+action, outcome, principal kind, credential ID, and bounded detail codes. It does
+not store tokens, pairing tokens, request bodies, command text, tool outputs, or
+free-form summaries. The DB-local chain tip catches simple tail truncation, but
+it does not protect against full database rollback or coordinated rewrite by a
+local operator with filesystem access. Android-side retrieval, export, deletion,
+and full forensic policy remain future work.
 The QR scanner exists only in the visible pairing setup panel, requests the
 normal Android `CAMERA` permission from that action, decodes QR codes only, saves
 no frame, and only fills the existing pairing-bundle field. The user still has to

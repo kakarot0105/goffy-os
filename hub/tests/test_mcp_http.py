@@ -11,6 +11,7 @@ import pytest
 from mcp import ClientSession, types
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server.streamable_http import GET_STREAM_KEY, EventMessage
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.exceptions import McpError
 from pydantic import SecretStr
 from starlette.testclient import TestClient
@@ -18,11 +19,14 @@ from starlette.websockets import WebSocketDisconnect
 
 import goffy_hub.mcp_server as mcp_server_module
 from goffy_hub.app import build_registry, create_app
+from goffy_hub.auth import CredentialAuthenticator
 from goffy_hub.mcp_server import (
     BoundedMcpEventStore,
     McpToolListNotifier,
     RegistryMcpAdapter,
+    _ExactMcpEndpoint,
 )
+from goffy_hub.operator_audit import OperatorAuditLog
 from goffy_hub.registry import ToolInvocationResult
 from goffy_hub.settings import HubSettings
 from goffy_hub.tools import build_mac_system_tool
@@ -53,6 +57,41 @@ def initialize_http_session(client: TestClient) -> str:
     response = client.post("/mcp", json=initialize_request(), headers=MCP_HTTP_HEADERS)
     assert response.status_code == 200
     return response.headers["mcp-session-id"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_audit_records_failure_when_response_fails_after_start() -> None:
+    async def failing_after_start(scope: object, receive: object, send: Any) -> None:
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        raise RuntimeError("simulated response failure")
+
+    settings = HubSettings(auth_token=SecretStr("test-token-that-is-long-enough"))
+    audit_log = OperatorAuditLog(max_events=8)
+    endpoint = _ExactMcpEndpoint(
+        failing_after_start,
+        security_settings=TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=settings.resolved_mcp_allowed_hosts,
+            allowed_origins=settings.resolved_mcp_allowed_origins,
+        ),
+        authenticator=CredentialAuthenticator(settings, None),
+        audit_log=audit_log,
+    )
+    transport = httpx.ASGITransport(app=endpoint, raise_app_exceptions=False)
+
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://127.0.0.1:8787",
+        timeout=5,
+    ) as client:
+        response = await client.post("/mcp", content=b"{}", headers=MCP_HTTP_HEADERS)
+    event = audit_log.snapshot().events[0]
+
+    assert response.status_code == 200
+    assert event.source == "mcp"
+    assert event.action == "http.post"
+    assert event.outcome == "failed"
+    assert event.detail_code == "exception_after_status:200"
 
 
 def tool_list_changed_message() -> types.JSONRPCMessage:

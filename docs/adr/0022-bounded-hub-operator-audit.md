@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by ADR 0023 for paired-mode persistence
 
 ## Context
 
@@ -35,10 +35,9 @@ Operators can now inspect recent Hub/MCP control-plane activity from the Mac
 without searching logs and without exposing tokens or tool results. This closes
 the first direct Hub audit gap while keeping storage and disclosure risk small.
 
-The audit is lost on Hub restart, is not tamper-evident, and is not yet visible
-inside the Android timeline. A later slice must define persistence, deletion,
-export, tamper-evidence, and Android retrieval before treating Hub audit as a
-durable product feature.
+This initial volatile design was later extended by ADR 0023 with paired-mode
+hash-chained SQLite persistence. Android retrieval, deletion, and export remain
+separate future work.
 
 ## Rejected alternatives
 

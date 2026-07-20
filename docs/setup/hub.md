@@ -218,24 +218,32 @@ onboarding exists, so localhost remains the recommended mode.
 
 ## Operator audit
 
-In paired mode, the Hub keeps a bounded in-memory operator audit for pairing,
-WebSocket, and MCP control-plane events. Retrieve the newest events from the Mac
-only through loopback bootstrap administration:
+In paired mode, the Hub keeps a bounded, hash-chained SQLite operator audit for
+pairing, WebSocket, and MCP control-plane events. The file is
+`operator-audit.sqlite3` beside the paired credential database and is created
+with owner-only permissions. Retrieve the newest events from the Mac only
+through loopback bootstrap administration:
 
 ```bash
 curl -fsS -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
   'http://127.0.0.1:8787/admin/v1/audit/events?limit=20'
 ```
 
-Responses are `no-store` and newest-first. Events contain only sequence,
-timestamp, source, action, outcome, principal kind, optional credential ID, and a
-bounded detail code. They do not contain bearer tokens, pairing tokens, request
-bodies, command text, typed arguments, tool outputs, or free-form summaries.
+Responses are `no-store` and newest-first. The response includes `storageKind`
+and `integrity`; paired mode should report `sqlite` plus `verified`,
+`retention_gap`, or `tamper_detected`. Events contain only sequence, timestamp,
+source, action, outcome, principal kind, optional credential ID, bounded detail
+code, previous hash, and event hash. They do not contain bearer tokens, pairing
+tokens, request bodies, command text, typed arguments, tool outputs, or
+free-form summaries.
 
-This audit is diagnostic and volatile. It is not persisted across Hub restart,
-not tamper-evident, and not yet visible from Android. Keep
-`GOFFY_OPERATOR_AUDIT_MAX_EVENTS` bounded; the setting defaults to 256 and is
-accepted only from 16 through 2048.
+Keep `GOFFY_OPERATOR_AUDIT_MAX_EVENTS` bounded; the setting defaults to 256 and
+is accepted only from 16 through 2048. Retention pruning can produce
+`retention_gap`, which means the retained segment verifies but older pruned rows
+are no longer available. The DB-local chain tip catches simple tail truncation,
+but it does not protect against full database rollback or coordinated rewrite by
+a local operator with filesystem access. Android retrieval, export, deletion,
+and full forensic policy are not implemented yet.
 
 ## Android debug over USB
 

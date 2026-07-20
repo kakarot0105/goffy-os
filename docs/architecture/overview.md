@@ -26,7 +26,7 @@ Official MCP client -> authenticated POST /mcp -> MCP SDK -> same ToolRegistry
                                                         ^
 bounded health monitor -> sealed registry availability -'
 terminal task reducer -> app-private Android audit SQLite (50 max, terminal-only, redacted)
-Hub operator audit -> bounded in-memory control-plane events (pairing / WebSocket / MCP)
+Hub operator audit -> bounded hash-chained control-plane events (pairing / WebSocket / MCP)
 ```
 
 All routes emit the same typed preparation, progress, result, error, and
@@ -66,8 +66,8 @@ approval state, active work, and execution authority are not revived.
 9. Credential revocation persists before indexed live WebSocket and MCP sessions
    are terminated. New requests recheck the digest store.
 10. Hub operator audit records only bounded control-plane metadata and is exposed
-    through loopback bootstrap administration. It is volatile and diagnostic, not
-    persistent forensic evidence.
+    through loopback bootstrap administration. Paired mode persists retained
+    events in an owner-only SQLite hash chain; non-paired mode stays volatile.
 11. GOFFY protocol, MCP metadata, and tool contract versions are checked separately.
 12. Remote discovery only confirms or disables a locally known tool. It never adds
    a route, permission, or executable capability.
@@ -116,7 +116,8 @@ bounded to the newest 50 SQLite rows, read on startup, and written once on the
 existing IO dispatcher after terminal state; there is no polling, WorkManager,
 or background retry. Hub operations are asynchronous and timeout-bounded.
 Hub operator audit appends tiny closed metadata events to a bounded in-memory
-deque and performs no disk I/O, body capture, polling, or background upload.
+deque and, in paired mode, one owner-only SQLite row per event. It performs no
+body capture, polling, or background upload.
 
 Hub health checks are Mac-side only: one startup pass, then a 30-second default
 sleep between passes, at most four concurrent probes, and a five-second maximum

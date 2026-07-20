@@ -90,6 +90,12 @@ class HubSettings(BaseModel):
             return None
         return identity_path_for_credential_database(self.pairing_database_path)
 
+    @property
+    def resolved_operator_audit_path(self) -> Path | None:
+        if self.pairing_database_path is None:
+            return None
+        return self.pairing_database_path.parent / "operator-audit.sqlite3"
+
     @classmethod
     def from_environment(cls) -> HubSettings:
         allow_lan = os.getenv("GOFFY_HUB_ALLOW_LAN", "false").strip().lower()

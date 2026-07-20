@@ -91,6 +91,7 @@ def create_app(
     authenticator = CredentialAuthenticator(resolved_settings, credential_store)
     operator_audit_log = OperatorAuditLog(
         max_events=resolved_settings.operator_audit_max_events,
+        database_path=resolved_settings.resolved_operator_audit_path,
     )
     pairing_service = (
         PairingService(

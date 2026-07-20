@@ -74,9 +74,10 @@
 - [x] Stable loopback Hub identity fingerprint for future trust onboarding
 - [x] Android-pinned USB-loopback Hub identity in QR pairing and Keystore restore
 - [x] Bounded loopback-admin Hub/MCP operator audit event retrieval
+- [x] Persistent hash-chained Hub/MCP operator audit storage foundation
 - [ ] Certificate/public-key trusted Hub identity onboarding
 - [ ] Automatic token rotation reminders or schedules after physical validation
-- [ ] Persistent/tamper-evident Hub/MCP operator audit with Android retrieval
+- [ ] Android retrieval and user controls for Hub/MCP operator audit
 
 ## Milestones 4-8
 

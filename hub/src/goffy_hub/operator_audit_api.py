@@ -30,9 +30,13 @@ class OperatorAuditEventResponse(OperatorAuditApiModel):
     principal_kind: str
     credential_id: UUID | None
     detail_code: str | None
+    previous_hash: str | None
+    event_hash: str | None
 
 
 class OperatorAuditListResponse(OperatorAuditApiModel):
+    storage_kind: str
+    integrity: str
     events: list[OperatorAuditEventResponse] = Field(max_length=256)
 
 
@@ -54,8 +58,12 @@ def build_operator_audit_router(
     ) -> OperatorAuditListResponse:
         await _require_loopback_admin(request, authenticator)
         _prevent_caching(response)
-        events = audit_log.snapshot(limit=limit)
-        return OperatorAuditListResponse(events=[_event_response(event) for event in events])
+        snapshot = audit_log.snapshot(limit=limit)
+        return OperatorAuditListResponse(
+            storage_kind=snapshot.storage_kind,
+            integrity=snapshot.integrity,
+            events=[_event_response(event) for event in snapshot.events],
+        )
 
     return router
 
@@ -95,6 +103,8 @@ def _event_response(event: OperatorAuditEvent) -> OperatorAuditEventResponse:
         principal_kind=event.principal_kind,
         credential_id=event.credential_id,
         detail_code=event.detail_code,
+        previous_hash=event.previous_hash,
+        event_hash=event.event_hash,
     )
 
 

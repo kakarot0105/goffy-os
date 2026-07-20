@@ -693,6 +693,7 @@ class _ExactMcpEndpoint:
                 headers={"Allow": "GET, POST, DELETE"},
             )(scope, receive, send)
             return
+        principal = await self._authenticate_for_audit(scope)
         response_status: int | None = None
 
         async def audit_send(message: Message) -> None:
@@ -704,15 +705,17 @@ class _ExactMcpEndpoint:
         try:
             await self._application(scope, receive, audit_send)
         except Exception:
-            principal = await self._authenticate_for_audit(scope)
             await self._record_mcp_audit(
                 scope,
                 principal=principal,
                 outcome="failed",
-                detail_code="exception",
+                detail_code=(
+                    "exception"
+                    if response_status is None
+                    else f"exception_after_status:{response_status}"
+                ),
             )
             raise
-        principal = await self._authenticate_for_audit(scope)
         status_code = response_status or 0
         await self._record_mcp_audit(
             scope,

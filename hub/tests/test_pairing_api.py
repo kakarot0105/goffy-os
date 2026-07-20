@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -14,6 +15,7 @@ from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from goffy_hub.app import create_app
+from goffy_hub.operator_audit import OperatorAuditStoreError
 from goffy_hub.settings import HubSettings
 from goffy_protocol import MCP_PROTOCOL_VERSION, PROTOCOL_VERSION, MessageEnvelope, MessageType
 
@@ -301,7 +303,10 @@ def test_operator_audit_records_pairing_and_mcp_without_secrets(tmp_path: Path) 
     assert audit_response.headers["pragma"] == "no-cache"
     assert access_token not in audit_response.text
     assert bundle["challenge"]["pairingToken"] not in audit_response.text
-    events = audit_response.json()["events"]
+    audit = audit_response.json()
+    assert audit["storageKind"] == "sqlite"
+    assert audit["integrity"] == "verified"
+    events = audit["events"]
     assert [event["sequence"] for event in events] == sorted(
         (event["sequence"] for event in events),
         reverse=True,
@@ -321,10 +326,37 @@ def test_operator_audit_records_pairing_and_mcp_without_secrets(tmp_path: Path) 
             "principalKind",
             "credentialId",
             "detailCode",
+            "previousHash",
+            "eventHash",
         }
         for event in events
     )
+    assert all(event["previousHash"] for event in events)
+    assert all(event["eventHash"] for event in events)
     assert repeated_audit_response.json()["events"] == events
+
+
+def test_operator_audit_persists_after_hub_restart(tmp_path: Path) -> None:
+    with pairing_client(tmp_path) as client:
+        bundle_response = client.post(
+            "/admin/v1/pairing/bundles",
+            headers=BOOTSTRAP_HEADERS,
+        )
+
+    with pairing_client(tmp_path) as restarted_client:
+        audit_response = restarted_client.get(
+            "/admin/v1/audit/events",
+            headers=BOOTSTRAP_HEADERS,
+        )
+
+    assert bundle_response.status_code == 201
+    assert audit_response.status_code == 200
+    audit = audit_response.json()
+    assert audit["storageKind"] == "sqlite"
+    assert audit["integrity"] == "verified"
+    assert ("pairing", "bundle.created") in {
+        (event["source"], event["action"]) for event in audit["events"]
+    }
 
 
 def test_admin_hub_identity_is_stable_no_store_and_never_exposes_seed(
@@ -535,6 +567,70 @@ def test_paired_credential_rotation_replaces_bearer_and_closes_live_sessions(
 
     assert restarted_session_id
     assert old_after_restart.status_code == 401
+
+
+def test_rotation_does_not_return_false_failure_when_audit_store_fails_after_mutation(
+    tmp_path: Path,
+) -> None:
+    with pairing_client(tmp_path) as client:
+        credential_id, access_token = pair_device(client)
+        app = cast(FastAPI, client.app)
+
+        def fail_audit_record(**_: object) -> None:
+            raise OperatorAuditStoreError("simulated audit persistence failure")
+
+        app.state.operator_audit_log.record = fail_audit_record
+        rotation = client.post("/pairing/v1/rotate", headers=paired_headers(access_token))
+        old_token_replay = client.post(
+            "/pairing/v1/rotate",
+            headers=paired_headers(access_token),
+        )
+        stored_new_credential = app.state.credential_store.authenticate(
+            rotation.json()["accessToken"]
+        )
+        stored_old_credential = app.state.credential_store.authenticate(access_token)
+
+    assert rotation.status_code == 200
+    rotated = rotation.json()
+    assert rotated["credentialId"] == credential_id
+    assert rotated["accessToken"] != access_token
+    assert old_token_replay.status_code == 401
+    assert stored_new_credential is not None
+    assert str(stored_new_credential.credential_id) == credential_id
+    assert stored_old_credential is None
+
+
+def test_rotation_fails_closed_when_operator_audit_is_already_tampered(
+    tmp_path: Path,
+) -> None:
+    with pairing_client(tmp_path) as client:
+        credential_id, access_token = pair_device(client)
+
+    audit_path = tmp_path / "state" / "operator-audit.sqlite3"
+    with sqlite3.connect(audit_path) as connection:
+        connection.execute(
+            "UPDATE operator_audit_events SET action = ? WHERE sequence = 1",
+            ("bundle.forged",),
+        )
+
+    with pairing_client(tmp_path) as restarted_client:
+        rotation = restarted_client.post(
+            "/pairing/v1/rotate",
+            headers=paired_headers(access_token),
+        )
+        app = cast(FastAPI, restarted_client.app)
+        still_active = app.state.credential_store.authenticate(access_token)
+        audit_response = restarted_client.get(
+            "/admin/v1/audit/events",
+            headers=BOOTSTRAP_HEADERS,
+        )
+
+    assert rotation.status_code == 503
+    assert rotation.json()["detail"]["code"] == "operator_audit_unavailable"
+    assert still_active is not None
+    assert str(still_active.credential_id) == credential_id
+    assert audit_response.status_code == 200
+    assert audit_response.json()["integrity"] == "tamper_detected"
 
 
 def test_invalid_pairing_request_is_bounded_and_never_echoes_token(tmp_path: Path) -> None:
