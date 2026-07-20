@@ -78,6 +78,11 @@ text into the deterministic quality gate:
 - A future LiteRT-LM production provider may delegate through this gate only when
   user enablement, policy enablement, runtime availability, approved app-owned
   model-file validation, and size bounds all pass.
+- `scripts/verify_android_apk_budget.py` is part of `verify_all.py` after the
+  release APK build. It blocks the default GOFFY LITE APK when it exceeds 32 MiB
+  or packages LiteRT-LM/model APK entries such as `liblitertlm` or `.litertlm`,
+  or lists LiteRT-LM in `releaseRuntimeClasspath`, so local-model provider work
+  cannot silently regress the Moto build.
 
 The concrete LiteRT-LM Android runtime dependency remains benchmark/test-only
 until production-gated activation, startup/install-size evidence, idle-unload

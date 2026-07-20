@@ -16,7 +16,9 @@ if __package__ in {None, ""} and str(ROOT) not in sys.path:
 from scripts.android_preflight import Check, collect_checks, render_report  # noqa: E402
 
 REPO_OWNED_ANDROID_PREFLIGHT_CHECKS = frozenset({"Gradle wrapper"})
-ANDROID_DEPENDENT_STEPS = frozenset({"android gradle", "merged manifest security scan"})
+ANDROID_DEPENDENT_STEPS = frozenset(
+    {"android gradle", "android APK budget", "merged manifest security scan"}
+)
 
 
 class StepStatus(StrEnum):
@@ -88,6 +90,10 @@ def python_steps(python: str) -> list[tuple[str, tuple[str, ...]]]:
 
 def merged_manifest_security_command(python: str) -> tuple[str, ...]:
     return (python, "scripts/security_scan.py", "--require-merged-manifests")
+
+
+def android_apk_budget_command(python: str) -> tuple[str, ...]:
+    return (python, "scripts/verify_android_apk_budget.py")
 
 
 def android_gradle_command(root: Path) -> tuple[str, ...]:
@@ -179,6 +185,14 @@ def run_verification(
         )
         results.append(
             StepResult(
+                name="android APK budget",
+                status=StepStatus.SKIP,
+                command=android_apk_budget_command(python),
+                detail="Skipped because Android Gradle did not run.",
+            )
+        )
+        results.append(
+            StepResult(
                 name="merged manifest security scan",
                 status=StepStatus.SKIP,
                 command=merged_manifest_security_command(python),
@@ -196,6 +210,14 @@ def run_verification(
         if result.status is StepStatus.OK:
             results.append(
                 run_command_step(
+                    "android APK budget",
+                    android_apk_budget_command(python),
+                    root,
+                    runner,
+                )
+            )
+            results.append(
+                run_command_step(
                     "merged manifest security scan",
                     merged_manifest_security_command(python),
                     root,
@@ -203,6 +225,14 @@ def run_verification(
                 )
             )
         else:
+            results.append(
+                StepResult(
+                    name="android APK budget",
+                    status=StepStatus.SKIP,
+                    command=android_apk_budget_command(python),
+                    detail="Skipped because Android Gradle did not complete successfully.",
+                )
+            )
             results.append(
                 StepResult(
                     name="merged manifest security scan",
@@ -218,6 +248,14 @@ def run_verification(
                 status=StepStatus.SKIP,
                 command=android_gradle_command(root),
                 detail="Skipped because Android preflight did not pass.",
+            )
+        )
+        results.append(
+            StepResult(
+                name="android APK budget",
+                status=StepStatus.SKIP,
+                command=android_apk_budget_command(python),
+                detail="Skipped because Android Gradle did not run.",
             )
         )
         results.append(

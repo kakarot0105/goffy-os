@@ -161,6 +161,7 @@ project. The minimum SDK is 26. Command-line verification is:
 ```bash
 python3 scripts/android_preflight.py
 ./android/gradlew -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon
+python3 scripts/verify_android_apk_budget.py
 python3 scripts/security_scan.py --require-merged-manifests
 ```
 
@@ -249,10 +250,17 @@ ROM remains a later hardware-specific project after the agent runtime is proven.
 
 This runs formatting, linting, type checks, Python tests, package build,
 security scan, pairing smoke verification, Android environment preflight, and
-Android Gradle plus merged-manifest security validation when the local
-JDK/SDK/adb prerequisites are present.
+Android Gradle plus the GOFFY LITE release APK budget/payload guard and
+merged-manifest security validation when the local JDK/SDK/adb prerequisites are
+present.
 Use `--allow-missing-android` only when you intentionally want the Python/Hub
 checks to pass while Android Gradle remains blocked by local tooling.
+
+The APK guard fails if `android/app/build/outputs/apk/release/app-release-unsigned.apk`
+is missing after the release build, exceeds the current 32 MiB GOFFY LITE budget,
+contains LiteRT-LM/model APK entries such as `liblitertlm` or `.litertlm`
+assets, or lists LiteRT-LM in the release runtime dependency graph. This keeps
+the small-model work from silently regressing the default Moto build.
 
 If verification is blocked by local setup, run the read-only setup doctor:
 
@@ -265,8 +273,8 @@ If verification is blocked by local setup, run the read-only setup doctor:
 The doctor redacts repo, home, and absolute toolchain paths, but review output
 before posting it to a public issue.
 
-Android CI keeps preflight, Gradle, and merged-manifest validation as blocking
-gates. If any Android gate fails, CI also runs the setup doctor with
+Android CI keeps preflight, Gradle, GOFFY LITE APK budget, and merged-manifest
+validation as blocking gates. If any Android gate fails, CI also runs the setup doctor with
 `--android-only --include-device --json` as a non-blocking diagnostic step so the
 failure log contains focused, redacted Android toolchain, `adb`, and USB reverse
 readiness details.
