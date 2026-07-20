@@ -25,16 +25,46 @@ The phone model is not allowed to:
 - Read camera, microphone, files, clipboard, or notifications by itself
 - Run in the background without visible user action
 
+## Routing Quality Gate
+
+Local model routing output is fail-closed. Even when a future runtime is
+explicitly enabled, the model cannot route or execute a task directly. It may
+only produce a non-authoritative observation after passing the deterministic
+quality gate.
+
+Accepted output format:
+
+```json
+{"route":"PHONE","confidence":0.91}
+```
+
+Rules:
+
+- The runtime policy must be explicitly enabled; the default policy returns
+  `Disabled`.
+- Output must be non-empty, at most 256 characters, and contain no control or
+  Unicode format characters.
+- Output must be exact JSON with only `route` and `confidence`.
+- `route` must be exactly `PHONE`, `MAC`, or `CLOUD`.
+- `confidence` must be at least `0.70` by default.
+- Verbose text, markdown, extra fields, plain labels, chain-of-thought markers
+  such as `<think>`, and low-confidence outputs are rejected.
+- A passing output creates only `LocalModelIntentObservation.Candidate`; it
+  does not create a `GoffyExecutionPlan` and cannot approve any action.
+
 ## Declared Runtime Policy
 
 GOFFY LITE remains the default on the Moto G target. The current code enforces
-disabled-by-default observation behavior plus bounded prompt and candidate text.
-The remaining values are declared gates for the future runtime integration and
-must be wired before a model binary is shipped. Initial budgets are:
+disabled-by-default observation behavior plus bounded prompt, model output, and
+candidate text. The remaining values are declared gates for the future runtime
+integration and must be wired before a model binary is shipped. Initial budgets
+are:
 
 - Disabled by default
 - Maximum model file size: 512 MB
 - Maximum prompt size: 512 characters
+- Maximum accepted model output size: 256 characters
+- Minimum routing confidence: 0.70
 - Idle unload window: 60 seconds by default, bounded to 5 minutes
 - No model load during cold start
 - No model load for deterministic commands
@@ -147,8 +177,10 @@ stores benchmark JSON under `.goffy-validation/litertlm-benchmark/`.
 The JSON records initialization latency, first-chunk latency, total generation
 time, output chunk count, character-rate, battery and thermal snapshots, and
 managed/native memory snapshots. True token-per-second reporting, peak memory,
-UI responsiveness scoring, battery-drain acceptance, unload behavior, and
-label-quality checks still belong to the local-model routing quality gate.
+UI responsiveness scoring, battery-drain acceptance, and unload behavior still
+belong to future runtime integration work. Label-quality checks are implemented
+in the deterministic routing quality gate above, but they are not applied to
+live LiteRT-LM output until a runtime adapter calls the gate.
 
 ## Physical Moto G LiteRT-LM Evidence
 
@@ -191,5 +223,7 @@ Qwen3 0.6B mixed INT4 result:
 
 A stricter label-only prompt against the same Qwen3 model also produced verbose
 reasoning text in the output preview. Do not wire this model into executable
-routing until GOFFY has an output-quality gate, short response stopping criteria,
-idle unload behavior, and UI responsiveness evidence.
+routing until GOFFY has short response stopping criteria, idle unload behavior,
+and UI responsiveness evidence. The deterministic output-quality gate is now in
+place, so the observed verbose Qwen3 output would be rejected rather than
+treated as a route.
