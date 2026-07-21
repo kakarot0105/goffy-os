@@ -173,6 +173,22 @@ release artifact by default, requires an APK Signature Scheme v2/v3 signing
 block, rejects debug build artifacts, and refuses to overwrite different existing
 AOSP files.
 
+Use the readiness reporter to summarize ROM-0 blockers without touching the
+phone or an AOSP checkout:
+
+```bash
+.venv/bin/python scripts/verify_rom0_readiness.py \
+  --probe-json .goffy-validation/rom-feasibility.json \
+  --manual-gates-json .goffy-validation/rom-manual-gates.json \
+  --signed-apk /path/to/GoffyOS-signed.apk \
+  --aosp-root /path/to/aosp \
+  --evidence-root .
+```
+
+The reporter still withholds unlock, flash, erase, and root authority. A passing
+report means the evidence is ready for human review, not that destructive ROM
+work has been approved.
+
 ## Source Notes
 
 - Motorola bootloader support states that many recent devices are supported but
