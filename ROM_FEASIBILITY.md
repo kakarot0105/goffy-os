@@ -151,6 +151,8 @@ It intentionally targets a non-privileged system app first:
 - No `priv-app` permission grants.
 - No signature or privileged Android permissions.
 - Camera remains foreground and user-approved only.
+- The Android manifest declares a separate Home-shell intent filter so GOFFY can
+  be selected as the home surface when installed or preinstalled.
 
 The descriptor is validated by:
 

@@ -65,6 +65,14 @@ ALLOWED_ANDROID_FEATURES = {
     "android.hardware.camera": "false",
     "android.hardware.camera.flash": "false",
 }
+MAIN_ACTIVITY_NAME = ".MainActivity"
+MAIN_ACTIVITY_INTENT_FILTERS = {
+    ("android.intent.action.MAIN", ("android.intent.category.LAUNCHER",)),
+    (
+        "android.intent.action.MAIN",
+        ("android.intent.category.DEFAULT", "android.intent.category.HOME"),
+    ),
+}
 PAIRING_QR_ARTIFACT_MARKER = "GOFFY_PAIRING_QR_ARTIFACT_V1"
 PAIRING_QR_ARTIFACT_FILENAMES = {"goffy-pairing-bundle.svg"}
 
@@ -138,6 +146,52 @@ def validate_manifest(path: Path, allowed_permissions: set[str]) -> list[str]:
     ):
         findings.append(
             f"{location}: package-query allowlist mismatch (found {sorted(query_actions)})"
+        )
+    return findings
+
+
+def validate_main_activity_intent_filters(path: Path) -> list[str]:
+    findings: list[str] = []
+    manifest = ET.parse(path).getroot()  # noqa: S314
+    name_attribute = f"{{{ANDROID_NAMESPACE}}}name"
+    location = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+    application = manifest.find("application")
+    if application is None:
+        findings.append(f"{location}: missing application element")
+        return findings
+
+    matching_activities = [
+        activity
+        for activity in application.findall("activity")
+        if activity.attrib.get(name_attribute) == MAIN_ACTIVITY_NAME
+        or activity.attrib.get(name_attribute, "").endswith(".MainActivity")
+    ]
+    if len(matching_activities) != 1:
+        findings.append(f"{location}: expected exactly one GOFFY MainActivity")
+        return findings
+
+    filters = set()
+    filter_count = 0
+    for intent_filter in matching_activities[0].findall("intent-filter"):
+        filter_count += 1
+        actions = [
+            action.attrib.get(name_attribute, "")
+            for action in intent_filter.findall("action")
+            if action.attrib.get(name_attribute)
+        ]
+        categories = sorted(
+            category.attrib.get(name_attribute, "")
+            for category in intent_filter.findall("category")
+            if category.attrib.get(name_attribute)
+        )
+        if len(actions) != 1 or not categories:
+            findings.append(f"{location}: MainActivity intent filter has unexpected shape")
+            continue
+        filters.add((actions[0], tuple(categories)))
+
+    if filter_count != len(MAIN_ACTIVITY_INTENT_FILTERS) or filters != MAIN_ACTIVITY_INTENT_FILTERS:
+        findings.append(
+            f"{location}: MainActivity launcher/home filters mismatch (found {sorted(filters)})"
         )
     return findings
 
@@ -217,6 +271,7 @@ def main(argv: list[str] | None = None) -> int:
                 findings.append(f"{path.relative_to(ROOT)}: {label}")
 
     findings.extend(validate_manifest(ANDROID_MANIFEST, ALLOWED_ANDROID_PERMISSIONS))
+    findings.extend(validate_main_activity_intent_filters(ANDROID_MANIFEST))
     if args.require_merged_manifests:
         findings.extend(validate_merged_manifests(merged_manifests()))
 

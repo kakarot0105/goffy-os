@@ -5,6 +5,7 @@ from scripts.security_scan import (
     ALLOWED_MERGED_ANDROID_PERMISSIONS,
     PAIRING_QR_ARTIFACT_MARKER,
     merged_manifest_permission_allowlist,
+    validate_main_activity_intent_filters,
     validate_manifest,
     validate_merged_manifests,
     validate_no_pairing_qr_artifact,
@@ -22,6 +23,24 @@ EXPECTED_MANIFEST = """\
             <action android:name="android.intent.action.SET_TIMER" />
         </intent>
     </queries>
+</manifest>
+"""
+
+EXPECTED_APP_MANIFEST = """\
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity android:name=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
 </manifest>
 """
 
@@ -43,6 +62,49 @@ def test_manifest_allowlist_accepts_exact_structure(tmp_path: Path) -> None:
     manifest = write_manifest(tmp_path, EXPECTED_MANIFEST)
 
     assert validate_manifest(manifest, ALLOWED_ANDROID_PERMISSIONS) == []
+
+
+def test_main_activity_home_shell_filters_accept_exact_shape(tmp_path: Path) -> None:
+    manifest = write_manifest(tmp_path, EXPECTED_APP_MANIFEST)
+
+    assert validate_main_activity_intent_filters(manifest) == []
+
+
+def test_main_activity_home_shell_filters_reject_missing_home(tmp_path: Path) -> None:
+    manifest = write_manifest(
+        tmp_path,
+        EXPECTED_APP_MANIFEST.replace(
+            """            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+""",
+            "",
+        ),
+    )
+
+    findings = validate_main_activity_intent_filters(manifest)
+
+    assert any("launcher/home filters mismatch" in finding for finding in findings)
+
+
+def test_main_activity_home_shell_filters_reject_duplicate_filters(tmp_path: Path) -> None:
+    manifest = write_manifest(
+        tmp_path,
+        EXPECTED_APP_MANIFEST.replace(
+            "        </activity>",
+            """            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>""",
+        ),
+    )
+
+    findings = validate_main_activity_intent_filters(manifest)
+
+    assert any("launcher/home filters mismatch" in finding for finding in findings)
 
 
 def test_merged_manifest_allowlist_accepts_dependency_permissions(tmp_path: Path) -> None:
