@@ -25,7 +25,7 @@ Policy:
 - Sign the APK with a dedicated GOFFY release key outside the repo before
   copying it into an AOSP tree as `GoffyOS.apk`.
 - Keep `privileged_permission_allowlist` empty.
-- Keep `CAMERA` foreground and user-approved only.
+- Keep `CAMERA` and `RECORD_AUDIO` foreground and user-approved only.
 - Re-run the validator after any Android manifest permission change.
 
 This is not a flashable image and does not modify the phone.

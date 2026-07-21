@@ -114,7 +114,8 @@ approval state, active work, and execution authority are not revived.
 ## Performance posture
 
 The Android shell defaults to GOFFY LITE: static background, static orb, no
-camera/microphone capture initialization, no polling, and no local model. Phone state is
+camera/microphone capture initialization until visible user action, no polling,
+and no local model. Phone state is
 read only after a matching user command. Terminal-task audit persistence is
 bounded to the newest 50 SQLite rows, read on startup, and written once on the
 existing IO dispatcher after terminal state; there is no polling, WorkManager,

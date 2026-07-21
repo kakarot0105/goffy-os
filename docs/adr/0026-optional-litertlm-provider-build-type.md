@@ -33,8 +33,9 @@ Add a dedicated Android `modelDebug` build type for provider validation:
   boundary, not the synchronous deterministic router.
 - User activation still defaults to disabled until a visible, tested enablement
   and unload lifecycle exists.
-- CI and `verify_all.py` compile `:app:compileModelDebugKotlin` while the APK
-  budget guard verifies the normal release APK remains runtime-free.
+- CI and `verify_all.py` run `:app:processModelDebugManifest` and compile
+  `:app:compileModelDebugKotlin` while the APK budget guard verifies the normal
+  release APK remains runtime-free.
 
 ## Consequences
 

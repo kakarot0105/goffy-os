@@ -73,8 +73,8 @@ def test_android_ci_preflights_before_gradle_and_manifest_security() -> None:
     assert apk_budget["run"] == "python3 scripts/verify_android_apk_budget.py"
     assert apk_budget["id"] == "android_apk_budget"
     assert (
-        provider_compile["run"]
-        == "./android/gradlew -p android :app:compileModelDebugKotlin --no-daemon"
+        provider_compile["run"] == "./android/gradlew -p android :app:processModelDebugManifest "
+        ":app:compileModelDebugKotlin --no-daemon"
     )
     assert provider_compile["id"] == "android_local_model_provider"
     assert manifest_scan["run"] == "python3 scripts/security_scan.py --require-merged-manifests"

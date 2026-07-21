@@ -44,6 +44,7 @@ MERGED_MANIFEST_ROOT = ROOT / "android" / "app" / "build" / "intermediates" / "m
 ALLOWED_ANDROID_PERMISSIONS = {
     "android.permission.CAMERA",
     "android.permission.INTERNET",
+    "android.permission.RECORD_AUDIO",
     "com.android.alarm.permission.SET_ALARM",
 }
 ALLOWED_MERGED_ANDROID_PERMISSIONS = ALLOWED_ANDROID_PERMISSIONS | {
@@ -64,6 +65,7 @@ ALLOWED_PACKAGE_QUERY_ACTIONS = {"android.intent.action.SET_TIMER"}
 ALLOWED_ANDROID_FEATURES = {
     "android.hardware.camera": "false",
     "android.hardware.camera.flash": "false",
+    "android.hardware.microphone": "false",
 }
 MAIN_ACTIVITY_NAME = ".MainActivity"
 MAIN_ACTIVITY_INTENT_FILTERS = {

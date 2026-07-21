@@ -124,6 +124,7 @@
 ## Milestones 4-8
 
 4. Foreground-only voice, camera, QR, and OCR
+   - [x] Foreground push-to-talk command capture with immediate lifecycle cleanup
 5. Narrow, approval-gated Mac automation
 6. Inspectable and deletable user-approved memory
 7. Polished, accessible, battery-aware GOFFY UI

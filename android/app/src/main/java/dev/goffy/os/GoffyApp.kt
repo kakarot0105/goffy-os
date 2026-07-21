@@ -111,6 +111,9 @@ private data class PairingScannerNotice(
 @Composable
 fun GoffyApp(
     viewModel: GoffyViewModel,
+    voiceInputState: GoffyVoiceInputState = GoffyVoiceInputState(),
+    onStartVoiceInput: ((String) -> Unit) -> Unit = {},
+    onVoicePermissionDenied: () -> Unit = {},
     onSpeakLatest: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -139,6 +142,17 @@ fun GoffyApp(
                 message = scannerPermissionDenied,
                 warning = true,
             )
+        }
+    }
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            onStartVoiceInput { spokenCommand ->
+                command = spokenCommand.take(MAX_COMMAND_LENGTH)
+            }
+        } else {
+            onVoicePermissionDenied()
         }
     }
 
@@ -195,6 +209,7 @@ fun GoffyApp(
                 bearerToken = bearerToken,
                 showLinkSetup = showLinkSetup,
                 pairingScannerNotice = pairingScannerNotice,
+                voiceInputState = voiceInputState,
                 latestSpeakableText = latestSpeakableText,
                 onCommandChange = { command = it.take(MAX_COMMAND_LENGTH) },
                 onEndpointChange = { endpoint = it.take(MAX_ENDPOINT_LENGTH) },
@@ -229,6 +244,17 @@ fun GoffyApp(
                 onRotateHub = { showRotateConfirmation = true },
                 onForgetHub = { showForgetConfirmation = true },
                 onRefreshHubAudit = viewModel::refreshHubOperatorAudit,
+                onVoiceInput = {
+                    if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        onStartVoiceInput { spokenCommand ->
+                            command = spokenCommand.take(MAX_COMMAND_LENGTH)
+                        }
+                    } else {
+                        audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
                 onSpeakLatest = onSpeakLatest,
                 onSubmit = {
                     viewModel.submitCommand(command)
@@ -390,6 +416,7 @@ private fun GoffyHomeScreen(
     bearerToken: String,
     showLinkSetup: Boolean,
     pairingScannerNotice: PairingScannerNotice?,
+    voiceInputState: GoffyVoiceInputState,
     latestSpeakableText: String?,
     onCommandChange: (String) -> Unit,
     onEndpointChange: (String) -> Unit,
@@ -402,6 +429,7 @@ private fun GoffyHomeScreen(
     onRotateHub: () -> Unit,
     onForgetHub: () -> Unit,
     onRefreshHubAudit: () -> Unit,
+    onVoiceInput: () -> Unit,
     onSpeakLatest: (String) -> Unit,
     onSubmit: () -> Unit,
     onSetLocalModelEnabled: (Boolean) -> Unit,
@@ -460,10 +488,12 @@ private fun GoffyHomeScreen(
         CommandSurface(
             command = command,
             busy = state.isBusy,
+            voiceInputState = voiceInputState,
             latestSpeakableText = latestSpeakableText,
             onCommandChange = onCommandChange,
             onSubmit = onSubmit,
             onCancel = onCancel,
+            onVoiceInput = onVoiceInput,
             onSpeakLatest = onSpeakLatest,
         )
         Spacer(Modifier.height(18.dp))
@@ -1040,10 +1070,12 @@ private fun HubOperatorAuditRow(event: HubOperatorAuditEvent) {
 private fun CommandSurface(
     command: String,
     busy: Boolean,
+    voiceInputState: GoffyVoiceInputState,
     latestSpeakableText: String?,
     onCommandChange: (String) -> Unit,
     onSubmit: () -> Unit,
     onCancel: () -> Unit,
+    onVoiceInput: () -> Unit,
     onSpeakLatest: (String) -> Unit,
 ) {
     Column(
@@ -1072,9 +1104,10 @@ private fun CommandSurface(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PlaceholderAction(
-                    shortLabel = stringResource(R.string.microphone_short),
-                    description = stringResource(R.string.microphone_placeholder),
+                VoiceInputAction(
+                    voiceInputState = voiceInputState,
+                    busy = busy,
+                    onVoiceInput = onVoiceInput,
                 )
                 PlaceholderAction(
                     shortLabel = stringResource(R.string.camera_short),
@@ -1100,6 +1133,41 @@ private fun CommandSurface(
                 }
             }
         }
+        voiceInputState.notice?.let { notice ->
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = notice,
+                color = if (voiceInputState.warning) Warning else Signal,
+                fontSize = 12.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun VoiceInputAction(
+    voiceInputState: GoffyVoiceInputState,
+    busy: Boolean,
+    onVoiceInput: () -> Unit,
+) {
+    val description = stringResource(R.string.microphone_placeholder)
+    OutlinedButton(
+        onClick = onVoiceInput,
+        enabled = !busy && !voiceInputState.listening,
+        modifier = Modifier.semantics { contentDescription = description },
+        colors = ButtonDefaults.outlinedButtonColors(disabledContentColor = Mist),
+    ) {
+        Text(
+            text = stringResource(
+                if (voiceInputState.listening) {
+                    R.string.microphone_listening_short
+                } else {
+                    R.string.microphone_short
+                },
+            ),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+        )
     }
 }
 

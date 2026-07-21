@@ -10,6 +10,7 @@ MANIFEST = """\
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 </manifest>
 """
 
@@ -48,10 +49,14 @@ def descriptor() -> dict[str, object]:
         "requested_permissions": [
             "android.permission.CAMERA",
             "android.permission.INTERNET",
+            "android.permission.RECORD_AUDIO",
             "com.android.alarm.permission.SET_ALARM",
         ],
         "privileged_permission_allowlist": [],
-        "runtime_permission_policy": {"android.permission.CAMERA": "foreground_user_approved_only"},
+        "runtime_permission_policy": {
+            "android.permission.CAMERA": "foreground_user_approved_only",
+            "android.permission.RECORD_AUDIO": "foreground_user_approved_only",
+        },
     }
 
 

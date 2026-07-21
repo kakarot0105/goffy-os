@@ -21,7 +21,12 @@ ALLOWED_INSTALL_CLASSES = {"system_app"}
 ALLOWED_SYSTEM_APP_PERMISSIONS = {
     "android.permission.CAMERA",
     "android.permission.INTERNET",
+    "android.permission.RECORD_AUDIO",
     "com.android.alarm.permission.SET_ALARM",
+}
+REQUIRED_RUNTIME_PERMISSION_POLICY = {
+    "android.permission.CAMERA": "foreground_user_approved_only",
+    "android.permission.RECORD_AUDIO": "foreground_user_approved_only",
 }
 BLOCKED_TEMPLATE_PATTERNS = (
     "privileged: true",
@@ -97,8 +102,11 @@ def validate_rom_system_app(
         findings.extend(template_findings)
 
     runtime_policy = mapping_value(descriptor.get("runtime_permission_policy"))
-    if runtime_policy.get("android.permission.CAMERA") != "foreground_user_approved_only":
-        findings.append("CAMERA runtime policy must remain foreground_user_approved_only")
+    if runtime_policy != REQUIRED_RUNTIME_PERMISSION_POLICY:
+        findings.append(
+            "runtime_permission_policy must keep CAMERA and RECORD_AUDIO "
+            "foreground_user_approved_only"
+        )
 
     return findings
 

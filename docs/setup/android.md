@@ -15,7 +15,7 @@ From the repository root, run the pinned Gradle wrapper:
 python3 scripts/android_preflight.py
 ./android/gradlew -p android :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon
 python3 scripts/verify_android_apk_budget.py
-./android/gradlew -p android :app:compileModelDebugKotlin --no-daemon
+./android/gradlew -p android :app:processModelDebugManifest :app:compileModelDebugKotlin --no-daemon
 python3 scripts/security_scan.py --require-merged-manifests
 ```
 
@@ -53,10 +53,15 @@ review both published checksums during any wrapper upgrade.
 - While GOFFY is foregrounded, dock mode keeps the screen awake only when Android
   reports the phone is charging or full. It clears the window flag when the app
   stops or the phone is on battery, and it changes no global display setting.
+- Tapping `MIC` requests the normal Android `RECORD_AUDIO` permission if needed,
+  starts one visible foreground `SpeechRecognizer` session, requests offline
+  recognition when available, sanitizes the recognized command into the text box,
+  and does not auto-submit it. Speech recognition is canceled when the Activity
+  leaves the foreground.
 - Tapping `SAY` uses Android TextToSpeech to read only the latest safe structured
-  result while the app is foregrounded. It requests no microphone permission,
-  starts no listener, stops speech when the Activity leaves the foreground, and
-  redacts private note contents from spoken output.
+  result while the app is foregrounded. It starts no listener, stops speech when
+  the Activity leaves the foreground, and redacts private note contents from
+  spoken output.
 - Device commands such as `Show my phone info` and `What phone is this?` return
   only manufacturer, model, Android release, SDK level, and GOFFY home/system-app
   status on PHONE.
@@ -166,10 +171,11 @@ Run the unified verifier before relying on an Android change:
 ```
 
 `verify_all.py` runs `scripts/verify_android_apk_budget.py` immediately after the
-release APK build, then compiles `:app:compileModelDebugKotlin` to keep the
-optional LiteRT-LM provider source healthy. Use the standalone APK-budget command
-when investigating APK-size drift or accidental local-model packaging before a
-full verifier pass.
+release APK build, then runs `:app:processModelDebugManifest` and
+`:app:compileModelDebugKotlin` to keep the optional LiteRT-LM provider source and
+merged manifest healthy. Use the standalone APK-budget command when
+investigating APK-size drift or accidental local-model packaging before a full
+verifier pass.
 
 The verifier runs the Python/Hub checks, then Android preflight. If the JDK,
 Android SDK, Build Tools, and `adb` are present, it continues into Gradle lint,

@@ -117,6 +117,7 @@ def android_local_model_provider_command(root: Path) -> tuple[str, ...]:
         str(wrapper),
         "-p",
         "android",
+        ":app:processModelDebugManifest",
         ":app:compileModelDebugKotlin",
         "--no-daemon",
     )

@@ -13,11 +13,13 @@
   "requested_permissions": [
     "android.permission.CAMERA",
     "android.permission.INTERNET",
+    "android.permission.RECORD_AUDIO",
     "com.android.alarm.permission.SET_ALARM"
   ],
   "privileged_permission_allowlist": [],
   "runtime_permission_policy": {
-    "android.permission.CAMERA": "foreground_user_approved_only"
+    "android.permission.CAMERA": "foreground_user_approved_only",
+    "android.permission.RECORD_AUDIO": "foreground_user_approved_only"
   },
   "notes": [
     "GOFFY starts as a non-privileged system app so ROM integration does not grant ambient OS authority.",

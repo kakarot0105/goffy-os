@@ -16,8 +16,10 @@ EXPECTED_MANIFEST = """\
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <queries>
         <intent>
             <action android:name="android.intent.action.SET_TIMER" />
@@ -197,7 +199,7 @@ def test_manifest_allowlist_rejects_required_or_extra_hardware_features(tmp_path
             'android:name="android.hardware.camera.flash" android:required="true"',
         ).replace(
             "    <queries>",
-            '    <uses-feature android:name="android.hardware.microphone" '
+            '    <uses-feature android:name="android.hardware.location.gps" '
             'android:required="false" />\n'
             "    <queries>",
         ),
