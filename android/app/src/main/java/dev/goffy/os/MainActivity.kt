@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
 import android.os.Build
+import android.speech.tts.TextToSpeech
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,6 +17,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 class MainActivity : ComponentActivity() {
     private lateinit var goffyViewModel: GoffyViewModel
+    private var textToSpeech: TextToSpeech? = null
+    private var textToSpeechReady = false
+    private var pendingSpeechText: String? = null
     private var chargingReceiverRegistered = false
     private val chargingReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -35,7 +39,10 @@ class MainActivity : ComponentActivity() {
                 applyKeepScreenAwake(state.keepScreenAwake)
                 onDispose { applyKeepScreenAwake(false) }
             }
-            GoffyApp(goffyViewModel)
+            GoffyApp(
+                viewModel = goffyViewModel,
+                onSpeakLatest = ::speakLatestResult,
+            )
         }
     }
 
@@ -47,9 +54,15 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         stopObservingChargingState()
         applyKeepScreenAwake(false)
+        stopSpeechOutput()
         goffyViewModel.updateChargingState(false)
         goffyViewModel.cancelForegroundPairing()
         super.onStop()
+    }
+
+    override fun onDestroy() {
+        shutdownSpeechOutput()
+        super.onDestroy()
     }
 
     private fun observeChargingState() {
@@ -77,5 +90,58 @@ class MainActivity : ComponentActivity() {
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
+    }
+
+    private fun speakLatestResult(text: String) {
+        val safeText = text.toSafeSpeechText() ?: return
+        val currentEngine = textToSpeech
+        if (currentEngine != null && textToSpeechReady) {
+            speakNow(currentEngine, safeText)
+            return
+        }
+
+        pendingSpeechText = safeText
+        if (currentEngine != null) return
+        textToSpeech = TextToSpeech(applicationContext) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                textToSpeechReady = true
+                val pending = pendingSpeechText
+                pendingSpeechText = null
+                val initializedEngine = textToSpeech
+                if (pending != null && initializedEngine != null) {
+                    speakNow(initializedEngine, pending)
+                }
+            } else {
+                pendingSpeechText = null
+                textToSpeechReady = false
+            }
+        }
+    }
+
+    private fun speakNow(engine: TextToSpeech, text: String) {
+        engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, GOFFY_SPEECH_UTTERANCE_ID)
+    }
+
+    private fun stopSpeechOutput() {
+        pendingSpeechText = null
+        textToSpeech?.stop()
+    }
+
+    private fun shutdownSpeechOutput() {
+        stopSpeechOutput()
+        textToSpeech?.shutdown()
+        textToSpeech = null
+        textToSpeechReady = false
+    }
+
+    private fun String.toSafeSpeechText(): String? =
+        replace(Regex("\\p{Cntrl}+"), " ")
+            .trim()
+            .take(MAX_SPEECH_UTTERANCE_LENGTH)
+            .ifEmpty { null }
+
+    private companion object {
+        const val GOFFY_SPEECH_UTTERANCE_ID = "goffy-latest-result"
+        const val MAX_SPEECH_UTTERANCE_LENGTH = 480
     }
 }

@@ -86,6 +86,8 @@
     <string name="camera_placeholder">Camera actions beyond QR pairing are coming in Milestone 4</string>
     <string name="microphone_short">MIC</string>
     <string name="camera_short">CAM</string>
+    <string name="speak_latest_short">SAY</string>
+    <string name="speak_latest_result">Speak latest safe result</string>
     <string name="timeline_title">TASK TIMELINE</string>
     <string name="timeline_empty">No actions yet. Every GOFFY step will appear here.</string>
     <string name="audit_loading">AUDIT / LOADING</string>

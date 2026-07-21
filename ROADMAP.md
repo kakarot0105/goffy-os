@@ -67,6 +67,7 @@
 - [x] Typed PHONE and MAC execution result boundary
 - [x] PHONE, MAC, and CLOUD target state
 - [x] Privacy-minimized `phone.device.info`
+- [x] Foreground-only explicit TextToSpeech readout for latest safe result
 - [x] Visible, expiring, exact-task approval lifecycle
 - [x] Approval-gated app-private `phone.note.create` with post-write verification
 - [x] Approval-gated allowlisted-system `phone.timer.create` dispatch with explicit `UNVERIFIED` state

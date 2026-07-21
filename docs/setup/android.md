@@ -53,6 +53,10 @@ review both published checksums during any wrapper upgrade.
 - While GOFFY is foregrounded, dock mode keeps the screen awake only when Android
   reports the phone is charging or full. It clears the window flag when the app
   stops or the phone is on battery, and it changes no global display setting.
+- Tapping `SAY` uses Android TextToSpeech to read only the latest safe structured
+  result while the app is foregrounded. It requests no microphone permission,
+  starts no listener, stops speech when the Activity leaves the foreground, and
+  redacts private note contents from spoken output.
 - Device commands such as `Show my phone info` and `What phone is this?` return
   only manufacturer, model, Android release, SDK level, and GOFFY home/system-app
   status on PHONE.

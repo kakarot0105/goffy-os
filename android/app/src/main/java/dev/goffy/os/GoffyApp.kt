@@ -108,9 +108,13 @@ private data class PairingScannerNotice(
 )
 
 @Composable
-fun GoffyApp(viewModel: GoffyViewModel) {
+fun GoffyApp(
+    viewModel: GoffyViewModel,
+    onSpeakLatest: (String) -> Unit = {},
+) {
     val context = LocalContext.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val latestSpeakableText = state.latestSpeakableText()
     val scannerPermissionDenied = stringResource(R.string.pairing_scanner_permission_denied)
     val scannerCaptured = stringResource(R.string.pairing_scanner_captured)
     val scannerStartFailed = stringResource(R.string.pairing_scanner_start_failed)
@@ -190,6 +194,7 @@ fun GoffyApp(viewModel: GoffyViewModel) {
                 bearerToken = bearerToken,
                 showLinkSetup = showLinkSetup,
                 pairingScannerNotice = pairingScannerNotice,
+                latestSpeakableText = latestSpeakableText,
                 onCommandChange = { command = it.take(MAX_COMMAND_LENGTH) },
                 onEndpointChange = { endpoint = it.take(MAX_ENDPOINT_LENGTH) },
                 onPairingChallengeChange = {
@@ -222,6 +227,7 @@ fun GoffyApp(viewModel: GoffyViewModel) {
                 },
                 onRotateHub = { showRotateConfirmation = true },
                 onForgetHub = { showForgetConfirmation = true },
+                onSpeakLatest = onSpeakLatest,
                 onSubmit = {
                     viewModel.submitCommand(command)
                     command = ""
@@ -382,6 +388,7 @@ private fun GoffyHomeScreen(
     bearerToken: String,
     showLinkSetup: Boolean,
     pairingScannerNotice: PairingScannerNotice?,
+    latestSpeakableText: String?,
     onCommandChange: (String) -> Unit,
     onEndpointChange: (String) -> Unit,
     onPairingChallengeChange: (String) -> Unit,
@@ -392,6 +399,7 @@ private fun GoffyHomeScreen(
     onPairHub: () -> Unit,
     onRotateHub: () -> Unit,
     onForgetHub: () -> Unit,
+    onSpeakLatest: (String) -> Unit,
     onSubmit: () -> Unit,
     onSetLocalModelEnabled: (Boolean) -> Unit,
     onCancel: () -> Unit,
@@ -444,9 +452,11 @@ private fun GoffyHomeScreen(
         CommandSurface(
             command = command,
             busy = state.isBusy,
+            latestSpeakableText = latestSpeakableText,
             onCommandChange = onCommandChange,
             onSubmit = onSubmit,
             onCancel = onCancel,
+            onSpeakLatest = onSpeakLatest,
         )
         Spacer(Modifier.height(18.dp))
         Timeline(
@@ -906,9 +916,11 @@ private fun HubLinkSection(
 private fun CommandSurface(
     command: String,
     busy: Boolean,
+    latestSpeakableText: String?,
     onCommandChange: (String) -> Unit,
     onSubmit: () -> Unit,
     onCancel: () -> Unit,
+    onSpeakLatest: (String) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -944,6 +956,11 @@ private fun CommandSurface(
                     shortLabel = stringResource(R.string.camera_short),
                     description = stringResource(R.string.camera_placeholder),
                 )
+                SpeakLatestAction(
+                    speakableText = latestSpeakableText,
+                    busy = busy,
+                    onSpeakLatest = onSpeakLatest,
+                )
             }
             if (busy) {
                 OutlinedButton(onClick = onCancel) {
@@ -959,6 +976,27 @@ private fun CommandSurface(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SpeakLatestAction(
+    speakableText: String?,
+    busy: Boolean,
+    onSpeakLatest: (String) -> Unit,
+) {
+    val description = stringResource(R.string.speak_latest_result)
+    OutlinedButton(
+        onClick = { speakableText?.let(onSpeakLatest) },
+        enabled = speakableText != null && !busy,
+        modifier = Modifier.semantics { contentDescription = description },
+        colors = ButtonDefaults.outlinedButtonColors(disabledContentColor = Mist),
+    ) {
+        Text(
+            text = stringResource(R.string.speak_latest_short),
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+        )
     }
 }
 
