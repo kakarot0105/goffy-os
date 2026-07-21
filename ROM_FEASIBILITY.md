@@ -160,7 +160,9 @@ The descriptor is validated by:
 
 ```bash
 .venv/bin/python scripts/validate_rom_system_app.py
-.venv/bin/python scripts/create_aosp_product_import.py --aosp-root /path/to/aosp --apk /path/to/GoffyOS-signed.apk
+.venv/bin/python scripts/create_aosp_product_import.py \
+  --aosp-root /path/to/aosp \
+  --apk .goffy-validation/rom-signing/GoffyOS-signed.apk
 ```
 
 This prepares GOFFY for inclusion in a future AOSP/GSI build tree without
@@ -194,7 +196,8 @@ phone or an AOSP checkout:
 .venv/bin/python scripts/verify_rom0_readiness.py \
   --probe-json .goffy-validation/rom-feasibility.json \
   --manual-gates-json .goffy-validation/rom-manual-gates.json \
-  --signed-apk /path/to/GoffyOS-signed.apk \
+  --signing-plan-json .goffy-validation/rom-signing/release-signing-plan.json \
+  --signed-apk .goffy-validation/rom-signing/GoffyOS-signed.apk \
   --aosp-root /path/to/aosp \
   --evidence-root .
 ```

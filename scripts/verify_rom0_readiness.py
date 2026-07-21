@@ -18,6 +18,14 @@ from scripts.create_aosp_product_import import (  # noqa: E402
     AospProductImportError,
     create_aosp_product_import_report,
 )
+from scripts.create_rom_release_signing_plan import (  # noqa: E402
+    JSON_SCHEMA_VERSION as SIGNING_PLAN_SCHEMA_VERSION,
+)
+from scripts.create_rom_release_signing_plan import (  # noqa: E402
+    validate_apksigner,
+    validate_key_alias,
+    validate_keystore,
+)
 from scripts.rom_feasibility_probe import JSON_SCHEMA_VERSION as PROBE_SCHEMA_VERSION  # noqa: E402
 from scripts.validate_rom_manual_gates import (  # noqa: E402
     load_manual_gates,
@@ -62,6 +70,7 @@ def build_readiness_report(
     probe_json: Path | None,
     manual_gates_json: Path | None,
     signed_apk: Path | None,
+    signing_plan_json: Path | None = None,
     aosp_root: Path = DEFAULT_AOSP_ROOT,
     root: Path = ROOT,
     evidence_root: Path = ROOT,
@@ -70,6 +79,11 @@ def build_readiness_report(
         validate_rom_descriptors(root=root),
         validate_probe_evidence(probe_json),
         validate_manual_gate_evidence(manual_gates_json, evidence_root=evidence_root),
+        validate_release_signing_plan_evidence(
+            signing_plan_json,
+            signed_apk=signed_apk,
+            root=root,
+        ),
         validate_aosp_import_evidence(signed_apk=signed_apk, aosp_root=aosp_root, root=root),
     )
     ok = all(section.ok for section in sections)
@@ -171,6 +185,78 @@ def validate_manual_gate_evidence(path: Path | None, *, evidence_root: Path) -> 
     )
 
 
+def validate_release_signing_plan_evidence(
+    path: Path | None,
+    *,
+    signed_apk: Path | None,
+    root: Path = ROOT,
+) -> ReadinessSection:
+    if path is None:
+        return ReadinessSection(
+            name="release_signing_plan",
+            ok=False,
+            blockers=("ROM release signing plan JSON was not supplied",),
+        )
+    try:
+        payload = load_json_object(path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return ReadinessSection(name="release_signing_plan", ok=False, blockers=(str(exc),))
+
+    blockers: list[str] = []
+    if payload.get("schema_version") != SIGNING_PLAN_SCHEMA_VERSION:
+        blockers.append("ROM release signing plan schema_version mismatch")
+    if payload.get("ok") is not True:
+        blockers.extend(
+            string_items(payload.get("blockers")) or ["ROM release signing plan is not ready"]
+        )
+    if payload.get("status") != "READY_TO_SIGN":
+        blockers.append("ROM release signing plan status is not READY_TO_SIGN")
+
+    planned_signed_apk = str(payload.get("signed_apk", ""))
+    if not planned_signed_apk:
+        blockers.append("ROM release signing plan is missing signed_apk")
+    elif signed_apk is not None and not same_path(planned_signed_apk, signed_apk):
+        blockers.append("ROM release signing plan signed_apk does not match supplied APK")
+
+    apksigner_value = str(payload.get("apksigner", ""))
+    apksigner_blockers: list[str] = []
+    if apksigner_value:
+        validate_apksigner(Path(apksigner_value).expanduser(), apksigner_blockers)
+    else:
+        apksigner_blockers.append("Android SDK apksigner was not found")
+    blockers.extend(apksigner_blockers)
+
+    keystore_value = str(payload.get("keystore", ""))
+    keystore_blockers: list[str] = []
+    if keystore_value:
+        validate_keystore(Path(keystore_value).expanduser(), keystore_blockers, root=root)
+    else:
+        keystore_blockers.append("release keystore path is required and must live outside the repo")
+    blockers.extend(keystore_blockers)
+
+    key_alias = str(payload.get("key_alias", ""))
+    validate_key_alias(key_alias, blockers)
+
+    unsigned_apk = mapping_value(payload.get("unsigned_apk"))
+    evidence = {
+        "status": str(payload.get("status", "")),
+        "unsigned_apk_sha256": unsigned_apk.get("sha256", ""),
+        "signed_apk": planned_signed_apk,
+        "apksigner": classified_presence(apksigner_value, apksigner_blockers),
+        "keystore": "external"
+        if keystore_value and not keystore_blockers
+        else classified_presence(keystore_value, keystore_blockers),
+        "key_alias": key_alias,
+    }
+    return ReadinessSection(
+        name="release_signing_plan",
+        ok=not blockers,
+        blockers=tuple(dict.fromkeys(blockers)),
+        warnings=string_items(payload.get("warnings")),
+        evidence=evidence,
+    )
+
+
 def validate_aosp_import_evidence(
     *,
     signed_apk: Path | None,
@@ -219,6 +305,8 @@ def next_steps(sections: tuple[ReadinessSection, ...]) -> tuple[str, ...]:
             )
         elif section.name == "manual_gates":
             steps.append("Complete ROM-0 manual gate evidence without secrets or live approval.")
+        elif section.name == "release_signing_plan":
+            steps.append("Create a ROM release signing plan with an external keystore.")
         elif section.name == "aosp_import":
             steps.append(
                 "Provide an externally signed non-debug GOFFY APK for AOSP import planning."
@@ -250,6 +338,21 @@ def string_items(value: object) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
     return tuple(str(item) for item in value)
+
+
+def same_path(left: str, right: Path) -> bool:
+    try:
+        return Path(left).expanduser().resolve() == right.expanduser().resolve()
+    except OSError:
+        return Path(left).expanduser().absolute() == right.expanduser().absolute()
+
+
+def classified_presence(value: str, blockers: list[str]) -> str:
+    if not value:
+        return "missing"
+    if blockers:
+        return "invalid"
+    return "configured"
 
 
 def render_json(report: Rom0ReadinessReport) -> str:
@@ -288,6 +391,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--probe-json", type=Path)
     parser.add_argument("--manual-gates-json", type=Path)
+    parser.add_argument("--signing-plan-json", type=Path)
     parser.add_argument("--signed-apk", type=Path)
     parser.add_argument("--aosp-root", type=Path, default=DEFAULT_AOSP_ROOT)
     parser.add_argument(
@@ -305,6 +409,7 @@ def main(argv: list[str] | None = None) -> int:
     report = build_readiness_report(
         probe_json=args.probe_json,
         manual_gates_json=args.manual_gates_json,
+        signing_plan_json=args.signing_plan_json,
         signed_apk=args.signed_apk,
         aosp_root=args.aosp_root,
         evidence_root=args.evidence_root,

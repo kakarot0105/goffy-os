@@ -26,7 +26,7 @@ Safe import planning:
   --keystore /absolute/path/outside/repo/goffy-release.jks
 .venv/bin/python scripts/create_aosp_product_import.py \
   --aosp-root /path/to/aosp \
-  --apk /path/to/GoffyOS-signed.apk
+  --apk .goffy-validation/rom-signing/GoffyOS-signed.apk
 ```
 
 The signing-plan command is dry-run only: it locates Android SDK `apksigner`,
