@@ -16,6 +16,14 @@ JSON_SCHEMA_VERSION = "goffy.rom-manual-gates.v1"
 SHA256_PATTERN = re.compile(r"^[a-fA-F0-9]{64}$")
 ARCHIVE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._+@-]{1,180}$")
 SENSITIVE_KEYS = {"imei", "serial", "token", "password", "secret", "credential"}
+ROLLBACK_REQUIRED_HEADINGS = (
+    "## Device Baseline",
+    "## Stock Restore Source",
+    "## SHA-256 Evidence",
+    "## Rollback Procedure",
+    "## Data Wipe Expectations",
+    "## Approval Record",
+)
 
 
 class ManualGateStatus(StrEnum):
@@ -117,13 +125,37 @@ def validate_stock_restore(
         rollback_path = root / rollback_doc
         if rollback_path.suffix != ".md":
             blockers.append("stock_restore.rollback_doc must point to a Markdown file")
-        if not rollback_path.is_file():
+        elif not rollback_path.is_file():
             blockers.append("stock_restore.rollback_doc must exist")
+        else:
+            validate_rollback_doc(
+                rollback_path=rollback_path,
+                archive_name=archive_name,
+                sha256=sha256,
+                blockers=blockers,
+            )
 
     accepted["stock_restore.source_url"] = source_url
     accepted["stock_restore.archive_name"] = archive_name
     accepted["stock_restore.sha256"] = sha256.lower()
     accepted["stock_restore.rollback_doc"] = rollback_doc
+
+
+def validate_rollback_doc(
+    *,
+    rollback_path: Path,
+    archive_name: str,
+    sha256: str,
+    blockers: list[str],
+) -> None:
+    text = rollback_path.read_text(encoding="utf-8")
+    for heading in ROLLBACK_REQUIRED_HEADINGS:
+        if heading not in text:
+            blockers.append(f"stock_restore.rollback_doc missing heading {heading}")
+    if archive_name and archive_name not in text:
+        blockers.append("stock_restore.rollback_doc must include the exact archive name")
+    if SHA256_PATTERN.fullmatch(sha256) and sha256.lower() not in text.lower():
+        blockers.append("stock_restore.rollback_doc must include the exact SHA-256")
 
 
 def mapping_value(value: object) -> dict[str, str]:

@@ -45,6 +45,10 @@ The validator:
 - Requires a firmware archive filename, not a path.
 - Requires a 64-character SHA-256.
 - Requires an existing rollback Markdown file inside this repo.
+- Requires the rollback Markdown headings in
+  `docs/setup/kansas-stock-rollback.template.md`.
+- Requires the rollback Markdown to include the exact archive filename and
+  SHA-256 from the JSON evidence.
 - Rejects sensitive keys such as `imei`, `serial`, `token`, `password`,
   `secret`, and `credential`.
 - Never runs `adb`, `fastboot`, shell commands, unlock commands, flash commands,
@@ -71,6 +75,8 @@ only under `.goffy-validation` when `--output` is used, and performs no network,
 ADB, fastboot, unlock, flash, or root action.
 
 ## Rollback Doc Requirements
+
+Start from [`kansas-stock-rollback.template.md`](kansas-stock-rollback.template.md).
 
 The rollback Markdown should record:
 
