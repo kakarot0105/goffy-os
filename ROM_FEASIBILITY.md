@@ -176,17 +176,22 @@ block, rejects debug build artifacts, and refuses to overwrite different existin
 AOSP files.
 
 Before importing, create a local signing plan without storing keys or passwords
-in the repo:
+in the repo, sign the APK with the generated `apksigner` command, then verify
+the signed artifact:
 
 ```bash
 ./android/gradlew -p android :app:assembleRelease --no-daemon
 .venv/bin/python scripts/create_rom_release_signing_plan.py \
   --keystore /absolute/path/outside/repo/goffy-release.jks
+.venv/bin/python scripts/verify_rom_release_apk.py \
+  --apk .goffy-validation/rom-signing/GoffyOS-signed.apk
 ```
 
 The plan uses the Android SDK `apksigner`, requires keystore passwords through
 environment variable names only, writes plan JSON under `.goffy-validation`, and
-does not sign, flash, unlock, erase, or mutate an AOSP checkout.
+does not sign, flash, unlock, erase, or mutate an AOSP checkout. The APK
+verifier checks an already signed artifact and records only hash, size, and
+v2/v3 signature evidence.
 
 Use the readiness reporter to summarize ROM-0 blockers without touching the
 phone or an AOSP checkout:
@@ -197,6 +202,7 @@ phone or an AOSP checkout:
   --probe-json .goffy-validation/rom-feasibility.json \
   --manual-gates-json .goffy-validation/rom-manual-gates.json \
   --signing-plan-json .goffy-validation/rom-signing/release-signing-plan.json \
+  --apk-verification-json .goffy-validation/rom-signing/release-apk-verification.json \
   --signed-apk .goffy-validation/rom-signing/GoffyOS-signed.apk \
   --aosp-root /path/to/aosp \
   --evidence-root .

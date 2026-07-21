@@ -33,6 +33,7 @@ from scripts.validate_rom_manual_gates import (  # noqa: E402
 )
 from scripts.validate_rom_product_overlay import validate_rom_product_overlay  # noqa: E402
 from scripts.validate_rom_system_app import validate_rom_system_app  # noqa: E402
+from scripts.verify_rom_release_apk import JSON_SCHEMA_VERSION as APK_SCHEMA_VERSION  # noqa: E402
 
 READINESS_SCHEMA_VERSION = "goffy.rom0-readiness.v1"
 DEFAULT_AOSP_ROOT = Path("<aosp-root>")
@@ -71,6 +72,7 @@ def build_readiness_report(
     manual_gates_json: Path | None,
     signed_apk: Path | None,
     signing_plan_json: Path | None = None,
+    apk_verification_json: Path | None = None,
     aosp_root: Path = DEFAULT_AOSP_ROOT,
     root: Path = ROOT,
     evidence_root: Path = ROOT,
@@ -83,6 +85,10 @@ def build_readiness_report(
             signing_plan_json,
             signed_apk=signed_apk,
             root=root,
+        ),
+        validate_release_apk_verification_evidence(
+            apk_verification_json,
+            signed_apk=signed_apk,
         ),
         validate_aosp_import_evidence(signed_apk=signed_apk, aosp_root=aosp_root, root=root),
     )
@@ -257,6 +263,59 @@ def validate_release_signing_plan_evidence(
     )
 
 
+def validate_release_apk_verification_evidence(
+    path: Path | None,
+    *,
+    signed_apk: Path | None,
+) -> ReadinessSection:
+    if path is None:
+        return ReadinessSection(
+            name="release_apk_verification",
+            ok=False,
+            blockers=("ROM release APK verification JSON was not supplied",),
+        )
+    try:
+        payload = load_json_object(path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return ReadinessSection(name="release_apk_verification", ok=False, blockers=(str(exc),))
+
+    blockers: list[str] = []
+    if payload.get("schema_version") != APK_SCHEMA_VERSION:
+        blockers.append("ROM release APK verification schema_version mismatch")
+    if payload.get("ok") is not True:
+        blockers.extend(
+            string_items(payload.get("blockers")) or ["ROM release APK verification is not OK"]
+        )
+    if payload.get("status") != "VERIFIED":
+        blockers.append("ROM release APK verification status is not VERIFIED")
+
+    apk_payload = payload.get("apk")
+    apk = mapping_value(apk_payload)
+    verified_apk = apk.get("path", "")
+    if not verified_apk:
+        blockers.append("ROM release APK verification is missing APK path")
+    elif signed_apk is not None and not same_path(verified_apk, signed_apk):
+        blockers.append("ROM release APK verification APK path does not match supplied APK")
+
+    signature_schemes = string_items(
+        apk_payload.get("signature_schemes") if isinstance(apk_payload, Mapping) else None
+    )
+    if not any(scheme in {"v2", "v3", "v3.1"} for scheme in signature_schemes):
+        blockers.append("ROM release APK verification did not record a v2/v3 signature scheme")
+
+    return ReadinessSection(
+        name="release_apk_verification",
+        ok=not blockers,
+        blockers=tuple(dict.fromkeys(blockers)),
+        warnings=string_items(payload.get("warnings")),
+        evidence={
+            "apk_sha256": apk.get("sha256", ""),
+            "apk_signature_schemes": ",".join(signature_schemes),
+            "apk_path": verified_apk,
+        },
+    )
+
+
 def validate_aosp_import_evidence(
     *,
     signed_apk: Path | None,
@@ -307,6 +366,8 @@ def next_steps(sections: tuple[ReadinessSection, ...]) -> tuple[str, ...]:
             steps.append("Complete ROM-0 manual gate evidence without secrets or live approval.")
         elif section.name == "release_signing_plan":
             steps.append("Create a ROM release signing plan with an external keystore.")
+        elif section.name == "release_apk_verification":
+            steps.append("Verify the signed GOFFY APK before AOSP import planning.")
         elif section.name == "aosp_import":
             steps.append(
                 "Provide an externally signed non-debug GOFFY APK for AOSP import planning."
@@ -392,6 +453,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--probe-json", type=Path)
     parser.add_argument("--manual-gates-json", type=Path)
     parser.add_argument("--signing-plan-json", type=Path)
+    parser.add_argument("--apk-verification-json", type=Path)
     parser.add_argument("--signed-apk", type=Path)
     parser.add_argument("--aosp-root", type=Path, default=DEFAULT_AOSP_ROOT)
     parser.add_argument(
@@ -410,6 +472,7 @@ def main(argv: list[str] | None = None) -> int:
         probe_json=args.probe_json,
         manual_gates_json=args.manual_gates_json,
         signing_plan_json=args.signing_plan_json,
+        apk_verification_json=args.apk_verification_json,
         signed_apk=args.signed_apk,
         aosp_root=args.aosp_root,
         evidence_root=args.evidence_root,

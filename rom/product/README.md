@@ -14,11 +14,15 @@ Files:
 - [`goffy-product-overlay.json`](goffy-product-overlay.json) records the safe
   packaging contract.
 
-Validation:
+Validation after a human signs the APK with the generated signing-plan command:
 
 ```bash
 .venv/bin/python scripts/validate_rom_product_overlay.py
-.venv/bin/python scripts/create_aosp_product_import.py --aosp-root /path/to/aosp --apk /path/to/GoffyOS-signed.apk
+.venv/bin/python scripts/verify_rom_release_apk.py \
+  --apk .goffy-validation/rom-signing/GoffyOS-signed.apk
+.venv/bin/python scripts/create_aosp_product_import.py \
+  --aosp-root /path/to/aosp \
+  --apk .goffy-validation/rom-signing/GoffyOS-signed.apk
 ```
 
 The import command is a plan by default. Execute mode requires

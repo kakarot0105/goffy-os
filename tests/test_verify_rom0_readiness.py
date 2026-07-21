@@ -12,8 +12,10 @@ from scripts.verify_rom0_readiness import (
     Rom0ReadinessStatus,
     build_readiness_report,
     render_markdown,
+    validate_release_apk_verification_evidence,
     validate_release_signing_plan_evidence,
 )
+from scripts.verify_rom_release_apk import JSON_SCHEMA_VERSION as APK_VERIFICATION_SCHEMA_VERSION
 
 
 def test_rom0_readiness_blocks_without_external_evidence() -> None:
@@ -35,6 +37,10 @@ def test_rom0_readiness_blocks_without_external_evidence() -> None:
         "ROM release signing plan JSON was not supplied"
         in section(report, "release_signing_plan").blockers
     )
+    assert (
+        "ROM release APK verification JSON was not supplied"
+        in section(report, "release_apk_verification").blockers
+    )
     assert "Externally signed GOFFY APK was not supplied" in section(report, "aosp_import").blockers
 
 
@@ -44,12 +50,14 @@ def test_rom0_readiness_accepts_complete_non_destructive_evidence(tmp_path: Path
     manual = write_manual_gates(tmp_path, rollback_doc)
     apk = write_signed_apk(tmp_path)
     signing_plan = write_signing_plan(tmp_path, apk)
+    apk_verification = write_apk_verification(tmp_path, apk)
 
     report = build_readiness_report(
         probe_json=probe,
         manual_gates_json=manual,
         signed_apk=apk,
         signing_plan_json=signing_plan,
+        apk_verification_json=apk_verification,
         aosp_root=tmp_path / "aosp",
         evidence_root=tmp_path,
     )
@@ -58,6 +66,7 @@ def test_rom0_readiness_accepts_complete_non_destructive_evidence(tmp_path: Path
     assert report.status is Rom0ReadinessStatus.READY_FOR_HUMAN_REVIEW
     assert report.destructive_actions == "withheld"
     assert section(report, "release_signing_plan").evidence["keystore"] == "external"
+    assert section(report, "release_apk_verification").evidence["apk_signature_schemes"] == "v2"
     assert section(report, "aosp_import").evidence["apk_signature_schemes"] == "v2"
     assert "does not authorize unlock" in render_markdown(report)
 
@@ -159,6 +168,21 @@ def test_rom0_readiness_rejects_forged_repo_keystore_in_ready_plan(tmp_path: Pat
     assert "release keystore must not live inside the GOFFY repo" in result.blockers
     assert result.evidence
     assert result.evidence["keystore"] == "invalid"
+
+
+def test_rom0_readiness_rejects_apk_verification_path_mismatch(tmp_path: Path) -> None:
+    apk = write_signed_apk(tmp_path)
+    other_apk = tmp_path / "OtherGoffyOS-signed.apk"
+    other_apk.write_bytes(apk.read_bytes())
+    apk_verification = write_apk_verification(tmp_path, other_apk)
+
+    result = validate_release_apk_verification_evidence(
+        apk_verification,
+        signed_apk=apk,
+    )
+
+    assert not result.ok
+    assert "ROM release APK verification APK path does not match supplied APK" in result.blockers
 
 
 def section(report, name: str):
@@ -273,6 +297,31 @@ def write_signing_plan(
                 "blockers": [],
                 "warnings": [],
                 "commands": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def write_apk_verification(tmp_path: Path, apk: Path) -> Path:
+    path = tmp_path / "release-apk-verification.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": APK_VERIFICATION_SCHEMA_VERSION,
+                "ok": True,
+                "status": "VERIFIED",
+                "destructive_actions": "withheld",
+                "apk": {
+                    "path": str(apk),
+                    "exists": True,
+                    "sha256": "c" * 64,
+                    "byte_count": 123,
+                    "signature_schemes": ["v2"],
+                },
+                "blockers": [],
+                "warnings": [],
             }
         ),
         encoding="utf-8",
