@@ -73,6 +73,7 @@ import dev.goffy.os.ocr.ForegroundOcrScanner
 import dev.goffy.os.qr.ForegroundQrScanner
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.MacAppsList
 import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacFilesLargest
 import dev.goffy.os.protocol.MacFilesList
@@ -1751,6 +1752,30 @@ private fun TaskResult(result: ToolResultContent) {
             result.entries.take(5).forEach { entry ->
                 Text(
                     text = "${entry.sizeBytes.toReadableFileSize()} / ${entry.relativePath}",
+                    color = Mist,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        is MacAppsList -> {
+            Text(
+                text = "MAC APPS / ${result.appCount}",
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = "${result.entries.size} approved" +
+                    if (result.truncated) " / truncated" else "",
+                color = Signal,
+                fontSize = 11.sp,
+            )
+            result.entries.take(5).forEach { entry ->
+                Text(
+                    text = "${entry.appIndex} / ${entry.displayName} / ${entry.bundleId}",
                     color = Mist,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,

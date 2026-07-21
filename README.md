@@ -127,6 +127,8 @@ the capability boundary.
 - Optional, disabled-by-default `SAFE mac.clipboard.read` Hub/MCP tool for
   bounded plaintext reads from the Mac clipboard, including an Android
   `Read my Mac clipboard` route that does not read clipboard text aloud
+- Optional `SAFE mac.apps.list` Hub/MCP tool for configured app-catalog reads,
+  including an Android `List my Mac apps` route that cannot launch apps
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
 - Shared fixture `protocol/fixtures/mac-system-info-flow.jsonl`
@@ -251,6 +253,18 @@ clipboard formats or file URLs. Plaintext containing `file://` is rejected as
 unsupported without returning text. Android can invoke this exact tool with
 `Read my Mac clipboard` or `Show my Mac clipboard`; TTS reports status without
 reading clipboard contents aloud.
+
+To expose a safe Mac app catalog for future confirmation-gated app launching:
+
+```bash
+export GOFFY_MAC_APP_ALLOWLIST='Safari=com.apple.Safari,Terminal=com.apple.Terminal'
+```
+
+When set, the Hub exposes `SAFE mac.apps.list` over MCP. The tool returns only
+configured display names and bundle identifiers. It does not scan
+`/Applications`, reveal app paths, launch apps, or open files. Android can
+invoke it with `List my Mac apps`, `Show my Mac applications`, or
+`What apps are approved on my Mac?`.
 
 The Hub seals its registry before serving, checks registered tools locally at
 startup and every 30 seconds by default, and removes an unhealthy tool from both

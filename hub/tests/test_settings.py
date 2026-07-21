@@ -110,14 +110,22 @@ def test_mcp_environment_allowlists_are_parsed(monkeypatch: pytest.MonkeyPatch) 
 
 def test_clipboard_read_is_disabled_by_default() -> None:
     assert HubSettings().mac_clipboard_read_enabled is False
+    assert HubSettings().mac_app_allowlist == ()
 
 
 def test_clipboard_read_environment_flag_is_parsed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GOFFY_MAC_CLIPBOARD_READ_ENABLED", " TRUE ")
+    monkeypatch.setenv(
+        "GOFFY_MAC_APP_ALLOWLIST", "Safari=com.apple.Safari, Terminal=com.apple.Terminal"
+    )
 
     settings = HubSettings.from_environment()
 
     assert settings.mac_clipboard_read_enabled is True
+    assert settings.mac_app_allowlist == (
+        "Safari=com.apple.Safari",
+        "Terminal=com.apple.Terminal",
+    )
 
 
 def test_clipboard_read_environment_flag_rejects_ambiguous_values(

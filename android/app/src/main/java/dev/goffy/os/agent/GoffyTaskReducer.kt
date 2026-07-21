@@ -4,6 +4,8 @@ import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.MacAppsList
+import dev.goffy.os.protocol.MAC_APPS_LIST_TOOL
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
@@ -507,6 +509,9 @@ data class TaskTimelineState(
         MAC_CLIPBOARD_READ_TOOL -> executionTarget == ExecutionTarget.MAC &&
             content is MacClipboardRead &&
             content.matchesToolContract()
+        MAC_APPS_LIST_TOOL -> executionTarget == ExecutionTarget.MAC &&
+            content is MacAppsList &&
+            content.matchesToolContract()
         MAC_FILES_LARGEST_TOOL -> executionTarget == ExecutionTarget.MAC &&
             content is MacFilesLargest &&
             content.matchesToolContract()
@@ -631,6 +636,7 @@ private fun Float.displayConfidence(): String = String.format(Locale.US, "%.2f",
 
 private fun ToolResultContent.summaryText(): String = when (this) {
     is GitStatus -> gitStatusSummary()
+    is MacAppsList -> macAppsSummary()
     is MacClipboardRead -> macClipboardSummary()
     is MacFilesLargest -> largestMacFilesSummary()
     is MacFilesList -> macFilesSummary()
@@ -671,6 +677,11 @@ private fun MacClipboardRead.macClipboardSummary(): String = when (status) {
     "empty" -> "Mac clipboard has no readable text"
     "unsupported" -> "Mac clipboard content is unsupported by GOFFY"
     else -> "Mac clipboard status is unavailable"
+}
+
+private fun MacAppsList.macAppsSummary(): String {
+    val truncatedLabel = if (truncated) " (truncated)" else ""
+    return "${entries.size} approved Mac apps shown of $appCount$truncatedLabel"
 }
 
 private fun GitStatus.gitStatusSummary(): String {

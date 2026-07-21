@@ -145,6 +145,34 @@ class GoffyToolContractsTest {
         )
     }
 
+    @Test
+    fun macAppsContractRequiresBoundedApprovedCatalogMetadata() {
+        assertTrue(MacAppsListArguments().matchesToolContract())
+        assertFalse(MacAppsListArguments(maxEntries = 0).matchesToolContract())
+        assertFalse(MacAppsListArguments(maxEntries = MAX_MAC_APP_ENTRIES + 1).matchesToolContract())
+
+        val valid = validApps()
+
+        assertTrue(valid.matchesToolContract())
+        assertFalse(valid.copy(truncated = false).matchesToolContract())
+        assertFalse(valid.copy(appCount = 1, truncated = true).matchesToolContract())
+        assertFalse(
+            valid.copy(
+                entries = listOf(valid.entries[0].copy(displayName = "/Applications/Safari")),
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                entries = listOf(valid.entries[0].copy(bundleId = "com..apple.Safari")),
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                entries = listOf(valid.entries[0], valid.entries[1].copy(bundleId = "com.apple.Safari")),
+            ).matchesToolContract(),
+        )
+    }
+
     private fun validDeviceInfo(): PhoneDeviceInfo = PhoneDeviceInfo(
         manufacturer = "motorola",
         model = "moto g",
@@ -201,6 +229,24 @@ class GoffyToolContractsTest {
                 status = "sleeping",
                 rssBytes = 128_000_000L,
                 createTimeEpochSeconds = null,
+            ),
+        ),
+    )
+
+    private fun validApps(): MacAppsList = MacAppsList(
+        status = "available",
+        appCount = 3,
+        truncated = true,
+        entries = listOf(
+            MacAppCatalogEntry(
+                appIndex = 0,
+                displayName = "Safari",
+                bundleId = "com.apple.Safari",
+            ),
+            MacAppCatalogEntry(
+                appIndex = 1,
+                displayName = "Terminal",
+                bundleId = "com.apple.Terminal",
             ),
         ),
     )

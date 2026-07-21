@@ -10,7 +10,7 @@ from starlette.testclient import TestClient
 
 from goffy_hub.app import create_app
 from goffy_hub.settings import HubSettings
-from goffy_hub.tools import mac_clipboard
+from goffy_hub.tools import mac_apps, mac_clipboard
 from goffy_protocol import PROTOCOL_VERSION
 
 
@@ -48,6 +48,27 @@ def test_health_counts_optional_mac_file_tools_when_roots_are_configured(tmp_pat
     assert response.json()["status"] == "ok"
     assert response.json()["healthyToolCount"] == 4
     assert response.json()["unavailableToolCount"] == 0
+
+
+def test_health_counts_optional_mac_app_catalog_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mac_apps, "is_mac_apps_supported", lambda: True)
+    app = create_app(
+        HubSettings(
+            auth_token=SecretStr("test-token-that-is-long-enough"),
+            mac_app_allowlist=("Safari=com.apple.Safari",),
+        )
+    )
+
+    with TestClient(app, base_url="http://127.0.0.1:8787") as configured_client:
+        response = configured_client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert response.json()["healthyToolCount"] == 3
+    assert response.json()["unavailableToolCount"] == 0
+    assert "mac.apps.list" in [tool.name for tool in app.state.registry.describe()]
 
 
 def test_unhealthy_tool_is_removed_before_app_starts_serving(

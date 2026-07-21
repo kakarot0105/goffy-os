@@ -274,6 +274,10 @@ include real credentials or unrelated personal data.
   bounded process metadata and excludes command lines, executable paths,
   environment variables, open files, network data, current working directories,
   and user names.
+- `mac.apps.list` registers only when `GOFFY_MAC_APP_ALLOWLIST` is explicitly
+  configured. It returns bounded display names and bundle identifiers only; it
+  does not scan installed applications, expose app paths, launch apps, open
+  files, or invoke a shell.
 - Protocol inputs reject unknown fields and unsupported versions.
 - GOFFY protocol `0.2.0`, MCP metadata revision `2025-11-25`, and individual tool
   contract versions are separate compatibility boundaries.

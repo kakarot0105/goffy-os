@@ -23,6 +23,7 @@ const val MAC_FILES_LARGEST_TOOL_VERSION = "1.0.0"
 const val MAC_FILES_LIST_TOOL_VERSION = "1.0.0"
 const val MAC_CLIPBOARD_READ_TOOL_VERSION = "1.0.0"
 const val MAC_PROCESSES_LIST_TOOL_VERSION = "1.0.0"
+const val MAC_APPS_LIST_TOOL_VERSION = "1.0.0"
 const val GIT_STATUS_TOOL_VERSION = "1.0.0"
 const val MAX_PROTOCOL_MESSAGE_BYTES = 32_768
 
@@ -94,6 +95,10 @@ data class MacProcessesListArguments(
     val maxEntries: Int = DEFAULT_MAC_PROCESS_ENTRIES,
 ) : ToolArguments
 
+data class MacAppsListArguments(
+    val maxEntries: Int = DEFAULT_MAC_APP_ENTRIES,
+) : ToolArguments
+
 data class MacFilesListArguments(
     val rootIndex: Int = 0,
     val relativePath: String = "",
@@ -148,6 +153,19 @@ data class MacProcessesList(
     val skippedCount: Int,
     val truncated: Boolean,
     val entries: List<MacProcessEntry>,
+) : ToolResultContent
+
+data class MacAppCatalogEntry(
+    val appIndex: Int,
+    val displayName: String,
+    val bundleId: String,
+)
+
+data class MacAppsList(
+    val status: String,
+    val appCount: Int,
+    val truncated: Boolean,
+    val entries: List<MacAppCatalogEntry>,
 ) : ToolResultContent
 
 data class MacFilesApprovedRoot(
@@ -390,6 +408,16 @@ class GoffyProtocolCodec(
                 }
                 JsonObject(emptyMap())
             }
+            MAC_APPS_LIST_TOOL -> {
+                val value = arguments as? MacAppsListArguments
+                    ?: throw ProtocolException("mac.apps.list requires typed arguments")
+                if (!value.matchesToolContract()) {
+                    throw ProtocolException("mac.apps.list arguments failed local policy")
+                }
+                buildJsonObject {
+                    put("maxEntries", value.maxEntries)
+                }
+            }
             MAC_PROCESSES_LIST_TOOL -> {
                 val value = arguments as? MacProcessesListArguments
                     ?: throw ProtocolException("mac.processes.list requires typed arguments")
@@ -568,6 +596,10 @@ class GoffyProtocolCodec(
                 validateMacClipboardReadInputSchema(tool.requireObject("inputSchema"))
                 validateMacClipboardReadOutputSchema(tool.requireObject("outputSchema"))
             }
+            MAC_APPS_LIST_TOOL -> {
+                validateMacAppsListInputSchema(tool.requireObject("inputSchema"))
+                validateMacAppsListOutputSchema(tool.requireObject("outputSchema"))
+            }
             MAC_PROCESSES_LIST_TOOL -> {
                 validateMacProcessesListInputSchema(tool.requireObject("inputSchema"))
                 validateMacProcessesListOutputSchema(tool.requireObject("outputSchema"))
@@ -589,6 +621,7 @@ class GoffyProtocolCodec(
             MAC_FILES_LIST_TOOL -> MAC_FILES_LIST_TOOL_VERSION
             MAC_CLIPBOARD_READ_TOOL -> MAC_CLIPBOARD_READ_TOOL_VERSION
             MAC_PROCESSES_LIST_TOOL -> MAC_PROCESSES_LIST_TOOL_VERSION
+            MAC_APPS_LIST_TOOL -> MAC_APPS_LIST_TOOL_VERSION
             GIT_STATUS_TOOL -> GIT_STATUS_TOOL_VERSION
             else -> throw ProtocolException("unsupported discovered tool")
         }
@@ -927,6 +960,92 @@ class GoffyProtocolCodec(
         properties.requireObject("characterCountTruncated").requireTypeOnly("boolean")
     }
 
+    private fun validateMacAppsListInputSchema(schema: JsonObject) {
+        schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS)
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(MAC_APPS_LIST_INPUT_KEYS)
+        properties.requireObject("maxEntries").also { maxEntries ->
+            maxEntries.requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS + "maximum" + "default")
+            maxEntries.requireType("integer")
+            maxEntries.requireInt("minimum").requireExactValue(1, "maxEntries minimum")
+            maxEntries.requireInt("maximum").requireExactValue(
+                MAX_MAC_APP_ENTRIES,
+                "maxEntries maximum",
+            )
+            maxEntries.requireInt("default").requireExactValue(
+                DEFAULT_MAC_APP_ENTRIES,
+                "maxEntries default",
+            )
+        }
+    }
+
+    private fun validateMacAppsListOutputSchema(schema: JsonObject) {
+        schema.requireKeys(OUTPUT_SCHEMA_KEYS + "\$defs")
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(MAC_APPS_LIST_OUTPUT_KEYS)
+        schema.requireArray("required").requireExactStrings(
+            MAC_APPS_LIST_OUTPUT_KEYS,
+            "app list required",
+        )
+        properties.requireObject("status").validateBoundedStringSchema(
+            "status",
+            1,
+            MAX_MAC_APP_STATUS_LENGTH,
+        )
+        properties.requireObject("appCount").validateBoundedIntInclusiveSchema(
+            "appCount",
+            0,
+            MAX_MAC_APP_COUNT,
+        )
+        properties.requireObject("truncated").requireTypeOnly("boolean")
+        properties.requireObject("entries").also { entries ->
+            entries.requireKeys(ARRAY_REF_SCHEMA_KEYS + "maxItems")
+            entries.requireType("array")
+            entries.requireInt("maxItems").requireExactValue(
+                MAX_MAC_APP_ENTRIES,
+                "entries maxItems",
+            )
+            entries.requireObject("items").requireString("\$ref").requireExactString(
+                "#/\$defs/MacAppCatalogEntryOutput",
+                "entries ref",
+            )
+        }
+
+        val definitions = schema.requireObject("\$defs")
+        definitions.requireKeys(setOf("MacAppCatalogEntryOutput"))
+        validateMacAppCatalogEntryDefinition(
+            definitions.requireObject("MacAppCatalogEntryOutput"),
+        )
+    }
+
+    private fun validateMacAppCatalogEntryDefinition(definition: JsonObject) {
+        definition.requireKeys(OBJECT_DEFINITION_KEYS)
+        validateObjectSchemaRootWithoutDialect(definition)
+        val properties = definition.requireObject("properties")
+        properties.requireKeys(MAC_APP_CATALOG_ENTRY_KEYS)
+        properties.requireObject("appIndex").validateBoundedIntegerSchema(
+            "appIndex",
+            0,
+            MAX_MAC_APP_ENTRIES,
+        )
+        properties.requireObject("displayName").validateBoundedStringSchema(
+            "displayName",
+            1,
+            MAX_MAC_APP_DISPLAY_NAME_LENGTH,
+        )
+        properties.requireObject("bundleId").validateBoundedStringSchema(
+            "bundleId",
+            1,
+            MAX_MAC_APP_BUNDLE_ID_LENGTH,
+        )
+        definition.requireArray("required").requireExactStrings(
+            MAC_APP_CATALOG_ENTRY_KEYS,
+            "app catalog entry required",
+        )
+    }
+
     private fun validateMacProcessesListInputSchema(schema: JsonObject) {
         schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS)
         validateObjectSchemaRoot(schema)
@@ -1261,6 +1380,12 @@ class GoffyProtocolCodec(
                 }
                 decodeMacClipboardRead(content)
             }
+            MAC_APPS_LIST_TOOL -> {
+                if (target != ExecutionTarget.MAC) {
+                    throw ProtocolException("mac.apps.list returned an unexpected execution target")
+                }
+                decodeMacAppsList(content)
+            }
             MAC_PROCESSES_LIST_TOOL -> {
                 if (target != ExecutionTarget.MAC) {
                     throw ProtocolException("mac.processes.list returned an unexpected execution target")
@@ -1504,6 +1629,39 @@ class GoffyProtocolCodec(
         )
         if (!result.matchesToolContract()) {
             throw ProtocolException("clipboard result failed local policy")
+        }
+        return result
+    }
+
+    private fun decodeMacAppsList(content: JsonObject): MacAppsList {
+        content.requireKeys(MAC_APPS_LIST_OUTPUT_KEYS)
+        val entries = content.requireArray("entries").boundedObjects(
+            maximum = MAX_MAC_APP_ENTRIES,
+            field = "entries",
+        ) { entry ->
+            entry.requireKeys(MAC_APP_CATALOG_ENTRY_KEYS)
+            MacAppCatalogEntry(
+                appIndex = entry.requireBoundedInt("appIndex", 0, MAX_MAC_APP_INDEX),
+                displayName = entry.requireBoundedString(
+                    "displayName",
+                    1,
+                    MAX_MAC_APP_DISPLAY_NAME_LENGTH,
+                ),
+                bundleId = entry.requireBoundedString(
+                    "bundleId",
+                    1,
+                    MAX_MAC_APP_BUNDLE_ID_LENGTH,
+                ),
+            )
+        }
+        val result = MacAppsList(
+            status = content.requireBoundedString("status", 1, MAX_MAC_APP_STATUS_LENGTH),
+            appCount = content.requireBoundedInt("appCount", 0, MAX_MAC_APP_COUNT),
+            truncated = content.requireBoolean("truncated"),
+            entries = entries,
+        )
+        if (!result.matchesToolContract()) {
+            throw ProtocolException("app list result failed local policy")
         }
         return result
     }
@@ -1959,6 +2117,18 @@ private val MAC_CLIPBOARD_READ_REQUIRED_KEYS = setOf(
 private val MAC_CLIPBOARD_READ_OPTIONAL_KEYS = setOf("contentType", "text")
 private val MAC_CLIPBOARD_READ_OUTPUT_KEYS =
     MAC_CLIPBOARD_READ_REQUIRED_KEYS + MAC_CLIPBOARD_READ_OPTIONAL_KEYS
+private val MAC_APPS_LIST_INPUT_KEYS = setOf("maxEntries")
+private val MAC_APPS_LIST_OUTPUT_KEYS = setOf(
+    "status",
+    "appCount",
+    "truncated",
+    "entries",
+)
+private val MAC_APP_CATALOG_ENTRY_KEYS = setOf(
+    "appIndex",
+    "displayName",
+    "bundleId",
+)
 private val GIT_STATUS_INPUT_KEYS = setOf("repoIndex", "maxChanges", "includeUntracked")
 private val GIT_STATUS_REQUIRED_KEYS = setOf(
     "status",

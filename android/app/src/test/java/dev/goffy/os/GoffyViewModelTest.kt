@@ -51,6 +51,8 @@ import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.GoffyProtocolCodec
+import dev.goffy.os.protocol.MacAppCatalogEntry
+import dev.goffy.os.protocol.MacAppsList
 import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacProcessEntry
 import dev.goffy.os.protocol.MacProcessesList
@@ -192,6 +194,24 @@ class GoffyViewModelTest {
         assertTrue(gateway.requests.single().encodedMessage.contains("\"toolName\":\"mac.processes.list\""))
         assertTrue(gateway.requests.single().encodedMessage.contains("\"maxEntries\":10"))
         assertFalse(gateway.requests.single().encodedMessage.contains("WindowServer"))
+    }
+
+    @Test
+    fun macAppsCommandSendsTypedDefaultCatalogArguments() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf(*successfulMacAppsEvents().toTypedArray()) }
+        val viewModel = createViewModel(gateway)
+
+        assertTrue(viewModel.configureHub(endpoint, token))
+        viewModel.submitCommand("List my Mac apps")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals(3, (entry.result as MacAppsList).appCount)
+        assertEquals(1, gateway.requests.size)
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"toolName\":\"mac.apps.list\""))
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"maxEntries\":10"))
+        assertFalse(gateway.requests.single().encodedMessage.contains("Safari"))
     }
 
     @Test
@@ -1856,6 +1876,43 @@ class GoffyViewModelTest {
                         status = "sleeping",
                         rssBytes = 128_000_000L,
                         createTimeEpochSeconds = null,
+                    ),
+                ),
+            ),
+        ),
+        ExecutionEvent.Verification(
+            succeeded = true,
+            summary = "Verified",
+            checks = listOf("output schema"),
+        ),
+    )
+
+    private fun successfulMacAppsEvents(): List<ExecutionEvent> = listOf(
+        ExecutionEvent.Starting(1),
+        ExecutionEvent.Ready,
+        ExecutionEvent.Progress(
+            ToolProgress("mac.apps.list", ExecutionTarget.MAC, "accepted", 0, "Accepted"),
+        ),
+        ExecutionEvent.Progress(
+            ToolProgress("mac.apps.list", ExecutionTarget.MAC, "completed", 1, "Completed"),
+        ),
+        ExecutionEvent.Result(
+            toolName = "mac.apps.list",
+            executionTarget = ExecutionTarget.MAC,
+            content = MacAppsList(
+                status = "available",
+                appCount = 3,
+                truncated = true,
+                entries = listOf(
+                    MacAppCatalogEntry(
+                        appIndex = 0,
+                        displayName = "Safari",
+                        bundleId = "com.apple.Safari",
+                    ),
+                    MacAppCatalogEntry(
+                        appIndex = 1,
+                        displayName = "Terminal",
+                        bundleId = "com.apple.Terminal",
                     ),
                 ),
             ),

@@ -1,5 +1,7 @@
 package dev.goffy.os.protocol
 
+import java.util.Locale
+
 fun PhoneBatteryStatus.matchesToolContract(): Boolean =
     levelPercent in MIN_BATTERY_PERCENT..MAX_BATTERY_PERCENT
 
@@ -52,6 +54,27 @@ fun MacFilesLargestArguments.matchesToolContract(): Boolean =
 
 fun MacProcessesListArguments.matchesToolContract(): Boolean =
     maxEntries in 1..MAX_MAC_PROCESS_ENTRIES
+
+fun MacAppsListArguments.matchesToolContract(): Boolean =
+    maxEntries in 1..MAX_MAC_APP_ENTRIES
+
+fun MacAppsList.matchesToolContract(): Boolean =
+    status.isSafeDisplayField(MAX_MAC_APP_STATUS_LENGTH) &&
+        appCount in 0..MAX_MAC_APP_COUNT &&
+        entries.size <= MAX_MAC_APP_ENTRIES &&
+        entries.size <= appCount &&
+        (if (truncated) entries.size < appCount else entries.size == appCount) &&
+        entries.all(MacAppCatalogEntry::matchesToolContract) &&
+        entries.map { it.appIndex }.toSet().size == entries.size &&
+        entries.map { it.displayName.lowercase(Locale.US) }.toSet().size == entries.size &&
+        entries.map { it.bundleId.lowercase(Locale.US) }.toSet().size == entries.size
+
+fun MacAppCatalogEntry.matchesToolContract(): Boolean =
+    appIndex in 0..MAX_MAC_APP_INDEX &&
+        displayName.isSafeDisplayField(MAX_MAC_APP_DISPLAY_NAME_LENGTH) &&
+        !displayName.contains("/") &&
+        !displayName.contains("\\") &&
+        bundleId.isSafeMacBundleId()
 
 fun MacProcessesList.matchesToolContract(): Boolean =
     status.isSafeDisplayField(MAX_MAC_PROCESS_STATUS_TEXT_LENGTH) &&
@@ -276,6 +299,13 @@ private fun String?.doesNotContainFileUrl(): Boolean =
 private fun String?.isNullOrSafeDisplayField(maximum: Int): Boolean =
     this == null || isSafeDisplayField(maximum)
 
+private fun String.isSafeMacBundleId(): Boolean =
+    isNotBlank() &&
+        length <= MAX_MAC_APP_BUNDLE_ID_LENGTH &&
+        contains(".") &&
+        !contains("..") &&
+        MAC_APP_BUNDLE_ID.matches(this)
+
 private fun String.isSafeDisplayField(maximum: Int): Boolean =
     isNotBlank() &&
         length <= maximum &&
@@ -313,6 +343,13 @@ const val MAX_MAC_PROCESS_RSS_BYTES = Long.MAX_VALUE
 const val MAX_MAC_PROCESS_NAME_LENGTH = 96
 const val MAX_MAC_PROCESS_STATUS_LENGTH = 32
 const val MAX_MAC_PROCESS_STATUS_TEXT_LENGTH = 64
+const val DEFAULT_MAC_APP_ENTRIES = 10
+const val MAX_MAC_APP_ENTRIES = 25
+const val MAX_MAC_APP_COUNT = MAX_MAC_APP_ENTRIES
+const val MAX_MAC_APP_INDEX = MAX_MAC_APP_ENTRIES - 1
+const val MAX_MAC_APP_DISPLAY_NAME_LENGTH = 80
+const val MAX_MAC_APP_BUNDLE_ID_LENGTH = 160
+const val MAX_MAC_APP_STATUS_LENGTH = 64
 const val DEFAULT_GIT_STATUS_CHANGES = 25
 const val MAX_GIT_STATUS_REPOS = 8
 const val MAX_GIT_STATUS_REPO_INDEX = MAX_GIT_STATUS_REPOS - 1
@@ -344,6 +381,7 @@ const val MIN_TIMER_SECONDS = 1
 const val MAX_TIMER_SECONDS = 86_400
 const val ANDROID_SET_TIMER_ACTION = "android.intent.action.SET_TIMER"
 private val ANDROID_CLASS_NAME = Regex("^[A-Za-z0-9_]+(?:[.$][A-Za-z0-9_]+)+$")
+private val MAC_APP_BUNDLE_ID = Regex("^[A-Za-z0-9][A-Za-z0-9.-]{0,158}[A-Za-z0-9]$")
 private val ALLOWLISTED_SYSTEM_CLOCK_PACKAGES = setOf(
     "com.android.deskclock",
     "com.google.android.deskclock",

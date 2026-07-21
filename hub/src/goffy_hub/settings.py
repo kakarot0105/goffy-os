@@ -33,6 +33,7 @@ class HubSettings(BaseModel):
     operator_audit_max_events: int = Field(default=256, ge=16, le=2048)
     mac_files_roots: tuple[Path, ...] = Field(default=(), max_length=8)
     git_repo_roots: tuple[Path, ...] = Field(default=(), max_length=8)
+    mac_app_allowlist: tuple[str, ...] = Field(default=(), max_length=25)
     mac_clipboard_read_enabled: bool = False
 
     @model_validator(mode="after")
@@ -156,6 +157,7 @@ class HubSettings(BaseModel):
             operator_audit_max_events=int(os.getenv("GOFFY_OPERATOR_AUDIT_MAX_EVENTS", "256")),
             mac_files_roots=_path_tuple("GOFFY_MAC_FILES_ROOTS"),
             git_repo_roots=_path_tuple("GOFFY_GIT_REPO_ROOTS"),
+            mac_app_allowlist=_comma_separated("GOFFY_MAC_APP_ALLOWLIST"),
             mac_clipboard_read_enabled=_boolean_environment("GOFFY_MAC_CLIPBOARD_READ_ENABLED"),
         )
 

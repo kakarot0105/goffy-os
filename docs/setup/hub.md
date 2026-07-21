@@ -255,6 +255,24 @@ root through `List my Mac files`, `Show my Mac files`, or
 `Find the largest files on my Mac`; root/path selection needs a separate UX and
 policy review.
 
+## Approved Mac App Catalog
+
+`mac.apps.list` is disabled by default. Enable it only for applications the
+operator is comfortable exposing as SAFE catalog metadata:
+
+```bash
+export GOFFY_MAC_APP_ALLOWLIST='Safari=com.apple.Safari,Terminal=com.apple.Terminal'
+```
+
+Each entry must use `Display Name=bundle.id`. The Hub registers the tool only
+when at least one bounded, unique entry is configured. Output contains app
+indices, display names, and reverse-DNS bundle identifiers only. This tool does
+not scan `/Applications`, reveal app paths, launch apps, open files, or execute
+shell commands. Android invokes it through `List my Mac apps`,
+`Show my Mac applications`, or `What apps are approved on my Mac?`. Actual app
+opening remains a future confirmation-gated tool with a separate authorization
+policy.
+
 ## Approved Git Repository Roots
 
 `git.status` is disabled by default. Enable it only for repositories the

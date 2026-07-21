@@ -6,10 +6,12 @@ import dev.goffy.os.localmodel.LocalModelIntentObservation
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatusArguments
+import dev.goffy.os.protocol.MAC_APPS_LIST_TOOL
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_PROCESSES_LIST_TOOL
+import dev.goffy.os.protocol.MacAppsListArguments
 import dev.goffy.os.protocol.MacFilesLargestArguments
 import dev.goffy.os.protocol.MacFilesListArguments
 import dev.goffy.os.protocol.MacProcessesListArguments
@@ -86,6 +88,21 @@ class GoffyIntentRouterTest {
         assertTrue(GoffyIntentRouter.route("what is running on my mac?") is RoutingDecision.Routed)
         assertTrue(GoffyIntentRouter.route("Show my Mac processes") is RoutingDecision.Routed)
         assertTrue(GoffyIntentRouter.route("check me my mac processes") is RoutingDecision.Routed)
+    }
+
+    @Test
+    fun routesMacAppCatalogToSafeMacTool() {
+        val decision = GoffyIntentRouter.route("List my Mac apps")
+
+        assertTrue(decision is RoutingDecision.Routed)
+        val plan = (decision as RoutingDecision.Routed).plan
+        assertEquals(ExecutionTarget.MAC, plan.executionTarget)
+        assertEquals(PermissionLevel.SAFE, plan.permission)
+        assertEquals(MAC_APPS_LIST_TOOL, plan.toolName)
+        assertEquals(MacAppsListArguments(), plan.arguments)
+        assertEquals(3, plan.successCriteria.size)
+        assertTrue(GoffyIntentRouter.route("show my mac applications") is RoutingDecision.Routed)
+        assertTrue(GoffyIntentRouter.route("what apps are approved on my mac?") is RoutingDecision.Routed)
     }
 
     @Test

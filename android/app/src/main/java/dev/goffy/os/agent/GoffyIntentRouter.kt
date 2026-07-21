@@ -8,11 +8,13 @@ import dev.goffy.os.localmodel.isSafeLocalModelPrompt
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatusArguments
+import dev.goffy.os.protocol.MAC_APPS_LIST_TOOL
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_PROCESSES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
+import dev.goffy.os.protocol.MacAppsListArguments
 import dev.goffy.os.protocol.MacFilesLargestArguments
 import dev.goffy.os.protocol.MacFilesListArguments
 import dev.goffy.os.protocol.MacProcessesListArguments
@@ -68,6 +70,10 @@ object GoffyIntentRouter {
         pattern = "^(?:what(?:'s| is) running on my mac|(?:show|check|list)(?: me)? my mac processes)[.!?]?$",
         option = RegexOption.IGNORE_CASE,
     )
+    private val macAppsListCommand = Regex(
+        pattern = "^(?:(?:show|list)(?: me)? my mac (?:apps|applications)|what apps are approved on my mac)[.!?]?$",
+        option = RegexOption.IGNORE_CASE,
+    )
     private val gitStatusCommand = Regex(
         pattern = "^(?:show|check)(?: me)? my git status[.!?]?$",
         option = RegexOption.IGNORE_CASE,
@@ -112,6 +118,7 @@ object GoffyIntentRouter {
         val plan = when {
             macStatusCommand.matches(normalized) -> macStatusPlan(normalized)
             macProcessesListCommand.matches(normalized) -> macProcessesListPlan(normalized)
+            macAppsListCommand.matches(normalized) -> macAppsListPlan(normalized)
             macFilesLargestCommand.matches(normalized) -> macFilesLargestPlan(normalized)
             macFilesListCommand.matches(normalized) -> macFilesListPlan(normalized)
             gitStatusCommand.matches(normalized) -> gitStatusPlan(normalized)
@@ -226,6 +233,19 @@ object GoffyIntentRouter {
             "The result contains no command lines, executable paths, environment variables, open files, or network data",
         ),
         arguments = MacProcessesListArguments(),
+    )
+
+    private fun macAppsListPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = command,
+        executionTarget = ExecutionTarget.MAC,
+        toolName = MAC_APPS_LIST_TOOL,
+        permission = PermissionLevel.SAFE,
+        successCriteria = listOf(
+            "Hub returns schema-valid bounded approved app catalog metadata",
+            "Hub emits a successful verification result",
+            "The result contains no app launch, file open, installed-app scan, app path, or shell authority",
+        ),
+        arguments = MacAppsListArguments(),
     )
 
     private fun macFilesListPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(

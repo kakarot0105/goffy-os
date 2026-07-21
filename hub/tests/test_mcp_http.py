@@ -21,6 +21,7 @@ from starlette.websockets import WebSocketDisconnect
 
 import goffy_hub.mcp_server as mcp_server_module
 import goffy_hub.tools.git_status as git_status_module
+import goffy_hub.tools.mac_apps as mac_apps_module
 from goffy_hub.app import build_registry, create_app
 from goffy_hub.auth import CredentialAuthenticator
 from goffy_hub.mcp_server import (
@@ -32,7 +33,11 @@ from goffy_hub.mcp_server import (
 from goffy_hub.operator_audit import OperatorAuditLog
 from goffy_hub.registry import ToolInvocationResult, ToolRegistry
 from goffy_hub.settings import HubSettings
-from goffy_hub.tools import build_mac_clipboard_read_tool, build_mac_system_tool
+from goffy_hub.tools import (
+    build_mac_apps_list_tool,
+    build_mac_clipboard_read_tool,
+    build_mac_system_tool,
+)
 from goffy_protocol import MCP_PROTOCOL_VERSION
 
 AUTHORIZATION = "Bearer test-token-that-is-long-enough"  # noqa: S105
@@ -344,6 +349,64 @@ async def test_official_client_reads_opt_in_mac_clipboard_text() -> None:
         "characterCount": 11,
         "characterCountTruncated": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_official_client_reads_approved_mac_app_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mac_apps_module, "is_mac_apps_supported", lambda: True)
+    registry = ToolRegistry()
+    registry.register(build_mac_system_tool(timeout_seconds=1))
+    registry.register(
+        build_mac_apps_list_tool(
+            ("Safari=com.apple.Safari", "Terminal=com.apple.Terminal"),
+            timeout_seconds=1,
+        )
+    )
+    app = create_app(
+        HubSettings(auth_token=SecretStr("test-token-that-is-long-enough")),
+        registry=registry,
+    )
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with (
+            httpx.AsyncClient(
+                transport=transport,
+                base_url="http://127.0.0.1:8787",
+                headers={"Authorization": AUTHORIZATION},
+                timeout=5,
+            ) as http_client,
+            streamable_http_client(
+                "http://127.0.0.1:8787/mcp",
+                http_client=http_client,
+            ) as (read_stream, write_stream, _get_session_id),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            initialization = await session.initialize()
+            listed = await session.list_tools()
+            result = await session.call_tool("mac.apps.list", {"maxEntries": 1})
+
+    assert initialization.protocolVersion == MCP_PROTOCOL_VERSION
+    assert sorted(tool.name for tool in listed.tools) == ["mac.apps.list", "mac.system_info"]
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent == {
+        "status": "available",
+        "appCount": 2,
+        "truncated": True,
+        "entries": [
+            {
+                "appIndex": 0,
+                "displayName": "Safari",
+                "bundleId": "com.apple.Safari",
+            }
+        ],
+    }
+    assert "/Applications" not in json.dumps(result.structuredContent)
+    assert isinstance(result.content[0], types.TextContent)
+    assert json.loads(result.content[0].text) == result.structuredContent
 
 
 @pytest.mark.asyncio

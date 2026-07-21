@@ -8,10 +8,13 @@ import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
+import dev.goffy.os.protocol.MAC_APPS_LIST_TOOL
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
+import dev.goffy.os.protocol.MacAppCatalogEntry
+import dev.goffy.os.protocol.MacAppsList
 import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacFilesApprovedRoot
 import dev.goffy.os.protocol.MacFilesLargest
@@ -204,6 +207,43 @@ class GoffySpeechTextTest {
         assertTrue(speechText.contains("2 process summaries"))
         assertTrue(speechText.contains("will not read process names aloud"))
         assertFalse(speechText.contains("private-agent"))
+    }
+
+    @Test
+    fun macAppCatalogDoesNotImplyLaunchAuthority() {
+        val state = GoffyUiState(
+            hubEndpoint = endpoint,
+            timeline = TaskTimelineState(
+                entries = listOf(
+                    entry(
+                        toolName = MAC_APPS_LIST_TOOL,
+                        target = ExecutionTarget.MAC,
+                        result = MacAppsList(
+                            status = "available",
+                            appCount = 2,
+                            truncated = false,
+                            entries = listOf(
+                                MacAppCatalogEntry(
+                                    appIndex = 0,
+                                    displayName = "Safari",
+                                    bundleId = "com.apple.Safari",
+                                ),
+                                MacAppCatalogEntry(
+                                    appIndex = 1,
+                                    displayName = "Terminal",
+                                    bundleId = "com.apple.Terminal",
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val speechText = requireNotNull(state.latestSpeakableText())
+
+        assertTrue(speechText.contains("2 apps"))
+        assertTrue(speechText.contains("will not launch apps without confirmation"))
     }
 
     @Test
