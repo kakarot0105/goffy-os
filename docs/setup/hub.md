@@ -227,7 +227,9 @@ Output contains root indices/names, bounded entry metadata, and no absolute root
 paths. Dotfiles are hidden by default, symlinks are reported as `symlink`
 without following their targets, and traversal outside the approved root is
 rejected. This tool does not read file contents, create files, move files, delete
-files, or execute shell commands.
+files, or execute shell commands. Android currently invokes only the default
+approved root through `List my Mac files` or `Show my Mac files`; root/path
+selection needs a separate UX and policy review.
 
 Non-local binding requires `GOFFY_HUB_ALLOW_LAN=true` plus existing
 `GOFFY_HUB_TLS_CERT_FILE` and `GOFFY_HUB_TLS_KEY_FILE` paths. This is a transport

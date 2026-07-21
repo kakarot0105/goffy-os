@@ -6,7 +6,9 @@ import dev.goffy.os.localmodel.LocalModelIntentFallback
 import dev.goffy.os.localmodel.LocalModelIntentObservation
 import dev.goffy.os.localmodel.isSafeLocalModelPrompt
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
+import dev.goffy.os.protocol.MacFilesListArguments
 import dev.goffy.os.protocol.MAX_TIMER_SECONDS
 import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
@@ -46,6 +48,10 @@ object GoffyIntentRouter {
         pattern = "^(?:show|check)(?: me)? my mac status[.!?]?$",
         option = RegexOption.IGNORE_CASE,
     )
+    private val macFilesListCommand = Regex(
+        pattern = "^(?:show|list)(?: me)? my mac files[.!?]?$",
+        option = RegexOption.IGNORE_CASE,
+    )
     private val batteryStatusCommand = Regex(
         pattern =
             "^(?:(?:show|check)(?: me)? my (?:phone )?battery (?:status|level)|" +
@@ -81,6 +87,7 @@ object GoffyIntentRouter {
         val normalized = command.trim().replace(whitespace, " ")
         val plan = when {
             macStatusCommand.matches(normalized) -> macStatusPlan(normalized)
+            macFilesListCommand.matches(normalized) -> macFilesListPlan(normalized)
             batteryStatusCommand.matches(normalized) -> batteryStatusPlan(normalized)
             deviceInfoCommand.matches(normalized) -> deviceInfoPlan(normalized)
             flashlightSetCommand.matches(normalized) -> flashlightSetPlan(normalized)
@@ -178,6 +185,19 @@ object GoffyIntentRouter {
             "Hub returns schema-valid structured system information",
             "Hub emits a successful verification result",
         ),
+    )
+
+    private fun macFilesListPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = command,
+        executionTarget = ExecutionTarget.MAC,
+        toolName = MAC_FILES_LIST_TOOL,
+        permission = PermissionLevel.SAFE,
+        successCriteria = listOf(
+            "Hub returns schema-valid approved-root directory metadata",
+            "Hub emits a successful verification result",
+            "The result contains no absolute approved-root path or file contents",
+        ),
+        arguments = MacFilesListArguments(rootIndex = 0),
     )
 
     private fun batteryStatusPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(

@@ -48,6 +48,9 @@ import dev.goffy.os.phone.TimerSource
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GoffyProtocolCodec
+import dev.goffy.os.protocol.MacFilesApprovedRoot
+import dev.goffy.os.protocol.MacFilesList
+import dev.goffy.os.protocol.MacFilesListEntry
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.GOFFY_PROTOCOL_VERSION
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
@@ -120,6 +123,25 @@ class GoffyViewModelTest {
         assertNull(viewModel.uiState.value.timeline.activeTaskId)
         assertEquals(1, gateway.requests.size)
         assertFalse(viewModel.uiState.value.toString().contains(token))
+    }
+
+    @Test
+    fun macFilesCommandSendsTypedDefaultListingArguments() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf(*successfulMacFilesEvents().toTypedArray()) }
+        val viewModel = createViewModel(gateway)
+
+        assertTrue(viewModel.configureHub(endpoint, token))
+        viewModel.submitCommand("List my Mac files")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals("goffy", (entry.result as MacFilesList).rootName)
+        assertEquals(1, gateway.requests.size)
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"toolName\":\"mac.files.list\""))
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"rootIndex\":0"))
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"maxEntries\":25"))
+        assertFalse(gateway.requests.single().encodedMessage.contains("private-plan"))
     }
 
     @Test
@@ -1425,6 +1447,37 @@ class GoffyViewModelTest {
             toolName = "mac.system_info",
             executionTarget = ExecutionTarget.MAC,
             content = MacSystemInfo("available", "Darwin", "arm64"),
+        ),
+        ExecutionEvent.Verification(
+            succeeded = true,
+            summary = "Verified",
+            checks = listOf("output schema"),
+        ),
+    )
+
+    private fun successfulMacFilesEvents(): List<ExecutionEvent> = listOf(
+        ExecutionEvent.Starting(1),
+        ExecutionEvent.Ready,
+        ExecutionEvent.Progress(
+            ToolProgress("mac.files.list", ExecutionTarget.MAC, "accepted", 0, "Accepted"),
+        ),
+        ExecutionEvent.Progress(
+            ToolProgress("mac.files.list", ExecutionTarget.MAC, "completed", 1, "Completed"),
+        ),
+        ExecutionEvent.Result(
+            toolName = "mac.files.list",
+            executionTarget = ExecutionTarget.MAC,
+            content = MacFilesList(
+                status = "available",
+                rootIndex = 0,
+                rootName = "goffy",
+                relativePath = "",
+                truncated = false,
+                approvedRoots = listOf(MacFilesApprovedRoot(0, "goffy")),
+                entries = listOf(
+                    MacFilesListEntry("README.md", false, "file", 1024, 1784610000),
+                ),
+            ),
         ),
         ExecutionEvent.Verification(
             succeeded = true,

@@ -4,7 +4,11 @@ import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.agent.TaskTimelineState
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
+import dev.goffy.os.protocol.MacFilesApprovedRoot
+import dev.goffy.os.protocol.MacFilesList
+import dev.goffy.os.protocol.MacFilesListEntry
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
@@ -74,6 +78,37 @@ class GoffySpeechTextTest {
         assertTrue(speechText.contains("Private note 7"))
         assertTrue(speechText.contains("will not read the note text aloud"))
         assertFalse(speechText.contains("secret launch phrase"))
+    }
+
+    @Test
+    fun macFileNamesAreNotReadAloud() {
+        val state = GoffyUiState(
+            hubEndpoint = endpoint,
+            timeline = TaskTimelineState(
+                entries = listOf(
+                    entry(
+                        toolName = MAC_FILES_LIST_TOOL,
+                        target = ExecutionTarget.MAC,
+                        result = MacFilesList(
+                            status = "available",
+                            rootIndex = 0,
+                            rootName = "goffy",
+                            relativePath = "",
+                            truncated = false,
+                            approvedRoots = listOf(MacFilesApprovedRoot(0, "goffy")),
+                            entries = listOf(
+                                MacFilesListEntry("private-plan.txt", false, "file", 42, 1),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val speechText = requireNotNull(state.latestSpeakableText())
+
+        assertTrue(speechText.contains("1 entries"))
+        assertFalse(speechText.contains("private-plan.txt"))
     }
 
     @Test

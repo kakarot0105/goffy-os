@@ -48,6 +48,10 @@ review both published checksums during any wrapper upgrade.
 
 - Supported commands are the exact `Show/Check [me] my Mac status` family with
   normalized whitespace and optional trailing `.`, `!`, or `?`.
+- `List my Mac files` and `Show my Mac files` route to MAC only when the Hub
+  advertises schema-compatible `SAFE mac.files.list`. Android sends bounded
+  default approved-root arguments, displays entry metadata, and never requests
+  file contents or absolute root paths.
 - Battery commands such as `Show my battery status` and `What's my phone battery
   level?` run entirely on PHONE without a Hub link.
 - While GOFFY is foregrounded, dock mode keeps the screen awake only when Android

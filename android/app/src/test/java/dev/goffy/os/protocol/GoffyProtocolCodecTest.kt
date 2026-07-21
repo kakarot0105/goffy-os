@@ -41,6 +41,26 @@ class GoffyProtocolCodecTest {
     }
 
     @Test
+    fun createsVersionedMacFilesListInvocationWithTypedArguments() {
+        val request = codec.createToolInvocation(
+            "android-test",
+            "mac.files.list",
+            MacFilesListArguments(rootIndex = 0, maxEntries = 25, includeHidden = false),
+        )
+
+        assertEquals(messageId, request.messageId)
+        assertEquals("mac.files.list", request.toolName)
+        assertEquals(
+            "{\"protocolVersion\":\"0.2.0\",\"messageId\":\"11111111-1111-4111-8111-111111111111\"," +
+                "\"timestamp\":\"2026-07-13T16:00:00Z\",\"deviceId\":\"android-test\"," +
+                "\"messageType\":\"ToolInvocation\",\"payload\":{\"toolName\":\"mac.files.list\"," +
+                "\"arguments\":{\"rootIndex\":0,\"relativePath\":\"\",\"maxEntries\":25," +
+                "\"includeHidden\":false}},\"correlationId\":null}",
+            request.encodedMessage,
+        )
+    }
+
+    @Test
     fun decodesOnlyTheCompatibleLocallyKnownCapability() {
         val response = codec.decodeCapabilityDiscovery(
             capabilityEnvelope(),
@@ -51,6 +71,26 @@ class GoffyProtocolCodecTest {
         assertEquals(
             DiscoveredToolCapability(
                 name = "mac.system_info",
+                toolVersion = "1.0.0",
+                executionTarget = ExecutionTarget.MAC,
+                permission = "SAFE",
+                timeoutMillis = 3_000,
+            ),
+            response.capability,
+        )
+    }
+
+    @Test
+    fun decodesCompatibleMacFilesListCapability() {
+        val response = codec.decodeCapabilityDiscovery(
+            capabilityEnvelope(macFilesCapabilityTool()),
+            discoveryMessageId,
+            "mac.files.list",
+        ) as CapabilityDiscoveryMessage.Response
+
+        assertEquals(
+            DiscoveredToolCapability(
+                name = "mac.files.list",
                 toolVersion = "1.0.0",
                 executionTarget = ExecutionTarget.MAC,
                 permission = "SAFE",
@@ -130,6 +170,23 @@ class GoffyProtocolCodecTest {
     }
 
     @Test
+    fun decodesStructuredMacFilesListResult() {
+        val event = codec.decodeEvent(
+            macFilesResultEnvelope(),
+            expectedCorrelationId = messageId,
+            expectedToolName = "mac.files.list",
+        )
+
+        assertTrue(event is ExecutionEvent.Result)
+        val result = event as ExecutionEvent.Result
+        val content = result.content as MacFilesList
+        assertEquals(ExecutionTarget.MAC, result.executionTarget)
+        assertEquals("goffy", content.rootName)
+        assertEquals(listOf("README.md", "docs"), content.entries.map { it.name })
+        assertFalse(content.truncated)
+    }
+
+    @Test
     fun rejectsUnsupportedStructuredResultToolEvenWithGenericResultContent() {
         val raw = resultEnvelope()
             .replace("\"mac.system_info\"", "\"phone.battery.status\"")
@@ -189,9 +246,15 @@ class GoffyProtocolCodecTest {
     private fun resultEnvelope(): String =
         """{"protocolVersion":"0.2.0","messageId":"33333333-3333-4333-8333-333333333333","timestamp":"2026-07-13T16:00:01Z","deviceId":"goffy-hub","messageType":"ToolResult","payload":{"toolName":"mac.system_info","executionTarget":"MAC","structuredContent":{"status":"available","operatingSystem":"Darwin","architecture":"arm64"}},"correlationId":"$messageId"}"""
 
-    private fun capabilityEnvelope(): String =
-        """{"protocolVersion":"0.2.0","messageId":"99999999-9999-4999-8999-999999999999","timestamp":"2026-07-13T16:00:00Z","deviceId":"goffy-hub","messageType":"CapabilityDiscoveryResponse","payload":{"mcpProtocolVersion":"2025-11-25","listChanged":false,"tools":[${capabilityTool()}]},"correlationId":"$discoveryMessageId"}"""
+    private fun macFilesResultEnvelope(): String =
+        """{"protocolVersion":"0.2.0","messageId":"33333333-3333-4333-8333-333333333333","timestamp":"2026-07-13T16:00:01Z","deviceId":"goffy-hub","messageType":"ToolResult","payload":{"toolName":"mac.files.list","executionTarget":"MAC","structuredContent":{"status":"available","rootIndex":0,"rootName":"goffy","relativePath":"","truncated":false,"approvedRoots":[{"rootIndex":0,"name":"goffy"}],"entries":[{"name":"README.md","nameTruncated":false,"kind":"file","sizeBytes":1024,"modifiedEpochSeconds":1784610000},{"name":"docs","nameTruncated":false,"kind":"directory","sizeBytes":null,"modifiedEpochSeconds":1784610001}]}},"correlationId":"$messageId"}"""
+
+    private fun capabilityEnvelope(tool: String = capabilityTool()): String =
+        """{"protocolVersion":"0.2.0","messageId":"99999999-9999-4999-8999-999999999999","timestamp":"2026-07-13T16:00:00Z","deviceId":"goffy-hub","messageType":"CapabilityDiscoveryResponse","payload":{"mcpProtocolVersion":"2025-11-25","listChanged":false,"tools":[$tool]},"correlationId":"$discoveryMessageId"}"""
 
     private fun capabilityTool(): String =
         """{"name":"mac.system_info","title":"Mac system information","description":"Read a minimal, non-sensitive snapshot of the Hub host.","inputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{},"type":"object"},"outputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"architecture":{"type":"string"},"operatingSystem":{"type":"string"},"status":{"type":"string"}},"required":["status","operatingSystem","architecture"],"type":"object"},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"_meta":{"dev.goffy/toolVersion":"1.0.0","dev.goffy/executionTarget":"MAC","dev.goffy/permission":"SAFE","dev.goffy/timeoutMs":3000}}"""
+
+    private fun macFilesCapabilityTool(): String =
+        """{"name":"mac.files.list","title":"Mac approved-root file listing","description":"List entries inside explicitly approved Mac directories without following symlink targets or exposing absolute root paths.","inputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"includeHidden":{"default":false,"type":"boolean"},"maxEntries":{"default":25,"maximum":32,"minimum":1,"type":"integer"},"relativePath":{"default":"","maxLength":512,"type":"string"},"rootIndex":{"default":0,"exclusiveMaximum":8,"minimum":0,"type":"integer"}},"type":"object"},"outputSchema":{"${'$'}defs":{"MacFilesApprovedRootOutput":{"additionalProperties":false,"properties":{"name":{"type":"string"},"rootIndex":{"type":"integer"}},"required":["rootIndex","name"],"type":"object"},"MacFilesListEntryOutput":{"additionalProperties":false,"properties":{"kind":{"enum":["file","directory","symlink","other"],"type":"string"},"modifiedEpochSeconds":{"anyOf":[{"type":"integer"},{"type":"null"}]},"name":{"type":"string"},"nameTruncated":{"type":"boolean"},"sizeBytes":{"anyOf":[{"type":"integer"},{"type":"null"}]}},"required":["name","nameTruncated","kind","sizeBytes","modifiedEpochSeconds"],"type":"object"}},"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"approvedRoots":{"items":{"${'$'}ref":"#/${'$'}defs/MacFilesApprovedRootOutput"},"maxItems":8,"type":"array"},"entries":{"items":{"${'$'}ref":"#/${'$'}defs/MacFilesListEntryOutput"},"maxItems":32,"type":"array"},"relativePath":{"type":"string"},"rootIndex":{"type":"integer"},"rootName":{"type":"string"},"status":{"type":"string"},"truncated":{"type":"boolean"}},"required":["status","rootIndex","rootName","relativePath","truncated","approvedRoots","entries"],"type":"object"},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"_meta":{"dev.goffy/toolVersion":"1.0.0","dev.goffy/executionTarget":"MAC","dev.goffy/permission":"SAFE","dev.goffy/timeoutMs":3000}}"""
 }

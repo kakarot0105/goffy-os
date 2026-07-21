@@ -3,8 +3,10 @@ package dev.goffy.os.agent
 import dev.goffy.os.localmodel.LocalModelIntentCandidate
 import dev.goffy.os.localmodel.LocalModelIntentFallback
 import dev.goffy.os.localmodel.LocalModelIntentObservation
-import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
+import dev.goffy.os.protocol.MacFilesListArguments
+import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
@@ -33,6 +35,19 @@ class GoffyIntentRouterTest {
     @Test
     fun acceptsCheckVariantWithoutModelReasoning() {
         assertTrue(GoffyIntentRouter.route("check my mac status?") is RoutingDecision.Routed)
+    }
+
+    @Test
+    fun routesMacFileListingToSafeMacTool() {
+        val decision = GoffyIntentRouter.route("List my Mac files")
+
+        assertTrue(decision is RoutingDecision.Routed)
+        val plan = (decision as RoutingDecision.Routed).plan
+        assertEquals(ExecutionTarget.MAC, plan.executionTarget)
+        assertEquals(PermissionLevel.SAFE, plan.permission)
+        assertEquals(MAC_FILES_LIST_TOOL, plan.toolName)
+        assertEquals(MacFilesListArguments(rootIndex = 0), plan.arguments)
+        assertEquals(3, plan.successCriteria.size)
     }
 
     @Test

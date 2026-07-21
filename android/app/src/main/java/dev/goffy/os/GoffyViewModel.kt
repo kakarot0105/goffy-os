@@ -693,7 +693,7 @@ class GoffyViewModel internal constructor(
                     )
                     return
                 }
-                val request = codec.createToolInvocation(deviceId, plan.toolName)
+                val request = codec.createToolInvocation(deviceId, plan.toolName, plan.arguments)
                 executeTask(request.messageId, plan, gateway.invoke(config, request))
             }
             ExecutionTarget.CLOUD -> mutableUiState.value = mutableUiState.value.rejectPlan(

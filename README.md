@@ -12,7 +12,7 @@ the capability boundary.
 > repo now treats ROM/GSI feasibility for the exact Moto G 2025 `kansas` target
 > as the primary product track, with the launcher/app layer kept for safe
 > validation and fallback. The current repo implements five
-> offline PHONE actions, a discovery-gated SAFE Mac action, an official MCP
+> offline PHONE actions, discovery-gated SAFE Mac status and file-list actions, an official MCP
 > Streamable HTTP boundary, stable Hub paired-device credentials, Keystore-backed
 > Android pairing restore, and a persistent user-visible Android audit trail
 > for the newest 50 terminal tasks. MCP tool-list changes now stream with
@@ -96,7 +96,8 @@ the capability boundary.
 - Persistent, hash-chained paired-mode Hub operator audit storage with integrity
   reporting
 - Allowlisted, read-only `SAFE mac.system_info` tool
-- Optional `SAFE mac.files.list` tool for explicitly configured Mac file roots
+- Optional `SAFE mac.files.list` tool for explicitly configured Mac file roots,
+  including an Android `List my Mac files` route for the default approved root
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
 - Shared fixture `protocol/fixtures/mac-system-info-flow.jsonl`
@@ -176,7 +177,8 @@ export GOFFY_MAC_FILES_ROOTS="$HOME/Documents/GitHub"
 When set, the Hub exposes `SAFE mac.files.list`. It lists bounded entries by
 root index and relative path only, hides dotfiles by default, never follows
 symlink targets in listed entries, and never exposes absolute root paths in tool
-output.
+output. Android can invoke the default approved root with `List my Mac files`
+or `Show my Mac files`; richer root/path selection remains future work.
 
 The Hub seals its registry before serving, checks registered tools locally at
 startup and every 30 seconds by default, and removes an unhealthy tool from both

@@ -2,6 +2,7 @@ package dev.goffy.os
 
 import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
+import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
@@ -28,6 +29,9 @@ private fun TaskTimelineEntry.speakableText(): String? {
 
 private fun ToolResultContent.speakableText(verified: Boolean): String =
     when (this) {
+        is MacFilesList ->
+            "Mac file listing returned ${entries.size} entries from approved root $rootName. " +
+                if (truncated) "The listing was truncated." else "The listing was not truncated."
         is MacSystemInfo ->
             "Mac status is $status. System: $operatingSystem on $architecture."
         is PhoneBatteryStatus ->

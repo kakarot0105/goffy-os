@@ -1,6 +1,7 @@
 package dev.goffy.os.protocol
 
 const val MAC_SYSTEM_INFO_TOOL = "mac.system_info"
+const val MAC_FILES_LIST_TOOL = "mac.files.list"
 const val PHONE_BATTERY_STATUS_TOOL = "phone.battery.status"
 const val PHONE_DEVICE_INFO_TOOL = "phone.device.info"
 const val PHONE_FLASHLIGHT_SET_TOOL = "phone.flashlight.set"

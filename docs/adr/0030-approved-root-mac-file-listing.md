@@ -29,7 +29,7 @@ approved root and rejected if they escape it.
 
 - File listing remains disabled until the operator explicitly configures roots.
 - This slice does not read file contents or mutate files.
-- Android routing/UX is a separate follow-up so the backend security policy can
-  be reviewed independently.
+- Android routing is intentionally limited to default-root listing commands;
+  richer root/path selection still needs separate UX and policy review.
 - Future `mac.files.read`, create, move, or search tools need separate schemas,
   permission levels, and review.

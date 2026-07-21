@@ -71,6 +71,7 @@ import dev.goffy.os.hub.HubOperatorAuditEvent
 import dev.goffy.os.localmodel.LocalModelRuntimeState
 import dev.goffy.os.qr.PairingQrScanner
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
@@ -1405,6 +1406,29 @@ private fun ApprovalActions(
 private fun TaskResult(result: ToolResultContent) {
     Spacer(Modifier.height(9.dp))
     when (result) {
+        is MacFilesList -> {
+            Text(
+                text = "ROOT ${result.rootIndex} / ${result.rootName}",
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = "${result.entries.size} entries${if (result.truncated) " / truncated" else ""}",
+                color = Signal,
+                fontSize = 11.sp,
+            )
+            result.entries.take(5).forEach { entry ->
+                Text(
+                    text = "${entry.kind.uppercase()} / ${entry.name}",
+                    color = Mist,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         is MacSystemInfo -> {
             Text(
                 text = "${result.operatingSystem} / ${result.architecture}",
