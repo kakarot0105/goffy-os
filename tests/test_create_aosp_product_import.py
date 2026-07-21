@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import struct
 from pathlib import Path
 
 import pytest
@@ -36,6 +37,28 @@ def test_aosp_product_import_blocks_unsigned_default_apk(tmp_path: Path) -> None
 
     assert report.safe_to_execute is False
     assert "GOFFY import APK must be externally signed before ROM import" in report.blockers
+
+
+def test_aosp_product_import_blocks_debug_artifacts(tmp_path: Path) -> None:
+    apk = tmp_path / "app-debug.apk"
+    apk.write_bytes(fake_apk_with_v2_signature_block())
+
+    report = create_aosp_product_import_report(aosp_root=tmp_path / "aosp", apk_path=apk)
+
+    assert report.safe_to_execute is False
+    assert "GOFFY import APK must not be a debug build artifact" in report.blockers
+
+
+def test_aosp_product_import_rejects_signed_name_without_signature_block(
+    tmp_path: Path,
+) -> None:
+    apk = tmp_path / "GoffyOS-signed.apk"
+    apk.write_bytes(b"not an apk signature block")
+
+    report = create_aosp_product_import_report(aosp_root=tmp_path / "aosp", apk_path=apk)
+
+    assert report.safe_to_execute is False
+    assert "GOFFY import APK must contain an APK Signature Scheme v2/v3 block" in report.blockers
 
 
 def test_aosp_product_import_executes_only_into_existing_aosp_root(tmp_path: Path) -> None:
@@ -85,5 +108,17 @@ def test_aosp_product_import_refuses_to_overwrite_different_files(tmp_path: Path
 
 def write_signed_apk(tmp_path: Path) -> Path:
     apk = tmp_path / "GoffyOS-signed.apk"
-    apk.write_bytes(b"fake signed apk for import planning")
+    apk.write_bytes(fake_apk_with_v2_signature_block())
     return apk
+
+
+def fake_apk_with_v2_signature_block() -> bytes:
+    payload = b"fake apk payload"
+    pair = struct.pack("<Q", 4) + struct.pack("<I", 0x7109871A)
+    block_size = len(pair) + 24
+    signing_block = (
+        struct.pack("<Q", block_size) + pair + struct.pack("<Q", block_size) + b"APK Sig Block 42"
+    )
+    central_directory_offset = len(payload) + len(signing_block)
+    eocd = b"PK\x05\x06" + struct.pack("<HHHHIIH", 0, 0, 0, 0, 0, central_directory_offset, 0)
+    return payload + signing_block + eocd

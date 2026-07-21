@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import struct
 import sys
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
@@ -20,6 +21,13 @@ PRODUCT_DESCRIPTOR = ROOT / "rom" / "product" / "goffy-product-overlay.json"
 
 PRODUCT_IMPORT_DIR = Path("device/goffy/goffy_gsi_phone")
 APP_IMPORT_DIR = Path("vendor/goffy/apps/GoffyOS")
+APK_SIG_BLOCK_MAGIC = b"APK Sig Block 42"
+ZIP_EOCD_MAGIC = b"PK\x05\x06"
+APK_SIGNATURE_SCHEME_IDS = {
+    0x7109871A,  # v2
+    0xF05368C0,  # v3
+    0x1B93AD61,  # v3.1
+}
 
 
 @dataclass(frozen=True)
@@ -180,11 +188,49 @@ def apk_blockers(path: Path) -> list[str]:
     blockers: list[str] = []
     if path.suffix != ".apk":
         blockers.append("GOFFY import artifact must be an APK")
+    if "debug" in path.name.lower():
+        blockers.append("GOFFY import APK must not be a debug build artifact")
     if path.name.endswith("-unsigned.apk"):
         blockers.append("GOFFY import APK must be externally signed before ROM import")
     if path.is_file() and path.stat().st_size <= 0:
         blockers.append("GOFFY import APK must not be empty")
+    if path.is_file() and not has_apk_signature_block(path):
+        blockers.append("GOFFY import APK must contain an APK Signature Scheme v2/v3 block")
     return blockers
+
+
+def has_apk_signature_block(path: Path) -> bool:
+    data = path.read_bytes()
+    eocd_offset = data.rfind(ZIP_EOCD_MAGIC)
+    if eocd_offset < 0 or eocd_offset + 22 > len(data):
+        return False
+    central_directory_offset = struct.unpack_from("<I", data, eocd_offset + 16)[0]
+    if central_directory_offset < 32 or central_directory_offset > len(data):
+        return False
+    if data[central_directory_offset - 16 : central_directory_offset] != APK_SIG_BLOCK_MAGIC:
+        return False
+    block_size = struct.unpack_from("<Q", data, central_directory_offset - 24)[0]
+    block_start = central_directory_offset - block_size - 8
+    if block_start < 0:
+        return False
+    leading_size = struct.unpack_from("<Q", data, block_start)[0]
+    if leading_size != block_size:
+        return False
+
+    pair_offset = block_start + 8
+    pair_limit = central_directory_offset - 24
+    while pair_offset < pair_limit:
+        if pair_offset + 12 > pair_limit:
+            return False
+        pair_size = struct.unpack_from("<Q", data, pair_offset)[0]
+        pair_end = pair_offset + 8 + pair_size
+        if pair_size < 4 or pair_end > pair_limit:
+            return False
+        signature_id = struct.unpack_from("<I", data, pair_offset + 8)[0]
+        if signature_id in APK_SIGNATURE_SCHEME_IDS:
+            return True
+        pair_offset = pair_end
+    return False
 
 
 def missing_source_blockers(files: tuple[PlannedImportFile, ...]) -> list[str]:

@@ -169,8 +169,9 @@ claiming that the Moto can be flashed yet.
 The AOSP import command is a dry-run planner unless both `--execute` and
 `--confirm-aosp-tree-mutation` are supplied. It copies only the reviewed product
 templates and an externally signed `GoffyOS.apk`, refuses the unsigned Gradle
-release artifact by default, and refuses to overwrite different existing AOSP
-files.
+release artifact by default, requires an APK Signature Scheme v2/v3 signing
+block, rejects debug build artifacts, and refuses to overwrite different existing
+AOSP files.
 
 ## Source Notes
 

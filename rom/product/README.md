@@ -23,7 +23,7 @@ Validation:
 
 The import command is a plan by default. Execute mode requires
 `--execute --confirm-aosp-tree-mutation`, an existing AOSP root, and an externally
-signed APK. It writes only:
+signed APK containing an APK Signature Scheme v2/v3 signing block. It writes only:
 
 - `device/goffy/goffy_gsi_phone/AndroidProducts.mk`
 - `device/goffy/goffy_gsi_phone/goffy_gsi_phone.mk`
