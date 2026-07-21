@@ -12,6 +12,7 @@ import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
+import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
 import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.PhoneNoteCreated
@@ -83,6 +84,33 @@ class ClosedTerminalAuditTest {
         assertEquals(AuditPermission.SAFE, record?.permission)
         assertEquals(AuditApprovalOutcome.NOT_REQUIRED, record?.approvalOutcome)
         assertEquals("Recorded QR read task", record?.toTimelineEntry()?.command)
+    }
+
+    @Test
+    fun ocrReadCapabilityIsPersistedAsSafeClosedAuditMetadata() {
+        val entry = TaskTimelineEntry(
+            id = UUID.fromString("33333333-3333-4333-8333-333333333333"),
+            command = "Read foreground text",
+            executionTarget = ExecutionTarget.PHONE,
+            toolName = PHONE_OCR_READ_TOOL,
+            phase = TaskPhase.VERIFIED,
+            summary = "OCR read 2 lines",
+            events = listOf(
+                TaskTimelineEvent(TaskEventKind.OBSERVE, "Received foreground scanner input"),
+                TaskTimelineEvent(TaskEventKind.RESULT, "Stored bounded OCR summary"),
+                TaskTimelineEvent(TaskEventKind.VERIFY, "Verified OCR summary contract"),
+            ),
+            permission = PermissionLevel.SAFE,
+            terminalAtEpochMillis = 1_720_000_000_000,
+        )
+
+        val record = entry.toClosedTerminalAuditRecord(recordedAtEpochMillis = 1_720_000_000_000)
+
+        assertNotNull(record)
+        assertEquals(PHONE_OCR_READ_TOOL, record?.toolName)
+        assertEquals(AuditPermission.SAFE, record?.permission)
+        assertEquals(AuditApprovalOutcome.NOT_REQUIRED, record?.approvalOutcome)
+        assertEquals("Recorded OCR read task", record?.toTimelineEntry()?.command)
     }
 
     @Test

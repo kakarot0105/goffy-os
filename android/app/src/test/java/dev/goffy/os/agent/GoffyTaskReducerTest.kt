@@ -18,6 +18,8 @@ import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PhoneNoteCreated
+import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
+import dev.goffy.os.protocol.PhoneOcrRead
 import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
 import dev.goffy.os.protocol.PhoneQrRead
 import dev.goffy.os.protocol.PhoneTimerDispatched
@@ -516,6 +518,72 @@ class GoffyTaskReducerTest {
         invalidState = invalidState.apply(
             phoneTaskId,
             ExecutionEvent.Result(qrPlan.toolName, ExecutionTarget.PHONE, invalid),
+        )
+
+        assertEquals(TaskPhase.FAILED, invalidState.entries.single().phase)
+    }
+
+    @Test
+    fun ocrReadResultRequiresTypedPrivacyPreservingContract() {
+        val ocrPlan = GoffyExecutionPlan(
+            command = "Read foreground text",
+            executionTarget = ExecutionTarget.PHONE,
+            toolName = PHONE_OCR_READ_TOOL,
+            permission = PermissionLevel.SAFE,
+            successCriteria = listOf("OCR result matches the privacy-preserving contract"),
+        )
+        var state = TaskTimelineState().start(phoneTaskId, ocrPlan)
+        state = state.apply(phoneTaskId, ExecutionEvent.Starting(1))
+        state = state.apply(phoneTaskId, ExecutionEvent.Ready)
+        state = state.apply(phoneTaskId, progress(ocrPlan.toolName, ExecutionTarget.PHONE, "accepted", 0))
+        state = state.apply(phoneTaskId, progress(ocrPlan.toolName, ExecutionTarget.PHONE, "completed", 1))
+        state = state.apply(
+            phoneTaskId,
+            ExecutionEvent.Result(
+                ocrPlan.toolName,
+                ExecutionTarget.PHONE,
+                PhoneOcrRead(
+                    status = "available",
+                    script = "latin",
+                    characterCount = 11,
+                    characterCountTruncated = false,
+                    lineCount = 1,
+                    lineCountTruncated = false,
+                    preview = "hello world",
+                    previewTruncated = false,
+                    redacted = false,
+                ),
+            ),
+        )
+
+        assertEquals(TaskPhase.COMPLETED_UNVERIFIED, state.entries.single().phase)
+        assertEquals("OCR read 1 lines: hello world", state.entries.single().summary)
+
+        val invalid = PhoneOcrRead(
+            status = "available",
+            script = "latin",
+            characterCount = 18,
+            characterCountTruncated = false,
+            lineCount = 1,
+            lineCountTruncated = false,
+            preview = "secret-token-value",
+            previewTruncated = false,
+            redacted = true,
+        )
+        var invalidState = TaskTimelineState().start(phoneTaskId, ocrPlan)
+        invalidState = invalidState.apply(phoneTaskId, ExecutionEvent.Starting(1))
+        invalidState = invalidState.apply(phoneTaskId, ExecutionEvent.Ready)
+        invalidState = invalidState.apply(
+            phoneTaskId,
+            progress(ocrPlan.toolName, ExecutionTarget.PHONE, "accepted", 0),
+        )
+        invalidState = invalidState.apply(
+            phoneTaskId,
+            progress(ocrPlan.toolName, ExecutionTarget.PHONE, "completed", 1),
+        )
+        invalidState = invalidState.apply(
+            phoneTaskId,
+            ExecutionEvent.Result(ocrPlan.toolName, ExecutionTarget.PHONE, invalid),
         )
 
         assertEquals(TaskPhase.FAILED, invalidState.entries.single().phase)

@@ -152,6 +152,64 @@
     }
   },
   {
+    "name": "phone.ocr.read",
+    "title": "Read foreground OCR text",
+    "description": "Read Latin-script text from a visible foreground camera scanner without storing images.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "status": {"type": "string", "minLength": 1, "const": "available"},
+        "script": {
+          "type": "string",
+          "minLength": 1,
+          "enum": ["latin"]
+        },
+        "characterCount": {"type": "integer", "minimum": 1, "maximum": 20000},
+        "characterCountTruncated": {"type": "boolean"},
+        "lineCount": {"type": "integer", "minimum": 1, "maximum": 128},
+        "lineCountTruncated": {"type": "boolean"},
+        "preview": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 600
+        },
+        "previewTruncated": {"type": "boolean"},
+        "redacted": {"type": "boolean"}
+      },
+      "required": [
+        "status",
+        "script",
+        "characterCount",
+        "characterCountTruncated",
+        "lineCount",
+        "lineCountTruncated",
+        "preview",
+        "previewTruncated",
+        "redacted"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "dev.goffy/toolVersion": "1.0.0",
+      "dev.goffy/executionTarget": "PHONE",
+      "dev.goffy/permission": "SAFE",
+      "dev.goffy/timeoutMs": 2000
+    }
+  },
+  {
     "name": "phone.qr.read",
     "title": "Read foreground QR code",
     "description": "Read one foreground camera QR code without storing images or raw sensitive payloads.",

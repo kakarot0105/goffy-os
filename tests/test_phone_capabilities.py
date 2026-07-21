@@ -13,6 +13,7 @@ EXPECTED_PERMISSIONS = {
     "phone.device.info": PermissionLevel.SAFE,
     "phone.flashlight.set": PermissionLevel.CONFIRM,
     "phone.note.create": PermissionLevel.CONFIRM,
+    "phone.ocr.read": PermissionLevel.SAFE,
     "phone.qr.read": PermissionLevel.SAFE,
     "phone.timer.create": PermissionLevel.CONFIRM,
 }
@@ -65,6 +66,20 @@ def test_phone_capability_schemas_accept_canonical_examples() -> None:
         "phone.note.create": (
             {"text": "Buy milk"},
             {"noteId": 1, "text": "Buy milk", "createdAtEpochMillis": 1},
+        ),
+        "phone.ocr.read": (
+            {},
+            {
+                "status": "available",
+                "script": "latin",
+                "characterCount": 28,
+                "characterCountTruncated": False,
+                "lineCount": 2,
+                "lineCountTruncated": False,
+                "preview": "GOFFY OS Observe Plan Act",
+                "previewTruncated": False,
+                "redacted": False,
+            },
         ),
         "phone.qr.read": (
             {},

@@ -69,6 +69,7 @@ import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.hub.HubOperatorAuditEvent
 import dev.goffy.os.localmodel.LocalModelRuntimeState
+import dev.goffy.os.ocr.ForegroundOcrScanner
 import dev.goffy.os.qr.ForegroundQrScanner
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GitStatus
@@ -79,6 +80,7 @@ import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PhoneNoteCreated
+import dev.goffy.os.protocol.PhoneOcrRead
 import dev.goffy.os.protocol.PhoneQrRead
 import dev.goffy.os.protocol.PhoneTimerDispatched
 import dev.goffy.os.protocol.ToolResultContent
@@ -114,6 +116,7 @@ private data class PairingScannerNotice(
 
 private enum class CameraScanMode {
     PAIRING,
+    OCR_READ,
     QR_READ,
 }
 
@@ -124,6 +127,14 @@ private val QrReadCommand = Regex(
 
 internal fun isForegroundQrReadCommand(command: String): Boolean =
     command.trim().matches(QrReadCommand)
+
+private val OcrReadCommand = Regex(
+    pattern = "^(?:(?:read|scan|extract)(?: this| the| a)? (?:text|ocr)|ocr this)(?: code)?[.!?]?$",
+    option = RegexOption.IGNORE_CASE,
+)
+
+internal fun isForegroundOcrReadCommand(command: String): Boolean =
+    command.trim().matches(OcrReadCommand)
 
 @Composable
 fun GoffyApp(
@@ -141,6 +152,9 @@ fun GoffyApp(
     val scannerStartFailed = stringResource(R.string.pairing_scanner_start_failed)
     val qrReadPermissionDenied = stringResource(R.string.qr_read_permission_denied)
     val qrReadStartFailed = stringResource(R.string.qr_read_start_failed)
+    val ocrReadPermissionDenied = stringResource(R.string.ocr_read_permission_denied)
+    val ocrReadStartFailed = stringResource(R.string.ocr_read_start_failed)
+    val ocrRecognitionFailed = stringResource(R.string.ocr_read_recognition_failed)
     var command by remember { mutableStateOf("") }
     var endpoint by rememberSaveable(state.hubEndpoint) { mutableStateOf(state.hubEndpoint) }
     var pairingChallenge by remember { mutableStateOf("") }
@@ -150,6 +164,7 @@ fun GoffyApp(
     var showRotateConfirmation by remember { mutableStateOf(false) }
     var showPairingScanner by remember { mutableStateOf(false) }
     var showQrReadScanner by remember { mutableStateOf(false) }
+    var showOcrReadScanner by remember { mutableStateOf(false) }
     var pendingCameraScanMode by remember { mutableStateOf<CameraScanMode?>(null) }
     var pairingScannerNotice by remember { mutableStateOf<PairingScannerNotice?>(null) }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
@@ -163,6 +178,7 @@ fun GoffyApp(
                     pairingScannerNotice = null
                     showPairingScanner = true
                 }
+                CameraScanMode.OCR_READ -> showOcrReadScanner = true
                 CameraScanMode.QR_READ -> showQrReadScanner = true
                 null -> Unit
             }
@@ -174,6 +190,9 @@ fun GoffyApp(
                         warning = true,
                     )
                 }
+                CameraScanMode.OCR_READ -> viewModel.recordForegroundOcrReadUnavailable(
+                    ocrReadPermissionDenied,
+                )
                 CameraScanMode.QR_READ -> viewModel.recordForegroundQrScanUnavailable(
                     qrReadPermissionDenied,
                 )
@@ -199,6 +218,16 @@ fun GoffyApp(
             showQrReadScanner = true
         } else {
             pendingCameraScanMode = CameraScanMode.QR_READ
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+    }
+    fun startForegroundOcrRead() {
+        if (context.checkSelfPermission(Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            showOcrReadScanner = true
+        } else {
+            pendingCameraScanMode = CameraScanMode.OCR_READ
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
@@ -261,6 +290,23 @@ fun GoffyApp(
                     onDismiss = { showQrReadScanner = false },
                 )
             }
+            if (showOcrReadScanner) {
+                OcrReadScannerDialog(
+                    onTextRecognized = { text ->
+                        viewModel.recordForegroundOcrRead(text)
+                        showOcrReadScanner = false
+                    },
+                    onRecognitionFailure = {
+                        viewModel.recordForegroundOcrReadUnavailable(ocrRecognitionFailed)
+                        showOcrReadScanner = false
+                    },
+                    onCameraFailure = {
+                        viewModel.recordForegroundOcrReadUnavailable(ocrReadStartFailed)
+                        showOcrReadScanner = false
+                    },
+                    onDismiss = { showOcrReadScanner = false },
+                )
+            }
             GoffyHomeScreen(
                 state = state,
                 command = command,
@@ -297,6 +343,7 @@ fun GoffyApp(
                     }
                 },
                 onReadQrCode = { startForegroundQrRead() },
+                onReadText = { startForegroundOcrRead() },
                 onPairHub = {
                     val challenge = pairingChallenge
                     pairingChallenge = ""
@@ -319,10 +366,10 @@ fun GoffyApp(
                 },
                 onSpeakLatest = onSpeakLatest,
                 onSubmit = {
-                    if (isForegroundQrReadCommand(command)) {
-                        startForegroundQrRead()
-                    } else {
-                        viewModel.submitCommand(command)
+                    when {
+                        isForegroundQrReadCommand(command) -> startForegroundQrRead()
+                        isForegroundOcrReadCommand(command) -> startForegroundOcrRead()
+                        else -> viewModel.submitCommand(command)
                     }
                     command = ""
                 },
@@ -450,6 +497,64 @@ private fun QrReadScannerDialog(
 }
 
 @Composable
+private fun OcrReadScannerDialog(
+    onTextRecognized: (String) -> Unit,
+    onRecognitionFailure: () -> Unit,
+    onCameraFailure: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.ocr_read_scanner_title)) },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(R.string.ocr_read_scanner_explanation),
+                    color = Mist,
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(360.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Void)
+                        .border(1.dp, Line, RoundedCornerShape(18.dp)),
+                ) {
+                    ForegroundOcrScanner(
+                        onTextRecognized = onTextRecognized,
+                        onRecognitionFailure = onRecognitionFailure,
+                        onCameraFailure = onCameraFailure,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Text(
+                        text = stringResource(R.string.ocr_read_scanner_frame_label),
+                        color = Bone,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 12.dp)
+                            .background(Void.copy(alpha = 0.72f), RoundedCornerShape(99.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.ocr_read_scanner_close), color = Signal)
+            }
+        },
+        containerColor = Panel,
+        titleContentColor = Bone,
+        textContentColor = Mist,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    )
+}
+
+@Composable
 private fun ForgetHubDialog(
     paired: Boolean,
     onConfirm: () -> Unit,
@@ -548,6 +653,7 @@ private fun GoffyHomeScreen(
     onConfigureHub: () -> Unit,
     onScanPairingQr: () -> Unit,
     onReadQrCode: () -> Unit,
+    onReadText: () -> Unit,
     onPairHub: () -> Unit,
     onRotateHub: () -> Unit,
     onForgetHub: () -> Unit,
@@ -618,6 +724,7 @@ private fun GoffyHomeScreen(
             onCancel = onCancel,
             onVoiceInput = onVoiceInput,
             onReadQrCode = onReadQrCode,
+            onReadText = onReadText,
             onSpeakLatest = onSpeakLatest,
         )
         Spacer(Modifier.height(18.dp))
@@ -1201,6 +1308,7 @@ private fun CommandSurface(
     onCancel: () -> Unit,
     onVoiceInput: () -> Unit,
     onReadQrCode: () -> Unit,
+    onReadText: () -> Unit,
     onSpeakLatest: (String) -> Unit,
 ) {
     Column(
@@ -1239,6 +1347,12 @@ private fun CommandSurface(
                     description = stringResource(R.string.camera_placeholder),
                     busy = busy,
                     onReadQrCode = onReadQrCode,
+                )
+                CameraOcrAction(
+                    shortLabel = stringResource(R.string.ocr_short),
+                    description = stringResource(R.string.ocr_placeholder),
+                    busy = busy,
+                    onReadText = onReadText,
                 )
                 SpeakLatestAction(
                     speakableText = latestSpeakableText,
@@ -1328,6 +1442,23 @@ private fun CameraQrAction(
 ) {
     OutlinedButton(
         onClick = onReadQrCode,
+        enabled = !busy,
+        modifier = Modifier.semantics { contentDescription = description },
+        colors = ButtonDefaults.outlinedButtonColors(disabledContentColor = Mist),
+    ) {
+        Text(shortLabel, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun CameraOcrAction(
+    shortLabel: String,
+    description: String,
+    busy: Boolean,
+    onReadText: () -> Unit,
+) {
+    OutlinedButton(
+        onClick = onReadText,
         enabled = !busy,
         modifier = Modifier.semantics { contentDescription = description },
         colors = ButtonDefaults.outlinedButtonColors(disabledContentColor = Mist),
@@ -1711,6 +1842,29 @@ private fun TaskResult(result: ToolResultContent) {
                 text = result.text.take(MAX_NOTE_PREVIEW_LENGTH),
                 color = Bone,
                 fontSize = 14.sp,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        is PhoneOcrRead -> {
+            Text(
+                text = stringResource(R.string.ocr_read_result, result.lineCount),
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = if (result.redacted) {
+                    stringResource(R.string.ocr_read_redacted_result, result.characterCount)
+                } else {
+                    stringResource(
+                        R.string.ocr_read_preview_result,
+                        result.characterCount,
+                        result.preview ?: "",
+                    )
+                },
+                color = if (result.redacted) Warning else Mist,
+                fontSize = 11.sp,
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis,
             )

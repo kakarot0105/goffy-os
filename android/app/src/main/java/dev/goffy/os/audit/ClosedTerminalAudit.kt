@@ -14,6 +14,7 @@ import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
+import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
 import dev.goffy.os.protocol.PermissionLevel
@@ -227,6 +228,7 @@ private fun String?.displayCommand(): String = when (this) {
     PHONE_DEVICE_INFO_TOOL -> "Recorded device info task"
     PHONE_FLASHLIGHT_SET_TOOL -> "Recorded flashlight action task"
     PHONE_NOTE_CREATE_TOOL -> "Recorded private note task"
+    PHONE_OCR_READ_TOOL -> "Recorded OCR read task"
     PHONE_QR_READ_TOOL -> "Recorded QR read task"
     PHONE_TIMER_CREATE_TOOL -> "Recorded timer task"
     null -> "Recorded unsupported task"
@@ -248,6 +250,7 @@ private val AUDIT_CAPABILITY_CONTRACTS = mapOf(
     PHONE_DEVICE_INFO_TOOL to (ExecutionTarget.PHONE to AuditPermission.SAFE),
     PHONE_FLASHLIGHT_SET_TOOL to (ExecutionTarget.PHONE to AuditPermission.CONFIRM),
     PHONE_NOTE_CREATE_TOOL to (ExecutionTarget.PHONE to AuditPermission.CONFIRM),
+    PHONE_OCR_READ_TOOL to (ExecutionTarget.PHONE to AuditPermission.SAFE),
     PHONE_QR_READ_TOOL to (ExecutionTarget.PHONE to AuditPermission.SAFE),
     PHONE_TIMER_CREATE_TOOL to (ExecutionTarget.PHONE to AuditPermission.CONFIRM),
 )

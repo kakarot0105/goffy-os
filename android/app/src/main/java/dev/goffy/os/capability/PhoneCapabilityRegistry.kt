@@ -3,6 +3,9 @@ package dev.goffy.os.capability
 import dev.goffy.os.protocol.ANDROID_SET_TIMER_ACTION
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.MAX_NOTE_TEXT_LENGTH
+import dev.goffy.os.protocol.MAX_OCR_CHARACTER_COUNT
+import dev.goffy.os.protocol.MAX_OCR_LINE_COUNT
+import dev.goffy.os.protocol.MAX_OCR_PREVIEW_LENGTH
 import dev.goffy.os.protocol.MAX_QR_PAYLOAD_CHARACTER_COUNT
 import dev.goffy.os.protocol.MAX_QR_PREVIEW_LENGTH
 import dev.goffy.os.protocol.MAX_TIMER_SECONDS
@@ -12,6 +15,9 @@ import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
+import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
+import dev.goffy.os.protocol.PHONE_OCR_SCRIPTS
+import dev.goffy.os.protocol.PHONE_OCR_STATUS_AVAILABLE
 import dev.goffy.os.protocol.PHONE_QR_CONTENT_TYPES
 import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
 import dev.goffy.os.protocol.PHONE_QR_STATUS_AVAILABLE
@@ -149,6 +155,7 @@ class PhoneCapabilityRegistry internal constructor(
                     deviceCapability(defaultTimeoutMillis),
                     flashlightCapability(flashlightTimeoutMillis),
                     noteCapability(defaultTimeoutMillis),
+                    ocrReadCapability(defaultTimeoutMillis),
                     qrReadCapability(defaultTimeoutMillis),
                     timerCapability(defaultTimeoutMillis),
                 ),
@@ -291,6 +298,49 @@ private fun noteCapability(timeoutMillis: Long): PhoneCapabilityDefinition =
         acceptsArguments = { arguments ->
             arguments is PhoneNoteCreateArguments && arguments.text.matchesNoteTextContract()
         },
+    )
+
+private fun ocrReadCapability(timeoutMillis: Long): PhoneCapabilityDefinition =
+    definition(
+        name = PHONE_OCR_READ_TOOL,
+        title = "Read foreground OCR text",
+        description = "Read Latin-script text from a visible foreground camera scanner without storing images.",
+        permission = PermissionLevel.SAFE,
+        timeoutMillis = timeoutMillis,
+        readOnly = true,
+        idempotent = true,
+        inputSchema = objectSchema(emptyMap()),
+        outputSchema = objectSchema(
+            properties = mapOf(
+                "status" to stringSchema(constant = PHONE_OCR_STATUS_AVAILABLE),
+                "script" to stringSchema(enumValues = PHONE_OCR_SCRIPTS.sorted()),
+                "characterCount" to integerSchema(
+                    minimum = 1,
+                    maximum = MAX_OCR_CHARACTER_COUNT.toLong(),
+                ),
+                "characterCountTruncated" to booleanSchema(),
+                "lineCount" to integerSchema(
+                    minimum = 1,
+                    maximum = MAX_OCR_LINE_COUNT.toLong(),
+                ),
+                "lineCountTruncated" to booleanSchema(),
+                "preview" to nullableStringSchema(maxLength = MAX_OCR_PREVIEW_LENGTH),
+                "previewTruncated" to booleanSchema(),
+                "redacted" to booleanSchema(),
+            ),
+            required = listOf(
+                "status",
+                "script",
+                "characterCount",
+                "characterCountTruncated",
+                "lineCount",
+                "lineCountTruncated",
+                "preview",
+                "previewTruncated",
+                "redacted",
+            ),
+        ),
+        acceptsArguments = { it == NoToolArguments },
     )
 
 private fun qrReadCapability(timeoutMillis: Long): PhoneCapabilityDefinition =

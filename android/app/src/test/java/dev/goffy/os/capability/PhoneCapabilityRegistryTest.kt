@@ -6,6 +6,7 @@ import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
+import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
 import dev.goffy.os.protocol.PermissionLevel
@@ -33,6 +34,7 @@ class PhoneCapabilityRegistryTest {
                 PHONE_DEVICE_INFO_TOOL,
                 PHONE_FLASHLIGHT_SET_TOOL,
                 PHONE_NOTE_CREATE_TOOL,
+                PHONE_OCR_READ_TOOL,
                 PHONE_QR_READ_TOOL,
                 PHONE_TIMER_CREATE_TOOL,
             ),
@@ -53,6 +55,7 @@ class PhoneCapabilityRegistryTest {
         assertEquals(PermissionLevel.SAFE, registry.find(PHONE_DEVICE_INFO_TOOL)?.metadata?.permission)
         assertEquals(PermissionLevel.CONFIRM, registry.find(PHONE_FLASHLIGHT_SET_TOOL)?.metadata?.permission)
         assertEquals(PermissionLevel.CONFIRM, registry.find(PHONE_NOTE_CREATE_TOOL)?.metadata?.permission)
+        assertEquals(PermissionLevel.SAFE, registry.find(PHONE_OCR_READ_TOOL)?.metadata?.permission)
         assertEquals(PermissionLevel.SAFE, registry.find(PHONE_QR_READ_TOOL)?.metadata?.permission)
         assertEquals(PermissionLevel.CONFIRM, registry.find(PHONE_TIMER_CREATE_TOOL)?.metadata?.permission)
     }

@@ -18,4 +18,18 @@ class GoffyQrCommandTest {
         assertFalse(isForegroundQrReadCommand("read my Mac clipboard"))
         assertFalse(isForegroundQrReadCommand("scan files on my Mac"))
     }
+
+    @Test
+    fun foregroundOcrReadCommandsAreRecognized() {
+        assertTrue(isForegroundOcrReadCommand("read this text"))
+        assertTrue(isForegroundOcrReadCommand("scan the OCR"))
+        assertTrue(isForegroundOcrReadCommand("ocr this"))
+    }
+
+    @Test
+    fun unrelatedCommandsAreNotOcrReadCommands() {
+        assertFalse(isForegroundOcrReadCommand("read this QR code"))
+        assertFalse(isForegroundOcrReadCommand("show my battery status"))
+        assertFalse(isForegroundOcrReadCommand("extract files from my Mac"))
+    }
 }

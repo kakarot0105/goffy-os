@@ -63,6 +63,8 @@ import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PhoneNoteCreated
+import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
+import dev.goffy.os.protocol.PhoneOcrRead
 import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
 import dev.goffy.os.protocol.PhoneQrRead
 import dev.goffy.os.protocol.ANDROID_SET_TIMER_ACTION
@@ -787,6 +789,62 @@ class GoffyViewModelTest {
         assertEquals(ExecutionTarget.PHONE, entry.executionTarget)
         assertEquals(PHONE_QR_READ_TOOL, entry.toolName)
         assertEquals("Camera permission denied. QR read was not started.", entry.summary)
+        assertNull(entry.result)
+        assertTrue(gateway.requests.isEmpty())
+    }
+
+    @Test
+    fun foregroundOcrReadCreatesVerifiedPhoneTimelineWithoutHubCall() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val viewModel = createViewModel(gateway)
+        advanceUntilIdle()
+
+        viewModel.recordForegroundOcrRead("GOFFY OS\nObserve Plan Act")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        val result = entry.result as PhoneOcrRead
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals(ExecutionTarget.PHONE, entry.executionTarget)
+        assertEquals(PHONE_OCR_READ_TOOL, entry.toolName)
+        assertEquals("latin", result.script)
+        assertEquals("GOFFY OS Observe Plan Act", result.preview)
+        assertTrue(gateway.requests.isEmpty())
+    }
+
+    @Test
+    fun foregroundOcrReadRedactsSensitiveTextFromTimelineState() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val viewModel = createViewModel(gateway)
+        advanceUntilIdle()
+
+        viewModel.recordForegroundOcrRead("Password: secret launch code")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        val result = entry.result as PhoneOcrRead
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals(PHONE_OCR_READ_TOOL, entry.toolName)
+        assertTrue(result.redacted)
+        assertNull(result.preview)
+        assertFalse(viewModel.uiState.value.toString().contains("secret launch code"))
+        assertTrue(gateway.requests.isEmpty())
+    }
+
+    @Test
+    fun foregroundOcrFailureCreatesClosedPhoneTimelineEntry() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val viewModel = createViewModel(gateway)
+        advanceUntilIdle()
+
+        viewModel.recordForegroundOcrReadUnavailable("OCR recognition failed safely.")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(TaskPhase.FAILED, entry.phase)
+        assertEquals(ExecutionTarget.PHONE, entry.executionTarget)
+        assertEquals(PHONE_OCR_READ_TOOL, entry.toolName)
+        assertEquals("OCR recognition failed safely.", entry.summary)
         assertNull(entry.result)
         assertTrue(gateway.requests.isEmpty())
     }

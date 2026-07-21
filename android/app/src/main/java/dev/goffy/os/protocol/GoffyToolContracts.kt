@@ -26,6 +26,19 @@ fun PhoneQrRead.matchesToolContract(): Boolean =
                 }
         }
 
+fun PhoneOcrRead.matchesToolContract(): Boolean =
+    status == PHONE_OCR_STATUS_AVAILABLE &&
+        script in PHONE_OCR_SCRIPTS &&
+        characterCount in 1..MAX_OCR_CHARACTER_COUNT &&
+        lineCount in 1..MAX_OCR_LINE_COUNT &&
+        if (redacted) {
+            preview == null && !previewTruncated
+        } else {
+            preview != null &&
+                preview.isSafeOcrPreview() &&
+                characterCount >= preview.length
+        }
+
 fun MacFilesListArguments.matchesToolContract(): Boolean =
     rootIndex in 0..MAX_MAC_FILES_ROOT_INDEX &&
         relativePath.isSafeMacFilesRelativePath() &&
@@ -182,6 +195,14 @@ private fun String.isSafeQrPreview(): Boolean =
                 Character.getType(character) == Character.FORMAT.toInt()
         }
 
+private fun String.isSafeOcrPreview(): Boolean =
+    isNotBlank() &&
+        length <= MAX_OCR_PREVIEW_LENGTH &&
+        none { character ->
+            character.isISOControl() ||
+                Character.getType(character) == Character.FORMAT.toInt()
+        }
+
 private fun String?.doesNotContainFileUrl(): Boolean =
     this == null || !contains("file://", ignoreCase = true)
 
@@ -232,6 +253,11 @@ const val PHONE_QR_STATUS_AVAILABLE = "available"
 const val MAX_QR_PREVIEW_LENGTH = 96
 const val MAX_QR_PAYLOAD_CHARACTER_COUNT = 10_000
 val PHONE_QR_CONTENT_TYPES = setOf("text", "url", "wifi", "sensitive", "unknown")
+const val PHONE_OCR_STATUS_AVAILABLE = "available"
+const val MAX_OCR_PREVIEW_LENGTH = 600
+const val MAX_OCR_CHARACTER_COUNT = 20_000
+const val MAX_OCR_LINE_COUNT = 128
+val PHONE_OCR_SCRIPTS = setOf("latin")
 const val MIN_TIMER_SECONDS = 1
 const val MAX_TIMER_SECONDS = 86_400
 const val ANDROID_SET_TIMER_ACTION = "android.intent.action.SET_TIMER"

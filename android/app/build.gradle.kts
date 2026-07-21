@@ -78,6 +78,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
     implementation("com.squareup.okhttp3:okhttp:5.4.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")

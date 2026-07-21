@@ -18,6 +18,8 @@ import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
 import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
+import dev.goffy.os.protocol.PhoneOcrRead
+import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PhoneQrRead
 import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
 import dev.goffy.os.protocol.PhoneTimerDispatched
@@ -520,6 +522,10 @@ data class TaskTimelineState(
             approvalGranted &&
             content is PhoneNoteCreated &&
             content.matchesToolContract()
+        PHONE_OCR_READ_TOOL -> executionTarget == ExecutionTarget.PHONE &&
+            permission == PermissionLevel.SAFE &&
+            content is PhoneOcrRead &&
+            content.matchesToolContract()
         PHONE_QR_READ_TOOL -> executionTarget == ExecutionTarget.PHONE &&
             permission == PermissionLevel.SAFE &&
             content is PhoneQrRead &&
@@ -624,9 +630,18 @@ private fun ToolResultContent.summaryText(): String = when (this) {
         "Flashlight ${if (enabled) "on" else "off"}; state observed" +
             if (stateChanged) " after state change" else " (already requested state)"
     is PhoneNoteCreated -> "Note #$noteId stored: $text"
+    is PhoneOcrRead -> ocrReadSummary()
     is PhoneQrRead -> qrReadSummary()
     is PhoneTimerDispatched -> "Timer intent for $durationSeconds seconds dispatched to $clockPackage"
 }
+
+private fun PhoneOcrRead.ocrReadSummary(): String =
+    if (redacted) {
+        "OCR read $lineCount lines; text hidden from timeline ($characterCount chars)"
+    } else {
+        "OCR read $lineCount lines: ${preview ?: "no preview"}" +
+            if (previewTruncated || characterCountTruncated || lineCountTruncated) "..." else ""
+    }
 
 private fun PhoneQrRead.qrReadSummary(): String =
     if (redacted) {

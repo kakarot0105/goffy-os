@@ -146,6 +146,16 @@ review both published checksums during any wrapper upgrade.
   safe preview. Wi-Fi, OTP, token/password-looking payloads, unsafe display
   characters, and sensitive-looking values are hidden from audit/timeline
   content by default; URL previews show only scheme and host.
+- OCR reads are foreground-only. Tap `OCR` or type `read this text` to open a
+  visible CameraX scanner backed by the unbundled Google Play Services ML Kit
+  Latin text-recognition model, preserving the GOFFY LITE APK budget. First use
+  may need Google Play Services to download the OCR model; before that completes,
+  GOFFY will not claim success because no verified OCR result is produced. GOFFY
+  stores no image and records a verified `phone.ocr.read` timeline entry only
+  after recognition succeeds, with line count, character count, and a bounded
+  preview. Password/token, recovery-code, OTP, and payment-card-like text is
+  hidden from the preview by default. The terminal audit record stores only
+  closed capability metadata, not OCR text.
 - Manual development bearer entry remains debug-only and memory-only.
 
 ## Android audit trail
@@ -175,10 +185,12 @@ Performance assessment: the audit path is a tiny bounded SQLite read at startup
 and one write per terminal task on the existing IO dispatcher. There is no
 polling or WorkManager, so this slice stays within GOFFY LITE expectations for
 4 GB devices. Paired restore adds one bounded file read and Keystore decrypt; pair
-and forget add one tiny atomic write/delete. Pairing and generic QR scanning
-lazy-load CameraX and the bundled barcode model only while the visible scanner
-panel is active, use a single latest-frame analyzer at 1280x720, and shut down
-the analyzer when closed.
+and forget add one tiny atomic write/delete. Pairing, QR, and OCR scanning
+lazy-load CameraX and ML Kit clients only while the visible scanner panel is
+active, use a single latest-frame analyzer at 1280x720, and shut down the
+analyzer when closed. OCR uses the unbundled Play Services model to avoid a large
+APK-size regression and throttles recognition attempts to roughly one frame every
+900 ms to protect responsiveness on 4 GB devices.
 No large model or background service loads.
 
 ## Local verification

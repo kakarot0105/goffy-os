@@ -42,6 +42,7 @@ import dev.goffy.os.localmodel.LocalModelRuntimeSettingsStore
 import dev.goffy.os.localmodel.LocalModelRuntimeState
 import dev.goffy.os.localmodel.LocalModelRuntimeStatus
 import dev.goffy.os.localmodel.MutableLocalModelRuntimeSettingsSource
+import dev.goffy.os.ocr.OcrTextSummarizer
 import dev.goffy.os.phone.AndroidBatteryStatusSource
 import dev.goffy.os.phone.AndroidDeviceInfoSource
 import dev.goffy.os.phone.AndroidFlashlightSource
@@ -55,6 +56,7 @@ import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.NoToolArguments
+import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
@@ -789,6 +791,85 @@ class GoffyViewModel internal constructor(
         )
     }
 
+    fun recordForegroundOcrRead(rawText: String) {
+        refreshLocalModelStatus()
+        if (mutableUiState.value.isBusy) {
+            mutableUiState.value = mutableUiState.value.rejectCommand(
+                OCR_READ_COMMAND,
+                "Another task is already running; cancel it before reading text",
+                nowMillis(),
+            )
+            return
+        }
+        if (rawText.isBlank()) {
+            mutableUiState.value = mutableUiState.value.rejectCommand(
+                OCR_READ_COMMAND,
+                "OCR scanner returned no readable text",
+                nowMillis(),
+            )
+            return
+        }
+        val result = OcrTextSummarizer.summarize(rawText)
+        executeTask(
+            taskId = nextTaskId(),
+            plan = ocrReadPlan(),
+            events = flowOf(
+                ExecutionEvent.Starting(attempt = 1),
+                ExecutionEvent.Ready,
+                ExecutionEvent.Progress(
+                    ToolProgress(
+                        toolName = PHONE_OCR_READ_TOOL,
+                        executionTarget = ExecutionTarget.PHONE,
+                        stage = "accepted",
+                        sequence = 0,
+                        message = "Foreground OCR read accepted on this phone.",
+                    ),
+                ),
+                ExecutionEvent.Progress(
+                    ToolProgress(
+                        toolName = PHONE_OCR_READ_TOOL,
+                        executionTarget = ExecutionTarget.PHONE,
+                        stage = "completed",
+                        sequence = 1,
+                        message = "CameraX and ML Kit returned one OCR text summary.",
+                    ),
+                ),
+                ExecutionEvent.Result(
+                    toolName = PHONE_OCR_READ_TOOL,
+                    executionTarget = ExecutionTarget.PHONE,
+                    content = result,
+                ),
+                ExecutionEvent.Verification(
+                    succeeded = true,
+                    summary = "OCR text summary matched the foreground phone-read contract.",
+                    checks = listOf(
+                        "foreground camera action",
+                        "no image persistence",
+                        "bounded privacy-preserving text summary",
+                        "typed OCR output",
+                    ),
+                ),
+            ),
+        )
+    }
+
+    fun recordForegroundOcrReadUnavailable(summary: String) {
+        refreshLocalModelStatus()
+        if (mutableUiState.value.isBusy) {
+            mutableUiState.value = mutableUiState.value.rejectCommand(
+                OCR_READ_COMMAND,
+                "Another task is already running; cancel it before reading text",
+                nowMillis(),
+            )
+            return
+        }
+        mutableUiState.value = mutableUiState.value.rejectPlan(
+            ocrReadPlan(),
+            summary,
+            nowMillis(),
+        )
+    }
+
     private fun qrReadPlan(): GoffyExecutionPlan = GoffyExecutionPlan(
         command = QR_SCAN_COMMAND,
         executionTarget = ExecutionTarget.PHONE,
@@ -799,6 +880,21 @@ class GoffyViewModel internal constructor(
             "One QR payload was summarized without storing an image",
             "Raw QR content was excluded from the task timeline and audit record",
             "The structured QR summary matched the privacy-preserving contract",
+        ),
+        arguments = NoToolArguments,
+    )
+
+    private fun ocrReadPlan(): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = OCR_READ_COMMAND,
+        executionTarget = ExecutionTarget.PHONE,
+        toolName = PHONE_OCR_READ_TOOL,
+        permission = PermissionLevel.SAFE,
+        successCriteria = listOf(
+            "The camera was opened only from a visible foreground scanner",
+            "One OCR text result was summarized without storing an image",
+            "OCR text was bounded or redacted before reaching the task timeline",
+            "The terminal audit record excludes OCR text content",
+            "The structured OCR summary matched the privacy-preserving contract",
         ),
         arguments = NoToolArguments,
     )
@@ -1159,6 +1255,7 @@ class GoffyViewModel internal constructor(
         const val DEFAULT_APPROVAL_TTL_MILLIS = 60_000L
         const val APPROVAL_PREVIEW_LENGTH = 160
         const val QR_SCAN_COMMAND = "Read foreground QR code"
+        const val OCR_READ_COMMAND = "Read foreground text"
     }
 
     private data class PendingPhoneExecution(

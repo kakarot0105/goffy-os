@@ -208,6 +208,18 @@ data class PhoneQrRead(
     val redacted: Boolean,
 ) : ToolResultContent
 
+data class PhoneOcrRead(
+    val status: String,
+    val script: String,
+    val characterCount: Int,
+    val characterCountTruncated: Boolean,
+    val lineCount: Int,
+    val lineCountTruncated: Boolean,
+    val preview: String?,
+    val previewTruncated: Boolean,
+    val redacted: Boolean,
+) : ToolResultContent
+
 data class PhoneNoteCreated(
     val noteId: Long,
     val text: String,
