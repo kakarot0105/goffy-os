@@ -10,6 +10,29 @@ custom image.
 
 Create a local JSON file under `.goffy-validation/`, not in the repo:
 
+```bash
+.venv/bin/python scripts/create_rom_manual_gates_template.py
+```
+
+This writes `.goffy-validation/rom-0-manual-gates.template.json` with safe
+blocked defaults: backup and OEM unlock are `false`, Motorola eligibility is
+`unknown`, and destructive approval is `not_requested`. It never runs ADB,
+fastboot, unlock, flash, root, shell, or network actions.
+
+After creating stock-restore evidence, seed the template with the exact
+redacted restore fields:
+
+```bash
+.venv/bin/python scripts/create_rom_manual_gates_template.py \
+  --stock-restore-evidence .goffy-validation/rom-stock-restore-evidence.json \
+  --output .goffy-validation/rom-0-manual-gates.json
+```
+
+The generator rejects sensitive keys, unsupported stock-restore fields,
+non-Motorola restore URLs, invalid archive/checksum/path values, and symlinked
+`.goffy-validation` output roots. It writes only under `.goffy-validation`
+unless `--stdout` is used for review.
+
 ```json
 {
   "schema_version": "goffy.rom-manual-gates.v1",

@@ -12,6 +12,7 @@
 - [x] No-flash planning checklist generator and DSU staging setup guide
 - [x] Official stock restore source identified through Motorola Software Fix
 - [x] Manual restore/unlock evidence validator and sensitive-key rejection
+- [x] Safe ROM-0 manual gate template generator with optional stock-restore merge
 - [x] Rollback Markdown template and exact archive/SHA evidence validation
 - [x] Local stock-restore archive hashing helper with redacted evidence output
 - [x] Non-privileged ROM system-app descriptor and validator

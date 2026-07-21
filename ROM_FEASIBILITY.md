@@ -177,6 +177,7 @@ Use the readiness reporter to summarize ROM-0 blockers without touching the
 phone or an AOSP checkout:
 
 ```bash
+.venv/bin/python scripts/create_rom_manual_gates_template.py
 .venv/bin/python scripts/verify_rom0_readiness.py \
   --probe-json .goffy-validation/rom-feasibility.json \
   --manual-gates-json .goffy-validation/rom-manual-gates.json \
