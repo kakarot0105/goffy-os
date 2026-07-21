@@ -93,6 +93,7 @@ class UiNode:
     class_name: str
     bounds: tuple[int, int, int, int]
     enabled: bool
+    clickable: bool
 
     @property
     def center(self) -> tuple[int, int]:
@@ -1034,6 +1035,55 @@ def submit_and_verify_command(
     )
     baseline_command_count = timeline_command_occurrences(ui_text, command)
     command_field = find_command_field(ui_text)
+    for attempt in range(4):
+        if command_field is not None:
+            break
+        if attempt == 3:
+            break
+        reveal = execute_step(
+            name=f"{step_name}: Reveal command input",
+            command=adb_command(
+                adb,
+                target,
+                "shell",
+                "input",
+                "swipe",
+                "360",
+                "650",
+                "360",
+                "1450",
+                "450",
+            ),
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            mutates_device=True,
+            display_command=display_adb_command(
+                adb,
+                "shell",
+                "input",
+                "swipe",
+                "360",
+                "650",
+                "360",
+                "1450",
+                "450",
+            ),
+        )
+        if reveal.status is not StepStatus.OK:
+            return reveal
+        time.sleep(1)
+        ui_text = latest_ui_text(
+            adb=adb,
+            target=target,
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+        )
+        baseline_command_count = max(
+            baseline_command_count, timeline_command_occurrences(ui_text, command)
+        )
+        command_field = find_command_field(ui_text)
     if command_field is None:
         return DeviceSmokeStep(
             name=step_name,
@@ -1052,6 +1102,7 @@ def submit_and_verify_command(
     )
     if tap.status is not StepStatus.OK:
         return tap
+    time.sleep(1)
     typed = execute_step(
         name=f"{step_name}: Type command",
         command=adb_command(adb, target, "shell", "input", "text", adb_input_text(command)),
@@ -1084,7 +1135,11 @@ def submit_and_verify_command(
         runner=runner,
         timeout_seconds=timeout_seconds,
     )
-    send = find_node(ui_text, text="Send")
+    baseline_command_count = max(
+        baseline_command_count, timeline_command_occurrences(ui_text, command)
+    )
+    current_command_field = find_command_field(ui_text) or command_field
+    send = find_send_control(ui_text, command_field=current_command_field)
     for attempt in range(4):
         if send is not None:
             break
@@ -1130,7 +1185,11 @@ def submit_and_verify_command(
             runner=runner,
             timeout_seconds=timeout_seconds,
         )
-        send = find_node(ui_text, text="Send")
+        baseline_command_count = max(
+            baseline_command_count, timeline_command_occurrences(ui_text, command)
+        )
+        current_command_field = find_command_field(ui_text) or current_command_field
+        send = find_send_control(ui_text, command_field=current_command_field)
     if send is None:
         artifact = f"{artifact_prefix}-send-missing.xml"
         if ui_text.strip():
@@ -1167,10 +1226,10 @@ def submit_and_verify_command(
         )
         if dump_step.status is StepStatus.OK:
             last_text = (output_directory / f"{artifact_prefix}.xml").read_text(encoding="utf-8")
-            if timeline_command_occurrences(
-                last_text, command
-            ) > baseline_command_count and command_window_contains(
-                last_text, command, expected_markers
+            current_command_count = timeline_command_occurrences(last_text, command)
+            fresh_count = current_command_count - baseline_command_count
+            if fresh_count > 0 and command_window_contains(
+                last_text, command, expected_markers, fresh_count=fresh_count
             ):
                 return DeviceSmokeStep(
                     name=step_name,
@@ -1182,8 +1241,16 @@ def submit_and_verify_command(
         time.sleep(1)
 
     missing_markers = [marker for marker in expected_markers if marker not in last_text]
-    if timeline_command_occurrences(last_text, command) <= baseline_command_count:
+    current_command_count = timeline_command_occurrences(last_text, command)
+    if current_command_count <= baseline_command_count:
         missing_markers.append("fresh command card")
+    elif not command_window_contains(
+        last_text,
+        command,
+        expected_markers,
+        fresh_count=current_command_count - baseline_command_count,
+    ):
+        missing_markers.append("fresh verified command card")
     missing = ", ".join(missing_markers)
     return DeviceSmokeStep(
         name=step_name,
@@ -1264,6 +1331,7 @@ def nodes_from_xml(xml_text: str) -> tuple[UiNode, ...]:
                 class_name=element.attrib.get("class", ""),
                 bounds=bounds,
                 enabled=element.attrib.get("enabled") == "true",
+                clickable=element.attrib.get("clickable") == "true",
             )
         )
     return tuple(nodes)
@@ -1307,6 +1375,36 @@ def find_node(xml_text: str, *, text: str) -> UiNode | None:
     return None
 
 
+def find_send_control(xml_text: str, *, command_field: UiNode) -> UiNode | None:
+    labelled = find_node(xml_text, text="Send")
+    if labelled is not None:
+        return labelled
+
+    for node in nodes_from_xml(xml_text):
+        if node.content_desc.strip().casefold() == "send" and node.enabled:
+            return node
+
+    _, field_top, field_right, field_bottom = command_field.bounds
+    candidates: list[UiNode] = []
+    for node in nodes_from_xml(xml_text):
+        left, top, right, bottom = node.bounds
+        if not node.enabled or not node.clickable:
+            continue
+        if right < field_right - 20 or left < field_right - 120:
+            continue
+        if top < field_top - 20 or bottom > field_bottom + 260:
+            continue
+        width = right - left
+        height = bottom - top
+        if width > 180 or height > 240:
+            continue
+        candidates.append(node)
+
+    if not candidates:
+        return None
+    return max(candidates, key=lambda node: (node.bounds[2], node.bounds[0]))
+
+
 def timeline_texts(xml_text: str) -> tuple[str, ...]:
     texts = tuple(node.text for node in nodes_from_xml(xml_text) if node.text)
     try:
@@ -1320,14 +1418,24 @@ def timeline_command_occurrences(xml_text: str, command: str) -> int:
     return sum(1 for text in timeline_texts(xml_text) if text == command)
 
 
-def command_window_contains(xml_text: str, command: str, markers: tuple[str, ...]) -> bool:
+def command_window_contains(
+    xml_text: str,
+    command: str,
+    markers: tuple[str, ...],
+    *,
+    fresh_count: int | None = None,
+) -> bool:
     texts = timeline_texts(xml_text)
-    try:
-        index = texts.index(command)
-    except ValueError:
+    command_indexes = [index for index, text in enumerate(texts) if text == command]
+    if not command_indexes:
         return False
-    window = " ".join(texts[index : index + 30])
-    return all(marker in window for marker in markers)
+    if fresh_count is not None and fresh_count <= 0:
+        return False
+
+    index = command_indexes[0]
+    next_index = command_indexes[1] if len(command_indexes) > 1 else min(len(texts), index + 30)
+    segment = " ".join(texts[index:next_index])
+    return all(marker in segment for marker in markers)
 
 
 def tap_center(

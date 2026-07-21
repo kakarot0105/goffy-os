@@ -38,12 +38,63 @@ BASE_UI_XML = "\n".join(
 )
 
 
+ICON_SEND_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,510][660,650]" />',
+        '  <node text="MIC" class="android.widget.TextView" enabled="true" '
+        'bounds="[102,738][140,773]" />',
+        '  <node text="" class="android.view.View" clickable="true" enabled="true" '
+        'bounds="[588,671][672,839]" />',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[63,924][185,966]" />',
+        "</hierarchy>",
+    ]
+)
+
+
 COMMAND_FIELD_ONLY_UI_XML = "\n".join(
     [
         "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
         '<hierarchy rotation="0">',
         '  <node text="" class="android.widget.EditText" enabled="true" '
         'bounds="[60,1454][660,1594]" />',
+        "</hierarchy>",
+    ]
+)
+
+
+TIMELINE_ONLY_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="Recorded battery status task" class="android.widget.TextView" '
+        'enabled="true" bounds="[86,63][554,105]" />',
+        '  <node text="VERIFIED" class="android.widget.TextView" enabled="true" '
+        'bounds="[568,63][634,105]" />',
+        '  <node text="PHONE  /  phone.battery.status  /  SAFE" '
+        'class="android.widget.TextView" enabled="true" bounds="[86,168][434,210]" />',
+        "</hierarchy>",
+    ]
+)
+
+
+STALE_PHONE_COMMAND_TIMELINE_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[63,10][185,52]" />',
+        '  <node text="check my battery level" class="android.widget.TextView" '
+        'enabled="true" bounds="[86,63][554,105]" />',
+        '  <node text="VERIFIED" class="android.widget.TextView" enabled="true" '
+        'bounds="[568,63][634,105]" />',
+        '  <node text="PHONE  /  phone.battery.status  /  SAFE" '
+        'class="android.widget.TextView" enabled="true" bounds="[86,168][434,210]" />',
+        '  <node text="Battery status matched the local tool contract." '
+        'class="android.widget.TextView" enabled="true" bounds="[86,220][634,262]" />',
         "</hierarchy>",
     ]
 )
@@ -69,6 +120,72 @@ PHONE_UI_XML = "\n".join(
         'bounds="[60,1320][160,1360]" />',
         '  <node text="Battery status matched the local tool contract." '
         'class="android.widget.TextView" enabled="true" bounds="[60,1380][620,1420]" />',
+        "</hierarchy>",
+    ]
+)
+
+
+PHONE_UI_XML_WITH_STALE_AND_FRESH = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,900][660,1040]" />',
+        '  <node text="Send" class="android.widget.TextView" enabled="true" '
+        'bounds="[520,1100][660,1180]" />',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,1200][260,1240]" />',
+        '  <node text="check my battery level" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,1200][400,1240]" />',
+        '  <node text="VERIFIED" class="android.widget.TextView" enabled="true" '
+        'bounds="[500,1200][650,1240]" />',
+        '  <node text="PHONE  /  phone.battery.status  /  SAFE" '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1260][600,1300]" />',
+        '  <node text="42%" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,1320][160,1360]" />',
+        '  <node text="Battery status matched the local tool contract." '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1380][620,1420]" />',
+        '  <node text="check my battery level" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,1440][400,1480]" />',
+        '  <node text="VERIFIED" class="android.widget.TextView" enabled="true" '
+        'bounds="[500,1440][650,1480]" />',
+        '  <node text="PHONE  /  phone.battery.status  /  SAFE" '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1500][600,1540]" />',
+        '  <node text="42%" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,1560][160,1600]" />',
+        '  <node text="Battery status matched the local tool contract." '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1620][620,1660]" />',
+        "</hierarchy>",
+    ]
+)
+
+
+PHONE_UI_XML_FRESH_PENDING_THEN_STALE_SUCCESS = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,900][660,1040]" />',
+        '  <node text="Send" class="android.widget.TextView" enabled="true" '
+        'bounds="[520,1100][660,1180]" />',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,1200][260,1240]" />',
+        '  <node text="check my battery level" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,1200][400,1240]" />',
+        '  <node text="PENDING" class="android.widget.TextView" enabled="true" '
+        'bounds="[500,1200][650,1240]" />',
+        '  <node text="PHONE  /  phone.battery.status  /  SAFE" '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1260][600,1300]" />',
+        '  <node text="check my battery level" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,1320][400,1360]" />',
+        '  <node text="VERIFIED" class="android.widget.TextView" enabled="true" '
+        'bounds="[500,1320][650,1360]" />',
+        '  <node text="PHONE  /  phone.battery.status  /  SAFE" '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1380][600,1420]" />',
+        '  <node text="42%" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,1440][160,1480]" />',
+        '  <node text="Battery status matched the local tool contract." '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1500][620,1540]" />',
         "</hierarchy>",
     ]
 )
@@ -505,6 +622,235 @@ def test_submit_command_reveals_send_button_with_bounded_scroll(
     assert (output_directory / "phone-command.xml").is_file()
 
 
+def test_submit_command_recovers_command_input_from_timeline_viewport(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    output_directory = tmp_path / "artifacts"
+    output_directory.mkdir()
+    ui_outputs = iter(
+        (
+            STALE_PHONE_COMMAND_TIMELINE_UI_XML,
+            BASE_UI_XML,
+            BASE_UI_XML,
+            PHONE_UI_XML_WITH_STALE_AND_FRESH,
+        )
+    )
+    seen: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        seen.append(tuple(command))
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            try:
+                return CommandResult(0, next(ui_outputs), "")
+            except StopIteration:
+                return CommandResult(0, PHONE_UI_XML_WITH_STALE_AND_FRESH, "")
+        return CommandResult(0, "ok", "")
+
+    result = smoke.submit_and_verify_command(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        wait_timeout_seconds=5,
+        command=smoke.DEFAULT_PHONE_COMMAND,
+        expected_markers=("VERIFIED", "%", "Battery status matched the local tool contract."),
+        step_name="PHONE command smoke",
+        artifact_prefix="phone-command",
+        output_directory=output_directory,
+    )
+
+    assert result.status is StepStatus.OK
+    assert (
+        str(adb),
+        "-s",
+        SERIAL,
+        "shell",
+        "input",
+        "swipe",
+        "360",
+        "650",
+        "360",
+        "1450",
+        "450",
+    ) in seen
+
+
+def test_submit_command_does_not_accept_stale_command_after_recovery(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    output_directory = tmp_path / "artifacts"
+    output_directory.mkdir()
+    ui_outputs = iter(
+        (
+            STALE_PHONE_COMMAND_TIMELINE_UI_XML,
+            BASE_UI_XML,
+            BASE_UI_XML,
+            PHONE_UI_XML,
+        )
+    )
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            try:
+                return CommandResult(0, next(ui_outputs), "")
+            except StopIteration:
+                return CommandResult(0, PHONE_UI_XML, "")
+        return CommandResult(0, "ok", "")
+
+    result = smoke.submit_and_verify_command(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        wait_timeout_seconds=1,
+        command=smoke.DEFAULT_PHONE_COMMAND,
+        expected_markers=("VERIFIED", "%", "Battery status matched the local tool contract."),
+        step_name="PHONE command smoke",
+        artifact_prefix="phone-command",
+        output_directory=output_directory,
+    )
+
+    assert result.status is StepStatus.FAIL
+    assert "fresh command card" in result.detail
+
+
+def test_submit_command_does_not_borrow_markers_from_stale_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    output_directory = tmp_path / "artifacts"
+    output_directory.mkdir()
+    ui_outputs = iter(
+        (
+            STALE_PHONE_COMMAND_TIMELINE_UI_XML,
+            BASE_UI_XML,
+            BASE_UI_XML,
+            PHONE_UI_XML_FRESH_PENDING_THEN_STALE_SUCCESS,
+        )
+    )
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            try:
+                return CommandResult(0, next(ui_outputs), "")
+            except StopIteration:
+                return CommandResult(0, PHONE_UI_XML_FRESH_PENDING_THEN_STALE_SUCCESS, "")
+        return CommandResult(0, "ok", "")
+
+    result = smoke.submit_and_verify_command(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        wait_timeout_seconds=1,
+        command=smoke.DEFAULT_PHONE_COMMAND,
+        expected_markers=("VERIFIED", "%", "Battery status matched the local tool contract."),
+        step_name="PHONE command smoke",
+        artifact_prefix="phone-command",
+        output_directory=output_directory,
+    )
+
+    assert result.status is StepStatus.FAIL
+    assert "fresh verified command card" in result.detail
+
+
+def test_submit_command_requires_newest_matching_card_when_baseline_undercounts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    output_directory = tmp_path / "artifacts"
+    output_directory.mkdir()
+    ui_outputs = iter(
+        (
+            TIMELINE_ONLY_UI_XML,
+            BASE_UI_XML,
+            BASE_UI_XML,
+            PHONE_UI_XML_FRESH_PENDING_THEN_STALE_SUCCESS,
+        )
+    )
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            try:
+                return CommandResult(0, next(ui_outputs), "")
+            except StopIteration:
+                return CommandResult(0, PHONE_UI_XML_FRESH_PENDING_THEN_STALE_SUCCESS, "")
+        return CommandResult(0, "ok", "")
+
+    result = smoke.submit_and_verify_command(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        wait_timeout_seconds=1,
+        command=smoke.DEFAULT_PHONE_COMMAND,
+        expected_markers=("VERIFIED", "%", "Battery status matched the local tool contract."),
+        step_name="PHONE command smoke",
+        artifact_prefix="phone-command",
+        output_directory=output_directory,
+    )
+
+    assert result.status is StepStatus.FAIL
+    assert "fresh verified command card" in result.detail
+
+
+def test_submit_command_taps_icon_only_send_control(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    output_directory = tmp_path / "artifacts"
+    output_directory.mkdir()
+    ui_outputs = iter((ICON_SEND_UI_XML, ICON_SEND_UI_XML, PHONE_UI_XML))
+    seen: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        seen.append(tuple(command))
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            try:
+                return CommandResult(0, next(ui_outputs), "")
+            except StopIteration:
+                return CommandResult(0, PHONE_UI_XML, "")
+        return CommandResult(0, "ok", "")
+
+    result = smoke.submit_and_verify_command(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        wait_timeout_seconds=5,
+        command=smoke.DEFAULT_PHONE_COMMAND,
+        expected_markers=("VERIFIED", "%", "Battery status matched the local tool contract."),
+        step_name="PHONE command smoke",
+        artifact_prefix="phone-command",
+        output_directory=output_directory,
+    )
+
+    assert result.status is StepStatus.OK
+    assert (str(adb), "-s", SERIAL, "shell", "input", "tap", "630", "755") in seen
+
+
 def test_include_mac_requires_mac_visible_markers(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -725,26 +1071,36 @@ def test_include_mac_can_configure_debug_hub_link_from_local_token_file(
     )
     seen: list[tuple[str, ...]] = []
     submitted_command: str | None = None
+    result_ready: str | None = None
 
     def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
-        nonlocal submitted_command
+        nonlocal result_ready, submitted_command
         seen.append(tuple(command))
         target = target_runner(command)
         if target is not None:
             return target
         if adb_args(command) == ("shell", "input", "text", "check%smy%sbattery%slevel"):
             submitted_command = "phone"
+            result_ready = None
             return CommandResult(0, "ok", "")
         if adb_args(command) == ("shell", "input", "text", "check%smy%sMac%sstatus"):
             submitted_command = "mac"
+            result_ready = None
+            return CommandResult(0, "ok", "")
+        if (
+            adb_args(command)[:3] == ("shell", "input", "tap")
+            and submitted_command is not None
+            and result_ready is None
+        ):
+            result_ready = submitted_command
             return CommandResult(0, "ok", "")
         if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
             try:
                 return CommandResult(0, next(setup_outputs), "")
             except StopIteration:
-                if submitted_command == "mac":
+                if result_ready == "mac":
                     return CommandResult(0, MAC_UI_XML, "")
-                if submitted_command == "phone":
+                if result_ready == "phone":
                     return CommandResult(0, PHONE_UI_XML, "")
                 return CommandResult(0, BASE_UI_XML, "")
         if adb_args(command) == ("shell", "pidof", smoke.PACKAGE_NAME):
@@ -797,6 +1153,12 @@ def test_command_window_requires_markers_after_matching_command() -> None:
         PHONE_UI_XML,
         "check my battery level",
         ("VERIFIED", "Darwin", "mac.system_info output matched the registered schema."),
+    )
+    assert not command_window_contains(
+        PHONE_UI_XML_FRESH_PENDING_THEN_STALE_SUCCESS,
+        "check my battery level",
+        ("VERIFIED", "%", "Battery status matched the local tool contract."),
+        fresh_count=1,
     )
     assert timeline_command_occurrences(PHONE_UI_XML, "check my battery level") == 1
 
