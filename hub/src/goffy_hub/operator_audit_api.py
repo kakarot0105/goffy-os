@@ -8,7 +8,12 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from goffy_hub.auth import PAIRING_ADMIN_SCOPE, AuthenticatedPrincipal, CredentialAuthenticator
+from goffy_hub.auth import (
+    PAIRING_ADMIN_SCOPE,
+    SAFE_TOOL_SCOPE,
+    AuthenticatedPrincipal,
+    CredentialAuthenticator,
+)
 from goffy_hub.operator_audit import OperatorAuditEvent, OperatorAuditLog
 
 
@@ -65,6 +70,30 @@ def build_operator_audit_router(
             events=[_event_response(event) for event in snapshot.events],
         )
 
+    @router.get(
+        "/paired/v1/audit/events",
+        response_model=OperatorAuditListResponse,
+        response_model_by_alias=True,
+    )
+    async def list_paired_operator_audit_events(
+        request: Request,
+        response: Response,
+        limit: int = Query(default=50, ge=1, le=256),
+    ) -> OperatorAuditListResponse:
+        principal = await _require_loopback_paired(request, authenticator)
+        _prevent_caching(response)
+        snapshot = audit_log.snapshot()
+        events = [
+            event
+            for event in snapshot.events
+            if event.credential_id is not None and event.credential_id == principal.credential_id
+        ][:limit]
+        return OperatorAuditListResponse(
+            storage_kind=snapshot.storage_kind,
+            integrity=snapshot.integrity,
+            events=[_event_response(event) for event in events],
+        )
+
     return router
 
 
@@ -78,6 +107,19 @@ async def _require_loopback_admin(
         raise _api_error(401, "authentication_required", "Bootstrap authentication required.")
     if not principal.has_scope(PAIRING_ADMIN_SCOPE):
         raise _api_error(403, "insufficient_scope", "Bootstrap administrator scope required.")
+    return principal
+
+
+async def _require_loopback_paired(
+    request: Request,
+    authenticator: CredentialAuthenticator,
+) -> AuthenticatedPrincipal:
+    _require_loopback(request)
+    principal = await authenticator.authenticate_header(request.headers.get("authorization"))
+    if principal is None:
+        raise _api_error(401, "authentication_required", "Paired authentication required.")
+    if not principal.has_scope(SAFE_TOOL_SCOPE) or principal.credential_id is None:
+        raise _api_error(403, "insufficient_scope", "Paired device scope required.")
     return principal
 
 

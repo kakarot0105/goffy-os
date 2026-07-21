@@ -229,6 +229,16 @@ curl -fsS -H "Authorization: Bearer $GOFFY_HUB_TOKEN" \
   'http://127.0.0.1:8787/admin/v1/audit/events?limit=20'
 ```
 
+Paired phones can retrieve only their own credential-scoped audit events through
+the loopback paired route:
+
+```bash
+curl -fsS -H "Authorization: Bearer $PAIRED_PHONE_TOKEN" \
+  'http://127.0.0.1:8787/paired/v1/audit/events?limit=20'
+```
+
+The paired route does not expose bootstrap-admin events or other phones' events.
+
 Responses are `no-store` and newest-first. The response includes `storageKind`
 and `integrity`; paired mode should report `sqlite` plus `verified`,
 `retention_gap`, or `tamper_detected`. Events contain only sequence, timestamp,

@@ -336,6 +336,46 @@ def test_operator_audit_records_pairing_and_mcp_without_secrets(tmp_path: Path) 
     assert repeated_audit_response.json()["events"] == events
 
 
+def test_paired_operator_audit_returns_only_current_device_events(tmp_path: Path) -> None:
+    with pairing_client(tmp_path) as client:
+        first_id, first_token = pair_device(client, device_id="audit-device-1")
+        second_id, second_token = pair_device(client, device_id="audit-device-2")
+        first_session = initialize_mcp(client, first_token)
+        second_session = initialize_mcp(client, second_token)
+        client.get("/mcp", headers=mcp_session_headers(first_token, first_session))
+        client.get("/mcp", headers=mcp_session_headers(second_token, second_session))
+        missing_auth = client.get("/paired/v1/audit/events")
+        bootstrap_denied = client.get("/paired/v1/audit/events", headers=BOOTSTRAP_HEADERS)
+        first_audit = client.get(
+            "/paired/v1/audit/events?limit=20",
+            headers=paired_headers(first_token),
+        )
+
+    assert missing_auth.status_code == 401
+    assert bootstrap_denied.status_code == 403
+    assert bootstrap_denied.json()["detail"]["code"] == "insufficient_scope"
+    assert first_audit.status_code == 200
+    assert first_audit.headers["cache-control"] == "no-store"
+    assert first_audit.headers["pragma"] == "no-cache"
+    assert first_token not in first_audit.text
+    assert second_token not in first_audit.text
+    assert second_id not in first_audit.text
+    audit = first_audit.json()
+    assert audit["storageKind"] == "sqlite"
+    assert audit["integrity"] == "verified"
+    events = audit["events"]
+    assert events
+    assert all(event["credentialId"] == first_id for event in events)
+    assert ("mcp", "http.get") in {(event["source"], event["action"]) for event in events}
+    assert "bootstrap" not in {event["principalKind"] for event in events}
+    assert any(
+        event["source"] == "mcp"
+        and event["action"] == "http.get"
+        and event["principalKind"] == "paired"
+        for event in events
+    )
+
+
 def test_operator_audit_persists_after_hub_restart(tmp_path: Path) -> None:
     with pairing_client(tmp_path) as client:
         bundle_response = client.post(
