@@ -160,10 +160,17 @@ The descriptor is validated by:
 
 ```bash
 .venv/bin/python scripts/validate_rom_system_app.py
+.venv/bin/python scripts/create_aosp_product_import.py --aosp-root /path/to/aosp --apk /path/to/GoffyOS-signed.apk
 ```
 
 This prepares GOFFY for inclusion in a future AOSP/GSI build tree without
 claiming that the Moto can be flashed yet.
+
+The AOSP import command is a dry-run planner unless both `--execute` and
+`--confirm-aosp-tree-mutation` are supplied. It copies only the reviewed product
+templates and an externally signed `GoffyOS.apk`, refuses the unsigned Gradle
+release artifact by default, and refuses to overwrite different existing AOSP
+files.
 
 ## Source Notes
 

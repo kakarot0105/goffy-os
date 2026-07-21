@@ -18,7 +18,18 @@ Validation:
 
 ```bash
 .venv/bin/python scripts/validate_rom_product_overlay.py
+.venv/bin/python scripts/create_aosp_product_import.py --aosp-root /path/to/aosp --apk /path/to/GoffyOS-signed.apk
 ```
+
+The import command is a plan by default. Execute mode requires
+`--execute --confirm-aosp-tree-mutation`, an existing AOSP root, and an externally
+signed APK. It writes only:
+
+- `device/goffy/goffy_gsi_phone/AndroidProducts.mk`
+- `device/goffy/goffy_gsi_phone/goffy_gsi_phone.mk`
+- `device/goffy/goffy_gsi_phone/goffy_product_packages.mk`
+- `vendor/goffy/apps/GoffyOS/Android.bp`
+- `vendor/goffy/apps/GoffyOS/GoffyOS.apk`
 
 Policy:
 

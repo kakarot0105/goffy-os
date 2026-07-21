@@ -18,3 +18,17 @@ Integration targets:
 - [`product/`](product/) defines starter AOSP product-overlay templates that add
   `GoffyOS` through `PRODUCT_PACKAGES` without unlock, flash, root, platform-key,
   or privileged-permission behavior.
+
+Safe import planning:
+
+```bash
+.venv/bin/python scripts/create_aosp_product_import.py \
+  --aosp-root /path/to/aosp \
+  --apk /path/to/GoffyOS-signed.apk
+```
+
+The command above is dry-run only. To copy the reviewed templates and signed APK
+into an existing AOSP tree, add both `--execute` and
+`--confirm-aosp-tree-mutation`. The importer validates the ROM descriptors first,
+refuses the default unsigned Gradle APK, and will not overwrite different
+existing AOSP files.
