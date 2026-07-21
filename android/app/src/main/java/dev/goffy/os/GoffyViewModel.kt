@@ -41,6 +41,7 @@ import dev.goffy.os.localmodel.LocalModelRuntimeSettingsSaveResult
 import dev.goffy.os.localmodel.LocalModelRuntimeSettingsStore
 import dev.goffy.os.localmodel.LocalModelRuntimeState
 import dev.goffy.os.localmodel.LocalModelRuntimeStatus
+import dev.goffy.os.localmodel.MicroIntentLocalModelFallback
 import dev.goffy.os.localmodel.MutableLocalModelRuntimeSettingsSource
 import dev.goffy.os.ocr.OcrTextSummarizer
 import dev.goffy.os.phone.AndroidBatteryStatusSource
@@ -147,6 +148,10 @@ class GoffyViewModel internal constructor(
         localModelRuntimeProvider = dependencies.localModelRuntimeProvider,
         localModelControlsAvailable = dependencies.localModelControlsAvailable,
         localModelObservationExecutionAvailable = dependencies.localModelObservationExecutionAvailable,
+        localModelFallback = dependencies.localModelFallback,
+        localModelStatus = LocalModelRuntimeStatus.disabled(
+            "LiteRT-LM runtime is off; micro intent fallback can provide non-executable hints.",
+        ),
     )
 
     private val mutableUiState = MutableStateFlow(
@@ -1333,6 +1338,7 @@ private data class AndroidGoffyDependencies(
     val localModelRuntimeProvider: LocalModelRuntimeProvider?,
     val localModelControlsAvailable: Boolean,
     val localModelObservationExecutionAvailable: Boolean,
+    val localModelFallback: LocalModelIntentFallback,
 )
 
 private sealed interface LocalModelObservationStart {
@@ -1360,5 +1366,6 @@ private fun createAndroidGoffyDependencies(context: Context): AndroidGoffyDepend
         localModelControlsAvailable =
             BuildConfig.GOFFY_LOCAL_MODEL_DEVELOPER_RUNTIME_ALLOWED && localModelRuntimeProvider != null,
         localModelObservationExecutionAvailable = localModelRuntimeProvider != null,
+        localModelFallback = MicroIntentLocalModelFallback,
     )
 }

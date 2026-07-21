@@ -70,6 +70,8 @@ the capability boundary.
 - Exact-task, exact-arguments, expiring, single-use phone approval grants
 - Disabled-by-default local-model intent fallback boundary for unsupported
   commands, with deterministic routes still authoritative
+- Zero-dependency GOFFY LITE micro intent fallback for bounded unsupported
+  commands; it suggests PHONE, MAC, or CLOUD as a non-executable timeline hint
 - Fail-closed local-model runtime gate with at-use rechecks and visible status
   rail; no model loads in GOFFY LITE
 - Optional `modelDebug` LiteRT-LM provider compile path behind the async

@@ -88,6 +88,7 @@
 - [x] Foreground `phone.ocr.read` Latin text scanner with bounded/redacted timeline output
 - [x] Physical Moto G battery-status verification
 - [x] Disabled-by-default local-model intent fallback safety boundary
+- [x] Zero-dependency GOFFY LITE micro intent fallback for non-executable PHONE/MAC/CLOUD hints
 - [x] LiteRT-LM Android dependency compatibility probe before runtime wiring
 - [x] Benchmark-only Moto G LiteRT-LM instrumentation harness
 - [x] Moto G local-model runtime benchmark for one tiny text model

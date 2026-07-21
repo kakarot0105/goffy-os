@@ -55,6 +55,27 @@ Rules:
 - A passing output creates only `LocalModelIntentObservation.Candidate`; it
   does not create a `GoffyExecutionPlan` and cannot approve any action.
 
+## Micro Intent Fallback
+
+GOFFY LITE now includes a zero-dependency micro intent fallback for unsupported
+commands. It is not an LLM, does not load a model file, does not use camera,
+microphone, files, clipboard, network, or notifications, and does not execute
+tools. It only scores bounded local command text against small PHONE, MAC, and
+CLOUD vocabularies, then returns a non-authoritative
+`LocalModelIntentObservation.Candidate`.
+
+The micro fallback exists because physical Moto G `modelDebug` evidence showed
+LiteRT-LM observation was safe but too slow and memory-heavy for production
+default routing hints. The micro fallback keeps GOFFY useful offline while the
+heavier runtime remains benchmark-only. Risky unsupported commands such as
+delete, wipe, credentials, or install language are rejected instead of converted
+into route hints, and ties across targets fail closed as ambiguous.
+
+Deterministic routes remain the only executable authority. A micro fallback
+candidate changes only the failed unsupported-command timeline summary, for
+example `Local model suggested MAC, but GOFFY needs a deterministic route before
+execution`.
+
 ## Runtime Adapter Boundary
 
 The disabled runtime adapter boundary is implemented as a bridge from generated
@@ -202,11 +223,21 @@ acceptance verifier still defaults to 15 seconds unless explicitly overridden.
 
 ## Reuse-First Scan
 
-Checked on 2026-07-20:
+Checked on 2026-07-20 and refreshed on 2026-07-21:
 
 - LiteRT-LM: Apache-2.0, current Google AI Edge path for Android/Kotlin local
   LLMs. Preferred runtime candidate after benchmarking because it is the current
   maintained Google path and has Android/Kotlin API coverage.
+- TensorFlow Lite / LiteRT text classification examples and Task Library:
+  Apache-2.0 prior art for on-device text classification. Not imported for the
+  micro fallback because this slice needs no model asset, training pipeline, or
+  added default runtime dependency.
+- fastText: MIT, mature lightweight text-classification prior art. Not imported
+  into Android because the repository is archived/read-only, would add native
+  integration surface, and still requires a trained model artifact.
+- SentencePiece: Apache-2.0 tokenizer prior art. Not imported because it is a
+  tokenizer rather than a complete intent classifier and would add native
+  dependency surface before a trained local classifier is justified.
 - Android Preferences DataStore and Compose settings libraries: not added for
   this slice because the runtime setting state is one non-sensitive app-private
   boolean and adding a new default dependency would increase GOFFY LITE footprint.
@@ -234,8 +265,14 @@ Checked on 2026-07-20:
 Sources:
 
 - https://developers.google.com/edge/litert-lm/overview
+- https://developers.google.com/edge/litert/libraries/modify/text_classification
 - https://developers.google.com/edge/mediapipe/solutions/genai/llm_inference/android
 - https://github.com/google-ai-edge/LiteRT-LM
+- https://github.com/tensorflow/examples/blob/master/lite/examples/text_classification/android/README.md
+- https://github.com/tensorflow/tflite-support
+- https://github.com/facebookresearch/fastText
+- https://fasttext.cc/
+- https://github.com/google/sentencepiece
 - https://github.com/ggml-org/llama.cpp
 - https://developer.android.com/topic/libraries/architecture/datastore
 - https://developer.android.com/training/data-storage/shared-preferences

@@ -52,6 +52,51 @@ class LocalModelIntentBoundaryTest {
     }
 
     @Test
+    fun microIntentFallbackSuggestsPhoneWithoutExecutionAuthority() {
+        val observation = MicroIntentLocalModelFallback.observeUnsupportedCommand("set a timer for tea")
+
+        assertTrue(observation is LocalModelIntentObservation.Candidate)
+        val candidate = (observation as LocalModelIntentObservation.Candidate).candidate
+        assertEquals("PHONE", candidate.intentLabel)
+        assertEquals("set a timer for tea", candidate.normalizedCommand)
+        assertTrue(candidate.confidence >= 0.70f)
+    }
+
+    @Test
+    fun microIntentFallbackSuggestsMacForDevelopmentWork() {
+        val observation = MicroIntentLocalModelFallback.observeUnsupportedCommand(
+            "open my project and run tests",
+        )
+
+        assertTrue(observation is LocalModelIntentObservation.Candidate)
+        val candidate = (observation as LocalModelIntentObservation.Candidate).candidate
+        assertEquals("MAC", candidate.intentLabel)
+        assertEquals("Matched Mac Hub capability language.", candidate.rationale)
+    }
+
+    @Test
+    fun microIntentFallbackSuggestsCloudForCurrentExternalResearch() {
+        val observation = MicroIntentLocalModelFallback.observeUnsupportedCommand(
+            "search the web for latest github api news",
+        )
+
+        assertTrue(observation is LocalModelIntentObservation.Candidate)
+        val candidate = (observation as LocalModelIntentObservation.Candidate).candidate
+        assertEquals("CLOUD", candidate.intentLabel)
+    }
+
+    @Test
+    fun microIntentFallbackRejectsRiskyOrAmbiguousUnsupportedCommands() {
+        val risky = MicroIntentLocalModelFallback.observeUnsupportedCommand("delete every file on my Mac")
+        val ambiguous = MicroIntentLocalModelFallback.observeUnsupportedCommand(
+            "use my phone and mac online",
+        )
+
+        assertTrue(risky is LocalModelIntentObservation.Rejected)
+        assertTrue(ambiguous is LocalModelIntentObservation.Rejected)
+    }
+
+    @Test
     fun promptCandidatesAreBoundedForMotoFallbackUse() {
         assertTrue(isSafeLocalModelPrompt("open settings"))
         assertEquals(false, isSafeLocalModelPrompt(""))
