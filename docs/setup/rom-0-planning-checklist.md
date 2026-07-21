@@ -22,6 +22,7 @@ The connected phone has been observed as:
 - DSU package: `true`
 - DSU `START_INSTALL` activity: `true`
 - Bootloader state: locked
+- OEM unlock support properties: unavailable from the read-only probe
 
 The current ROM status is blocked until bootloader eligibility and stock restore
 are proven.

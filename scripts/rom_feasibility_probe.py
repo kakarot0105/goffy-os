@@ -422,6 +422,8 @@ def classify_rom_path(
     verified_state = properties.get("ro.boot.verifiedbootstate", "")
     treble_enabled = properties.get("ro.treble.enabled", "")
     dynamic_partitions = properties.get("ro.boot.dynamic_partitions", "")
+    oem_unlock_supported = properties.get("ro.oem_unlock_supported", "")
+    oem_unlock_allowed = properties.get("sys.oem_unlock_allowed", "")
     sdk = int_or_none(properties.get("ro.build.version.sdk", ""))
     locked_bootloader = flash_locked == "1" or vbmeta_state == "locked"
 
@@ -439,6 +441,17 @@ def classify_rom_path(
         )
     else:
         warnings.append("bootloader lock state is unknown from allowlisted properties")
+
+    if oem_unlock_supported == "0" or oem_unlock_allowed == "0":
+        warnings.append(
+            "OEM unlock properties do not currently show unlock allowance; record manual "
+            "Motorola eligibility evidence before ROM work"
+        )
+    if not oem_unlock_supported or not oem_unlock_allowed:
+        warnings.append(
+            "OEM unlock support properties are unavailable; record manual Developer options "
+            "and Motorola eligibility evidence"
+        )
 
     if verified_state and verified_state != "green":
         warnings.append(f"verified boot state is {verified_state}; document before ROM work")

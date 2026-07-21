@@ -94,7 +94,52 @@ def test_probe_reports_locked_bootloader_without_serial(monkeypatch, tmp_path: P
     assert report.dsu["package_present"] == "true"
     assert report.dsu["start_install_activity"] == "com.android.dynsystem/.VerificationActivity"
     assert "bootloader is currently locked" in report.blockers[0]
+    assert any("OEM unlock support properties are unavailable" in item for item in report.warnings)
     assert SERIAL not in payload
+
+
+def test_probe_warns_when_oem_unlock_properties_disallow_unlock(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(probe, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+    props = dict(LOCKED_PROPS)
+    props["ro.oem_unlock_supported"] = "1"
+    props["sys.oem_unlock_allowed"] = "0"
+
+    report = build_report(root=tmp_path, runner=runner_for(props))
+
+    assert any("do not currently show unlock allowance" in item for item in report.warnings)
+
+
+def test_probe_warns_when_oem_unlock_support_property_disallows_unlock(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(probe, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+    props = dict(LOCKED_PROPS)
+    props["ro.oem_unlock_supported"] = "0"
+    props["sys.oem_unlock_allowed"] = "1"
+
+    report = build_report(root=tmp_path, runner=runner_for(props))
+
+    assert any("do not currently show unlock allowance" in item for item in report.warnings)
+    assert not any("support properties are unavailable" in item for item in report.warnings)
+
+
+def test_probe_warns_when_oem_unlock_evidence_is_partial(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(probe, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+    for supported, allowed in (("1", ""), ("", "1")):
+        props = dict(LOCKED_PROPS)
+        props["ro.oem_unlock_supported"] = supported
+        props["sys.oem_unlock_allowed"] = allowed
+
+        report = build_report(root=tmp_path, runner=runner_for(props))
+
+        assert any("support properties are unavailable" in item for item in report.warnings)
 
 
 def test_probe_reports_gsi_first_after_unlock(monkeypatch, tmp_path: Path) -> None:

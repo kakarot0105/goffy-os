@@ -24,6 +24,8 @@ Read-only ADB evidence from the connected phone:
 - DSU package: `true`
 - DSU `START_INSTALL` activity: `true`
 - Verified boot: `green`
+- OEM unlock properties: `ro.oem_unlock_supported` blank,
+  `sys.oem_unlock_allowed` blank
 - Bootloader: `ro.boot.flash.locked=1`,
   `ro.boot.vbmeta.device_state=locked`
 
@@ -66,6 +68,8 @@ The phone is currently locked:
 - `ro.boot.flash.locked=1`
 - `ro.boot.vbmeta.device_state=locked`
 - `ro.boot.verifiedbootstate=green`
+- `ro.oem_unlock_supported` and `sys.oem_unlock_allowed` are currently blank
+  in the read-only probe, so they do not prove eligibility.
 
 Do not flash, root, boot custom images, patch boot/init_boot, or run exploit
 tools while this remains true.
