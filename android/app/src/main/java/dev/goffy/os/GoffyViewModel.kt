@@ -56,6 +56,7 @@ import dev.goffy.os.qr.QrPayloadSummarizer
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GoffyProtocolCodec
+import dev.goffy.os.protocol.MacAppsOpenArguments
 import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
@@ -176,7 +177,7 @@ class GoffyViewModel internal constructor(
     private var operatorAuditJob: Job? = null
     private var localModelSettingsJob: Job? = null
     private var linkRevision = 0L
-    private var pendingExecution: PendingPhoneExecution? = null
+    private var pendingExecution: PendingExecution? = null
     private var approvalExpiryJob: Job? = null
 
     init {
@@ -738,8 +739,24 @@ class GoffyViewModel internal constructor(
                     )
                     return
                 }
-                val request = codec.createToolInvocation(deviceId, plan.toolName, plan.arguments)
-                executeTask(request.messageId, plan, gateway.invoke(config, request))
+                when (plan.permission) {
+                    PermissionLevel.SAFE -> {
+                        val request = codec.createToolInvocation(
+                            deviceId,
+                            plan.toolName,
+                            plan.arguments,
+                        )
+                        executeTask(request.messageId, plan, gateway.invoke(config, request))
+                    }
+                    PermissionLevel.CONFIRM -> requestApproval(nextTaskId(), plan, config)
+                    PermissionLevel.SENSITIVE,
+                    PermissionLevel.BLOCKED,
+                    -> mutableUiState.value = mutableUiState.value.rejectPlan(
+                        plan,
+                        "This Mac action is blocked in the current security policy",
+                        nowMillis(),
+                    )
+                }
             }
             ExecutionTarget.CLOUD -> mutableUiState.value = mutableUiState.value.rejectPlan(
                 plan,
@@ -1058,7 +1075,7 @@ class GoffyViewModel internal constructor(
                 plan,
                 phoneGateway.invoke(taskId, plan, PhoneToolAuthorization.Safe),
             )
-            PermissionLevel.CONFIRM -> requestPhoneApproval(taskId, plan)
+            PermissionLevel.CONFIRM -> requestApproval(taskId, plan, hubConfig = null)
             PermissionLevel.SENSITIVE,
             PermissionLevel.BLOCKED,
             -> mutableUiState.value = mutableUiState.value.rejectPlan(
@@ -1069,12 +1086,12 @@ class GoffyViewModel internal constructor(
         }
     }
 
-    private fun requestPhoneApproval(taskId: UUID, plan: GoffyExecutionPlan) {
+    private fun requestApproval(taskId: UUID, plan: GoffyExecutionPlan, hubConfig: HubConfig?) {
         val description = plan.approvalDescription()
         if (description == null) {
             mutableUiState.value = mutableUiState.value.rejectPlan(
                 plan,
-                "The confirmation request did not match a typed phone tool",
+                "The confirmation request did not match a typed tool",
                 nowMillis(),
             )
             return
@@ -1090,7 +1107,7 @@ class GoffyViewModel internal constructor(
         mutableUiState.value = mutableUiState.value
             .startTask(taskId, plan)
             .awaitApproval(approval, nowMillis())
-        pendingExecution = PendingPhoneExecution(taskId, plan, expiresAt)
+        pendingExecution = PendingExecution(taskId, plan, expiresAt, hubConfig)
         approvalExpiryJob = viewModelScope.launch {
             delay(approvalTtlMillis)
             expirePendingApproval(taskId)
@@ -1106,6 +1123,9 @@ class GoffyViewModel internal constructor(
         is PhoneFlashlightSetArguments ->
             "Approve turning ${if (value.enabled) "on" else "off"} the back-camera flashlight. " +
                 "GOFFY will not open the camera or capture images."
+        is MacAppsOpenArguments ->
+            "Approve opening ${value.displayName.take(APPROVAL_PREVIEW_LENGTH)} on your Mac. " +
+                "GOFFY will use only an approved bundle identifier and will not open files."
         else -> null
     }
 
@@ -1161,19 +1181,55 @@ class GoffyViewModel internal constructor(
         approvalExpiryJob?.cancel()
         approvalExpiryJob = null
         mutableUiState.value = mutableUiState.value.grantApproval(taskId, nowMillis())
-        collectTask(
-            taskId,
-            phoneGateway.invoke(
+        when (pending.plan.executionTarget) {
+            ExecutionTarget.PHONE -> collectTask(
                 taskId,
-                pending.plan,
-                PhoneToolAuthorization.Approved(
+                phoneGateway.invoke(
                     taskId,
+                    pending.plan,
+                    PhoneToolAuthorization.Approved(
+                        taskId,
+                        pending.plan.toolName,
+                        pending.plan.arguments,
+                        pending.expiresAtEpochMillis,
+                    ),
+                ),
+            )
+            ExecutionTarget.MAC -> {
+                val config = pending.hubConfig
+                if (config == null) {
+                    mutableUiState.value = mutableUiState.value.applyTaskEvent(
+                        taskId,
+                        ExecutionEvent.Error(
+                            code = "hub_link_missing",
+                            message = "Mac approval could not be bound to a Hub link",
+                            retryable = false,
+                        ),
+                        nowMillis(),
+                    )
+                    return false
+                }
+                val request = codec.createToolInvocation(
+                    deviceId,
                     pending.plan.toolName,
                     pending.plan.arguments,
-                    pending.expiresAtEpochMillis,
-                ),
-            ),
-        )
+                    expiresAtEpochMillis = pending.expiresAtEpochMillis,
+                )
+                collectTask(taskId, gateway.invoke(config, request))
+            }
+            ExecutionTarget.CLOUD -> {
+                mutableUiState.value = mutableUiState.value.applyTaskEvent(
+                    taskId,
+                    ExecutionEvent.Error(
+                        code = "cloud_unavailable",
+                        message = "Cloud execution is not available in this build",
+                        retryable = false,
+                    ),
+                    nowMillis(),
+                )
+                return false
+            }
+        }
         return true
     }
 
@@ -1185,7 +1241,7 @@ class GoffyViewModel internal constructor(
         approvalExpiryJob = null
         mutableUiState.value = mutableUiState.value.denyApproval(
             taskId,
-            "Approval denied; no phone tool was invoked",
+            "Approval denied; no tool was invoked",
             nowMillis(),
         )
         return true
@@ -1262,7 +1318,7 @@ class GoffyViewModel internal constructor(
             approvalExpiryJob = null
             mutableUiState.value = mutableUiState.value.denyApproval(
                 pending.taskId,
-                "Approval cancelled; no phone tool was invoked",
+                "Approval cancelled; no tool was invoked",
                 nowMillis(),
             )
             return
@@ -1308,10 +1364,11 @@ class GoffyViewModel internal constructor(
         const val OCR_READ_COMMAND = "Read foreground text"
     }
 
-    private data class PendingPhoneExecution(
+    private data class PendingExecution(
         val taskId: UUID,
         val plan: GoffyExecutionPlan,
         val expiresAtEpochMillis: Long,
+        val hubConfig: HubConfig?,
     )
 
     private object NoOpTerminalAuditStore : TerminalAuditStore {

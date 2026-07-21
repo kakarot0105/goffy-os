@@ -226,7 +226,9 @@ def test_security_scan_rejects_generated_pairing_qr_artifact(tmp_path: Path) -> 
 
 
 def test_subprocess_exception_is_limited_to_git_status_tool_shape() -> None:
-    git_status_file = next(iter(ALLOWED_SUBPROCESS_FILES))
+    git_status_file = next(
+        path for path in ALLOWED_SUBPROCESS_FILES if path.name == "git_status.py"
+    )
     generic_file = git_status_file.with_name("other_tool.py")
     source = git_status_file.read_text(encoding="utf-8")
     git_status_location = git_status_file.relative_to(git_status_file.parents[4])
@@ -239,7 +241,78 @@ def test_subprocess_exception_is_limited_to_git_status_tool_shape() -> None:
     assert validate_allowed_subprocess_usage(
         git_status_file,
         source.replace("timeout=timeout_seconds,", "timeout=timeout_seconds, shell=True,", 1),
-    ) == [f"{git_status_location}: subprocess.run shape does not match git.status policy"]
+    ) == [f"{git_status_location}: subprocess.run shape does not match allowlisted policy"]
     assert "subprocess API" in prohibited_source_patterns(git_status_file)
     assert "subprocess API" in prohibited_source_patterns(generic_file)
     assert "shell execution" in prohibited_source_patterns(git_status_file)
+
+
+def test_subprocess_exception_is_limited_to_mac_app_open_tool_shape() -> None:
+    mac_apps_file = next(path for path in ALLOWED_SUBPROCESS_FILES if path.name == "mac_apps.py")
+    source = mac_apps_file.read_text(encoding="utf-8")
+    location = mac_apps_file.relative_to(mac_apps_file.parents[4])
+
+    assert validate_allowed_subprocess_usage(mac_apps_file, source) == []
+    assert validate_allowed_subprocess_usage(
+        mac_apps_file,
+        source.replace(
+            'OSASCRIPT_EXECUTABLE = "/usr/bin/osascript"',
+            'OSASCRIPT_EXECUTABLE = "/bin/sh"',
+            1,
+        ),
+    ) == [f"{location}: subprocess.run shape does not match allowlisted policy"]
+    assert validate_allowed_subprocess_usage(
+        mac_apps_file,
+        source.replace(
+            "f'application id \"{bundle_id}\" is running'",
+            "f'do shell script \"{bundle_id}\"'",
+            1,
+        ),
+    ) == [f"{location}: subprocess.run shape does not match allowlisted policy"]
+    assert validate_allowed_subprocess_usage(
+        mac_apps_file,
+        source.replace("timeout=timeout_seconds,", "timeout=1.0,", 1),
+    ) == [f"{location}: subprocess.run shape does not match allowlisted policy"]
+    assert validate_allowed_subprocess_usage(
+        mac_apps_file,
+        source.replace("import subprocess", "import subprocess as sp", 1).replace(
+            "subprocess.run(",
+            "sp.run(",
+            1,
+        ),
+    ) == [
+        f"{location}: indirect subprocess call is not allowed",
+        f"{location}: subprocess import aliases are not allowed",
+    ]
+    assert validate_allowed_subprocess_usage(
+        mac_apps_file,
+        source.replace(
+            "return subprocess.run(",
+            "runner = subprocess.run\n    return runner(",
+            1,
+        ),
+    ) == [f"{location}: subprocess binding is not allowed"]
+    assert validate_allowed_subprocess_usage(
+        mac_apps_file,
+        source.replace(
+            "return subprocess.run(",
+            'return getattr(subprocess, "run")(',
+            1,
+        ),
+    ) == [f"{location}: indirect subprocess call is not allowed"]
+    assert validate_allowed_subprocess_usage(
+        mac_apps_file,
+        source.replace(
+            "import subprocess",
+            'import subprocess\nsubprocess.run = getattr(__import__("os"), "spawnv")',
+            1,
+        ),
+    ) == [f"{location}: subprocess binding is not allowed"]
+    assert validate_allowed_subprocess_usage(
+        mac_apps_file,
+        source.replace(
+            "import subprocess",
+            "import subprocess\nsubprocess.TimeoutExpired = Exception",
+            1,
+        ),
+    ) == [f"{location}: subprocess binding is not allowed"]

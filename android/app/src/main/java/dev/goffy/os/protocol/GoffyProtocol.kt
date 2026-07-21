@@ -24,6 +24,7 @@ const val MAC_FILES_LIST_TOOL_VERSION = "1.0.0"
 const val MAC_CLIPBOARD_READ_TOOL_VERSION = "1.0.0"
 const val MAC_PROCESSES_LIST_TOOL_VERSION = "1.0.0"
 const val MAC_APPS_LIST_TOOL_VERSION = "1.0.0"
+const val MAC_APPS_OPEN_TOOL_VERSION = "1.0.0"
 const val GIT_STATUS_TOOL_VERSION = "1.0.0"
 const val MAX_PROTOCOL_MESSAGE_BYTES = 32_768
 
@@ -61,6 +62,7 @@ data class ToolInvocationRequest(
     val encodedMessage: String,
     val discoveryMessageId: UUID,
     val encodedDiscoveryMessage: String,
+    val expiresAtEpochMillis: Long? = null,
 )
 
 data class DiscoveredToolCapability(
@@ -97,6 +99,10 @@ data class MacProcessesListArguments(
 
 data class MacAppsListArguments(
     val maxEntries: Int = DEFAULT_MAC_APP_ENTRIES,
+) : ToolArguments
+
+data class MacAppsOpenArguments(
+    val displayName: String,
 ) : ToolArguments
 
 data class MacFilesListArguments(
@@ -166,6 +172,13 @@ data class MacAppsList(
     val appCount: Int,
     val truncated: Boolean,
     val entries: List<MacAppCatalogEntry>,
+) : ToolResultContent
+
+data class MacAppOpened(
+    val status: String,
+    val displayName: String,
+    val bundleId: String,
+    val verified: Boolean,
 ) : ToolResultContent
 
 data class MacFilesApprovedRoot(
@@ -359,9 +372,13 @@ class GoffyProtocolCodec(
         deviceId: String,
         toolName: String,
         arguments: ToolArguments = NoToolArguments,
+        expiresAtEpochMillis: Long? = null,
     ): ToolInvocationRequest {
         requireBounded("deviceId", deviceId, 1, 128)
         requireToolName(toolName)
+        if (expiresAtEpochMillis != null && expiresAtEpochMillis <= 0L) {
+            throw ProtocolException("invocation deadline must be positive")
+        }
         val encodedArguments = encodeToolArguments(toolName, arguments)
         val messageId = nextMessageId()
         val discoveryMessageId = nextMessageId()
@@ -391,6 +408,7 @@ class GoffyProtocolCodec(
             encodedMessage = encodedMessage,
             discoveryMessageId = discoveryMessageId,
             encodedDiscoveryMessage = encodedDiscoveryMessage,
+            expiresAtEpochMillis = expiresAtEpochMillis,
         )
     }
 
@@ -416,6 +434,16 @@ class GoffyProtocolCodec(
                 }
                 buildJsonObject {
                     put("maxEntries", value.maxEntries)
+                }
+            }
+            MAC_APPS_OPEN_TOOL -> {
+                val value = arguments as? MacAppsOpenArguments
+                    ?: throw ProtocolException("mac.apps.open requires typed arguments")
+                if (!value.matchesToolContract()) {
+                    throw ProtocolException("mac.apps.open arguments failed local policy")
+                }
+                buildJsonObject {
+                    put("displayName", value.displayName)
                 }
             }
             MAC_PROCESSES_LIST_TOOL -> {
@@ -600,6 +628,10 @@ class GoffyProtocolCodec(
                 validateMacAppsListInputSchema(tool.requireObject("inputSchema"))
                 validateMacAppsListOutputSchema(tool.requireObject("outputSchema"))
             }
+            MAC_APPS_OPEN_TOOL -> {
+                validateMacAppsOpenInputSchema(tool.requireObject("inputSchema"))
+                validateMacAppsOpenOutputSchema(tool.requireObject("outputSchema"))
+            }
             MAC_PROCESSES_LIST_TOOL -> {
                 validateMacProcessesListInputSchema(tool.requireObject("inputSchema"))
                 validateMacProcessesListOutputSchema(tool.requireObject("outputSchema"))
@@ -610,8 +642,6 @@ class GoffyProtocolCodec(
             }
             else -> throw ProtocolException("unsupported discovered tool")
         }
-        validateSafeReadOnlyAnnotations(tool.requireObject("annotations"))
-
         val metadata = tool.requireObject("_meta")
         metadata.requireKeys(GOFFY_METADATA_KEYS)
         val toolVersion = metadata.requireString("dev.goffy/toolVersion")
@@ -622,6 +652,7 @@ class GoffyProtocolCodec(
             MAC_CLIPBOARD_READ_TOOL -> MAC_CLIPBOARD_READ_TOOL_VERSION
             MAC_PROCESSES_LIST_TOOL -> MAC_PROCESSES_LIST_TOOL_VERSION
             MAC_APPS_LIST_TOOL -> MAC_APPS_LIST_TOOL_VERSION
+            MAC_APPS_OPEN_TOOL -> MAC_APPS_OPEN_TOOL_VERSION
             GIT_STATUS_TOOL -> GIT_STATUS_TOOL_VERSION
             else -> throw ProtocolException("unsupported discovered tool")
         }
@@ -633,9 +664,14 @@ class GoffyProtocolCodec(
             throw ProtocolException("discovered tool has an unexpected execution target")
         }
         val permission = metadata.requireString("dev.goffy/permission")
-        if (permission != "SAFE") {
+        val expectedPermission = when (toolName) {
+            MAC_APPS_OPEN_TOOL -> "CONFIRM"
+            else -> "SAFE"
+        }
+        if (permission != expectedPermission) {
             throw ProtocolException("discovered tool has an unexpected permission")
         }
+        validateToolAnnotations(tool.requireObject("annotations"), expectedPermission)
         val timeoutMillis = metadata.requireInt("dev.goffy/timeoutMs")
         if (timeoutMillis !in 1..MAX_DISCOVERED_TIMEOUT_MILLIS) {
             throw ProtocolException("discovered tool timeout is outside the client policy")
@@ -1046,6 +1082,49 @@ class GoffyProtocolCodec(
         )
     }
 
+    private fun validateMacAppsOpenInputSchema(schema: JsonObject) {
+        schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS + "required")
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(MAC_APPS_OPEN_INPUT_KEYS)
+        schema.requireArray("required").requireExactStrings(
+            MAC_APPS_OPEN_INPUT_KEYS,
+            "app open input required",
+        )
+        properties.requireObject("displayName").validateBoundedStringSchema(
+            "displayName",
+            1,
+            MAX_MAC_APP_DISPLAY_NAME_LENGTH,
+        )
+    }
+
+    private fun validateMacAppsOpenOutputSchema(schema: JsonObject) {
+        schema.requireKeys(OUTPUT_SCHEMA_KEYS)
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(MAC_APPS_OPEN_OUTPUT_KEYS)
+        schema.requireArray("required").requireExactStrings(
+            MAC_APPS_OPEN_OUTPUT_KEYS,
+            "app open required",
+        )
+        properties.requireObject("status").validateBoundedStringSchema(
+            "status",
+            1,
+            MAX_MAC_APP_STATUS_LENGTH,
+        )
+        properties.requireObject("displayName").validateBoundedStringSchema(
+            "displayName",
+            1,
+            MAX_MAC_APP_DISPLAY_NAME_LENGTH,
+        )
+        properties.requireObject("bundleId").validateBoundedStringSchema(
+            "bundleId",
+            1,
+            MAX_MAC_APP_BUNDLE_ID_LENGTH,
+        )
+        properties.requireObject("verified").requireTypeOnly("boolean")
+    }
+
     private fun validateMacProcessesListInputSchema(schema: JsonObject) {
         schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS)
         validateObjectSchemaRoot(schema)
@@ -1312,13 +1391,21 @@ class GoffyProtocolCodec(
     private fun JsonObject.isObjectSchemaRoot(): Boolean =
         requireString("type") == "object" && !requireBoolean("additionalProperties")
 
-    private fun validateSafeReadOnlyAnnotations(annotations: JsonObject) {
+    private fun validateToolAnnotations(
+        annotations: JsonObject,
+        expectedPermission: String,
+    ) {
         annotations.requireKeys(ANNOTATION_KEYS)
-        if (!annotations.requireBoolean("readOnlyHint") ||
-            annotations.requireBoolean("destructiveHint") ||
-            !annotations.requireBoolean("idempotentHint") ||
-            annotations.requireBoolean("openWorldHint")
-        ) {
+        val readOnly = annotations.requireBoolean("readOnlyHint")
+        val destructive = annotations.requireBoolean("destructiveHint")
+        val idempotent = annotations.requireBoolean("idempotentHint")
+        val openWorld = annotations.requireBoolean("openWorldHint")
+        val compatible = when (expectedPermission) {
+            "SAFE" -> readOnly && !destructive && idempotent && !openWorld
+            "CONFIRM" -> !readOnly && !destructive && !idempotent && !openWorld
+            else -> false
+        }
+        if (!compatible) {
             throw ProtocolException("tool annotations are incompatible with the local policy")
         }
     }
@@ -1385,6 +1472,12 @@ class GoffyProtocolCodec(
                     throw ProtocolException("mac.apps.list returned an unexpected execution target")
                 }
                 decodeMacAppsList(content)
+            }
+            MAC_APPS_OPEN_TOOL -> {
+                if (target != ExecutionTarget.MAC) {
+                    throw ProtocolException("mac.apps.open returned an unexpected execution target")
+                }
+                decodeMacAppsOpen(content)
             }
             MAC_PROCESSES_LIST_TOOL -> {
                 if (target != ExecutionTarget.MAC) {
@@ -1662,6 +1755,28 @@ class GoffyProtocolCodec(
         )
         if (!result.matchesToolContract()) {
             throw ProtocolException("app list result failed local policy")
+        }
+        return result
+    }
+
+    private fun decodeMacAppsOpen(content: JsonObject): MacAppOpened {
+        content.requireKeys(MAC_APPS_OPEN_OUTPUT_KEYS)
+        val result = MacAppOpened(
+            status = content.requireBoundedString("status", 1, MAX_MAC_APP_STATUS_LENGTH),
+            displayName = content.requireBoundedString(
+                "displayName",
+                1,
+                MAX_MAC_APP_DISPLAY_NAME_LENGTH,
+            ),
+            bundleId = content.requireBoundedString(
+                "bundleId",
+                1,
+                MAX_MAC_APP_BUNDLE_ID_LENGTH,
+            ),
+            verified = content.requireBoolean("verified"),
+        )
+        if (!result.matchesToolContract()) {
+            throw ProtocolException("app open result failed local policy")
         }
         return result
     }
@@ -2123,6 +2238,13 @@ private val MAC_APPS_LIST_OUTPUT_KEYS = setOf(
     "appCount",
     "truncated",
     "entries",
+)
+private val MAC_APPS_OPEN_INPUT_KEYS = setOf("displayName")
+private val MAC_APPS_OPEN_OUTPUT_KEYS = setOf(
+    "status",
+    "displayName",
+    "bundleId",
+    "verified",
 )
 private val MAC_APP_CATALOG_ENTRY_KEYS = setOf(
     "appIndex",

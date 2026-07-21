@@ -4,8 +4,10 @@ import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.MacAppOpened
 import dev.goffy.os.protocol.MacAppsList
 import dev.goffy.os.protocol.MAC_APPS_LIST_TOOL
+import dev.goffy.os.protocol.MAC_APPS_OPEN_TOOL
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
@@ -304,7 +306,7 @@ data class TaskTimelineState(
         ) {
             current.copy(
                 phase = TaskPhase.ROUTING,
-                summary = "Approved once; preparing local execution",
+                summary = "Approved once; preparing execution",
                 approvalGranted = true,
             ).withEvent(TaskEventKind.AUTHORIZE, "User approved one execution")
         } else {
@@ -339,7 +341,7 @@ data class TaskTimelineState(
         if (index < 0) return copy(activeTaskId = null)
         val current = entries[index]
         if (current.phase != TaskPhase.AWAITING_APPROVAL) return this
-        val summary = "Approval expired; no phone tool was invoked"
+        val summary = "Approval expired; no tool was invoked"
         val updated = current.copy(
             phase = TaskPhase.FAILED,
             summary = summary,
@@ -512,6 +514,11 @@ data class TaskTimelineState(
         MAC_APPS_LIST_TOOL -> executionTarget == ExecutionTarget.MAC &&
             content is MacAppsList &&
             content.matchesToolContract()
+        MAC_APPS_OPEN_TOOL -> executionTarget == ExecutionTarget.MAC &&
+            permission == PermissionLevel.CONFIRM &&
+            approvalGranted &&
+            content is MacAppOpened &&
+            content.matchesToolContract()
         MAC_FILES_LARGEST_TOOL -> executionTarget == ExecutionTarget.MAC &&
             content is MacFilesLargest &&
             content.matchesToolContract()
@@ -587,7 +594,7 @@ data class TaskTimelineState(
 
     private fun TaskTimelineEntry.cancellationSummary(): String =
         if (phase == TaskPhase.AWAITING_APPROVAL) {
-            "Approval cancelled; no phone tool was invoked"
+            "Approval cancelled; no tool was invoked"
         } else if (permission == PermissionLevel.CONFIRM && lastStartAttempt != null) {
             "Cancellation requested; confirmed action completion is not guaranteed"
         } else when (executionTarget) {
@@ -598,7 +605,7 @@ data class TaskTimelineState(
 
     private fun TaskTimelineEntry.cancellationEventMessage(): String =
         if (phase == TaskPhase.AWAITING_APPROVAL) {
-            "User cancelled before approval; no phone tool was invoked"
+            "User cancelled before approval; no tool was invoked"
         } else if (permission == PermissionLevel.CONFIRM && lastStartAttempt != null) {
             "User requested cancellation after confirmed execution started"
         } else when (executionTarget) {
@@ -637,6 +644,7 @@ private fun Float.displayConfidence(): String = String.format(Locale.US, "%.2f",
 private fun ToolResultContent.summaryText(): String = when (this) {
     is GitStatus -> gitStatusSummary()
     is MacAppsList -> macAppsSummary()
+    is MacAppOpened -> "Mac app $displayName opened and verified as running"
     is MacClipboardRead -> macClipboardSummary()
     is MacFilesLargest -> largestMacFilesSummary()
     is MacFilesList -> macFilesSummary()

@@ -129,6 +129,9 @@ the capability boundary.
   `Read my Mac clipboard` route that does not read clipboard text aloud
 - Optional `SAFE mac.apps.list` Hub/MCP tool for configured app-catalog reads,
   including an Android `List my Mac apps` route that cannot launch apps
+- Optional `CONFIRM mac.apps.open` Hub tool scaffold for approved app launching;
+  it stays fail-closed over the current SAFE WebSocket/MCP transports until a
+  Hub-validated approval artifact is added
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
 - Shared fixture `protocol/fixtures/mac-system-info-flow.jsonl`
@@ -254,7 +257,7 @@ unsupported without returning text. Android can invoke this exact tool with
 `Read my Mac clipboard` or `Show my Mac clipboard`; TTS reports status without
 reading clipboard contents aloud.
 
-To expose a safe Mac app catalog for future confirmation-gated app launching:
+To expose a safe Mac app catalog:
 
 ```bash
 export GOFFY_MAC_APP_ALLOWLIST='Safari=com.apple.Safari,Terminal=com.apple.Terminal'
@@ -265,6 +268,18 @@ configured display names and bundle identifiers. It does not scan
 `/Applications`, reveal app paths, launch apps, or open files. Android can
 invoke it with `List my Mac apps`, `Show my Mac applications`, or
 `What apps are approved on my Mac?`.
+
+To enable approval-gated app launching for that same allowlist:
+
+```bash
+export GOFFY_MAC_APP_OPEN_ENABLED=true
+```
+
+When enabled, the Hub registers `CONFIRM mac.apps.open`, but the current
+SAFE-only WebSocket and MCP transports intentionally do not expose or execute it.
+The Android app has the typed route and approval UI scaffold for commands like
+`Open Safari on my Mac`; a follow-up protocol increment must add a Hub-validated,
+one-time approval artifact before this action can run end-to-end.
 
 The Hub seals its registry before serving, checks registered tools locally at
 startup and every 30 seconds by default, and removes an unhealthy tool from both

@@ -35,6 +35,7 @@ from goffy_hub.registry import ToolInvocationResult, ToolRegistry
 from goffy_hub.settings import HubSettings
 from goffy_hub.tools import (
     build_mac_apps_list_tool,
+    build_mac_apps_open_tool,
     build_mac_clipboard_read_tool,
     build_mac_system_tool,
 )
@@ -407,6 +408,46 @@ async def test_official_client_reads_approved_mac_app_catalog(
     assert "/Applications" not in json.dumps(result.structuredContent)
     assert isinstance(result.content[0], types.TextContent)
     assert json.loads(result.content[0].text) == result.structuredContent
+
+
+@pytest.mark.asyncio
+async def test_official_client_cannot_call_confirm_mac_app_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mac_apps_module, "is_mac_apps_supported", lambda: True)
+    monkeypatch.setattr(mac_apps_module, "mac_app_open_supported", lambda: True)
+    registry = ToolRegistry(confirm_tool_names=frozenset({"mac.apps.open"}))
+    registry.register(build_mac_system_tool(timeout_seconds=1))
+    registry.register(build_mac_apps_list_tool(("Safari=com.apple.Safari",), timeout_seconds=1))
+    registry.register(build_mac_apps_open_tool(("Safari=com.apple.Safari",), timeout_seconds=1))
+    app = create_app(
+        HubSettings(auth_token=SecretStr("test-token-that-is-long-enough")),
+        registry=registry,
+    )
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with (
+            httpx.AsyncClient(
+                transport=transport,
+                base_url="http://127.0.0.1:8787",
+                headers={"Authorization": AUTHORIZATION},
+                timeout=5,
+            ) as http_client,
+            streamable_http_client(
+                "http://127.0.0.1:8787/mcp",
+                http_client=http_client,
+            ) as (read_stream, write_stream, _get_session_id),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            await session.initialize()
+            listed = await session.list_tools()
+            with pytest.raises(McpError) as rejected:
+                await session.call_tool("mac.apps.open", {"displayName": "Safari"})
+
+    assert [tool.name for tool in listed.tools] == ["mac.apps.list", "mac.system_info"]
+    assert rejected.value.error.code == types.INVALID_PARAMS
+    assert "unauthorized" in rejected.value.error.message.lower()
 
 
 @pytest.mark.asyncio
@@ -800,16 +841,16 @@ def test_mcp_replaces_oversized_response_with_bounded_error() -> None:
 @pytest.mark.asyncio
 async def test_mcp_adapter_bounds_concurrent_call_queue(monkeypatch: pytest.MonkeyPatch) -> None:
     registry = build_registry(HubSettings())
-    original_invoke = registry.invoke
+    original_invoke_prepared = registry.invoke_prepared
     started = asyncio.Event()
     release = asyncio.Event()
 
-    async def blocking_invoke(name: str, arguments: dict[str, Any]) -> ToolInvocationResult:
+    async def blocking_invoke_prepared(prepared: Any) -> ToolInvocationResult:
         started.set()
         await release.wait()
-        return await original_invoke(name, arguments)
+        return await original_invoke_prepared(prepared)
 
-    monkeypatch.setattr(registry, "invoke", blocking_invoke)
+    monkeypatch.setattr(registry, "invoke_prepared", blocking_invoke_prepared)
     adapter = RegistryMcpAdapter(
         registry,
         max_concurrent_calls=1,

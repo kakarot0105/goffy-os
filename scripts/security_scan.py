@@ -19,6 +19,7 @@ PROHIBITED_SOURCE_PATTERNS = {
 }
 ALLOWED_SUBPROCESS_FILES = {
     ROOT / "hub" / "src" / "goffy_hub" / "tools" / "git_status.py",
+    ROOT / "hub" / "src" / "goffy_hub" / "tools" / "mac_apps.py",
 }
 
 SECRET_PATTERNS = {
@@ -260,28 +261,142 @@ def validate_allowed_subprocess_usage(path: Path, text: str) -> list[str]:
     except SyntaxError as exc:
         return [f"{location}: cannot validate subprocess usage ({exc.msg})"]
 
+    string_constants = _module_string_constants(tree)
+    subprocess_names = _subprocess_import_names(tree)
     findings: list[str] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module == "subprocess":
+        if isinstance(node, ast.Import):
+            for imported in node.names:
+                if imported.name == "subprocess" and imported.asname is not None:
+                    findings.append(f"{location}: subprocess import aliases are not allowed")
+                elif imported.name.startswith("subprocess."):
+                    findings.append(f"{location}: subprocess submodule imports are not allowed")
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module is not None
+            and (node.module == "subprocess" or node.module.startswith("subprocess."))
+        ):
             findings.append(f"{location}: subprocess from-import is not allowed")
         if (
             isinstance(node, ast.Attribute)
-            and _is_name(node.value, "subprocess")
-            and node.attr != "run"
+            and isinstance(node.value, ast.Name)
+            and node.value.id in subprocess_names
+            and node.attr not in {"run", "TimeoutExpired"}
         ):
-            findings.append(f"{location}: unsupported subprocess API subprocess.{node.attr}")
+            findings.append(f"{location}: unsupported subprocess API {node.value.id}.{node.attr}")
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)) and (
+            _targets_subprocess_binding(node, subprocess_names) or _binds_subprocess(node)
+        ):
+            findings.append(f"{location}: subprocess binding is not allowed")
+        if (
+            isinstance(node, ast.Call)
+            and not _is_subprocess_run_call(node)
+            and _call_uses_indirect_subprocess(node, subprocess_names)
+        ):
+            findings.append(f"{location}: indirect subprocess call is not allowed")
         if (
             isinstance(node, ast.Call)
             and _is_subprocess_run_call(node)
             and not _is_allowed_git_status_run_call(node)
+            and not _is_allowed_mac_app_run_call(node, string_constants)
         ):
-            findings.append(f"{location}: subprocess.run shape does not match git.status policy")
+            findings.append(f"{location}: subprocess.run shape does not match allowlisted policy")
     return sorted(set(findings))
 
 
-def _is_subprocess_run_call(node: ast.Call) -> bool:
+def _module_string_constants(tree: ast.Module) -> dict[str, str]:
+    constants: dict[str, str] = {}
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign) and isinstance(statement.value, ast.Constant):
+            for target in statement.targets:
+                if isinstance(target, ast.Name) and isinstance(statement.value.value, str):
+                    constants[target.id] = statement.value.value
+        elif (
+            isinstance(statement, ast.AnnAssign)
+            and isinstance(statement.target, ast.Name)
+            and isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, str)
+        ):
+            constants[statement.target.id] = statement.value.value
+    return constants
+
+
+def _subprocess_import_names(tree: ast.Module) -> set[str]:
+    names = {"subprocess"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for imported in node.names:
+                if imported.name == "subprocess" and imported.asname is not None:
+                    names.add(imported.asname)
+    return names
+
+
+def _binds_subprocess(node: ast.Assign | ast.AnnAssign | ast.NamedExpr) -> bool:
+    value = node.value
+    if value is not None and _is_subprocess_run_call(value):
+        return False
+    if (
+        value is not None
+        and isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Attribute)
+        and _is_name(value.func.value, "subprocess")
+    ):
+        return False
+    return value is not None and _contains_subprocess_reference(value)
+
+
+def _targets_subprocess_binding(
+    node: ast.Assign | ast.AnnAssign | ast.NamedExpr,
+    subprocess_names: set[str],
+) -> bool:
+    targets: list[ast.AST]
+    if isinstance(node, ast.Assign):
+        targets = list(node.targets)
+    elif isinstance(node, ast.AnnAssign):
+        targets = [node.target]
+    else:
+        targets = [node.target]
+    return any(_contains_subprocess_target(target, subprocess_names) for target in targets)
+
+
+def _contains_subprocess_target(node: ast.AST, subprocess_names: set[str]) -> bool:
+    return any(
+        isinstance(child, ast.Attribute)
+        and isinstance(child.value, ast.Name)
+        and child.value.id in subprocess_names
+        for child in ast.walk(node)
+    )
+
+
+def _contains_subprocess_reference(node: ast.AST) -> bool:
+    return any(
+        (
+            isinstance(child, ast.Name)
+            and child.id == "subprocess"
+            or isinstance(child, ast.Attribute)
+            and _is_name(child.value, "subprocess")
+        )
+        for child in ast.walk(node)
+    )
+
+
+def _call_uses_indirect_subprocess(node: ast.Call, subprocess_names: set[str]) -> bool:
+    if isinstance(node.func, ast.Attribute):
+        return (
+            isinstance(node.func.value, ast.Name)
+            and node.func.value.id != "subprocess"
+            and (node.func.value.id in subprocess_names)
+        )
+    return any(
+        isinstance(child, ast.Name) and child.id in subprocess_names
+        for child in ast.walk(node.func)
+    )
+
+
+def _is_subprocess_run_call(node: ast.AST) -> bool:
     return (
-        isinstance(node.func, ast.Attribute)
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
         and _is_name(node.func.value, "subprocess")
         and node.func.attr == "run"
     )
@@ -346,6 +461,58 @@ def _is_allowed_git_status_run_call(node: ast.Call) -> bool:
         "GIT_TERMINAL_PROMPT": "0",
         "LC_ALL": "C",
     }
+
+
+def _is_allowed_mac_app_run_call(node: ast.Call, string_constants: dict[str, str]) -> bool:
+    if string_constants.get("OPEN_EXECUTABLE") != "/usr/bin/open":
+        return False
+    if string_constants.get("OSASCRIPT_EXECUTABLE") != "/usr/bin/osascript":
+        return False
+    if len(node.args) != 1:
+        return False
+    command = node.args[0]
+    if not isinstance(command, ast.List) or len(command.elts) != 3:
+        return False
+
+    first, second, third = command.elts
+    launch_request = (
+        _is_name(first, "OPEN_EXECUTABLE")
+        and _is_constant(second, "-b")
+        and isinstance(third, ast.Attribute)
+        and _is_name(third.value, "app")
+        and third.attr == "bundle_id"
+    )
+    running_check = (
+        _is_name(first, "OSASCRIPT_EXECUTABLE")
+        and _is_constant(second, "-e")
+        and _is_running_check_script(third)
+    )
+    if not launch_request and not running_check:
+        return False
+
+    keywords = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg is not None}
+    if set(keywords) != {"check", "capture_output", "text", "timeout"}:
+        return False
+    return (
+        _is_constant(keywords["check"], False)
+        and _is_constant(keywords["capture_output"], True)
+        and _is_constant(keywords["text"], True)
+        and _is_name(keywords["timeout"], "timeout_seconds")
+    )
+
+
+def _is_running_check_script(node: ast.AST) -> bool:
+    if not isinstance(node, ast.JoinedStr) or len(node.values) != 3:
+        return False
+    prefix, expression, suffix = node.values
+    return (
+        _is_constant(prefix, 'application id "')
+        and isinstance(expression, ast.FormattedValue)
+        and expression.conversion == -1
+        and expression.format_spec is None
+        and _is_name(expression.value, "bundle_id")
+        and _is_constant(suffix, '" is running')
+    )
 
 
 def _is_name(node: ast.AST, value: str) -> bool:

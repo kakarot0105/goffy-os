@@ -306,6 +306,83 @@ class OkHttpHubGatewayTest {
     }
 
     @Test
+    fun expiredApprovalDoesNotOpenSocketOrRetry() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            val client = okhttp3.OkHttpClient()
+            val gateway = OkHttpHubGateway(client, nowMillis = { 2_000L })
+
+            val events = try {
+                gateway.invoke(
+                    loopbackConfig(server),
+                    TEST_REQUEST.copy(expiresAtEpochMillis = 1_000L),
+                ).toList()
+            } finally {
+                gateway.close()
+                client.dispatcher.executorService.shutdown()
+                client.connectionPool.evictAll()
+            }
+
+            assertEquals(
+                listOf(
+                    ExecutionEvent.Error(
+                        code = "approval_expired",
+                        message = "The approved action expired before it could be sent.",
+                        retryable = false,
+                    ),
+                ),
+                events,
+            )
+            assertEquals(0, server.requestCount)
+        }
+    }
+
+    @Test
+    fun approvalExpiringAfterDiscoveryStopsBeforeInvocation() = runTest {
+        MockWebServer().use { server ->
+            val invocations = AtomicInteger(0)
+            val now = AtomicInteger(0)
+            server.start()
+            server.enqueue(
+                MockResponse.Builder()
+                    .webSocketUpgrade(
+                        object : ClosingServerListener() {
+                            override fun onMessage(webSocket: WebSocket, text: String) {
+                                when {
+                                    text.contains("\"messageType\":\"CapabilityDiscoveryRequest\"") -> {
+                                        now.set(2_000)
+                                        webSocket.send(capabilityEnvelope(TEST_REQUEST.discoveryMessageId))
+                                    }
+                                    text.contains("\"messageType\":\"ToolInvocation\"") ->
+                                        invocations.incrementAndGet()
+                                    else -> error("unexpected client message")
+                                }
+                            }
+                        },
+                    )
+                    .build(),
+            )
+            val client = okhttp3.OkHttpClient()
+            val gateway = OkHttpHubGateway(client, nowMillis = { now.get().toLong() })
+
+            val events = try {
+                gateway.invoke(
+                    loopbackConfig(server),
+                    TEST_REQUEST.copy(expiresAtEpochMillis = 1_000L),
+                ).toList()
+            } finally {
+                gateway.close()
+                client.dispatcher.executorService.shutdown()
+                client.connectionPool.evictAll()
+            }
+
+            assertEquals(0, invocations.get())
+            assertEquals(listOf(ExecutionEvent.Starting(1)), events.dropLast(1))
+            assertEquals("approval_expired", (events.last() as ExecutionEvent.Error).code)
+        }
+    }
+
+    @Test
     fun authenticationFailureDoesNotRetry() = runTest {
         MockWebServer().use { server ->
             server.start()

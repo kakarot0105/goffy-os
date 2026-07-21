@@ -34,6 +34,7 @@ class HubSettings(BaseModel):
     mac_files_roots: tuple[Path, ...] = Field(default=(), max_length=8)
     git_repo_roots: tuple[Path, ...] = Field(default=(), max_length=8)
     mac_app_allowlist: tuple[str, ...] = Field(default=(), max_length=25)
+    mac_app_open_enabled: bool = False
     mac_clipboard_read_enabled: bool = False
 
     @model_validator(mode="after")
@@ -97,6 +98,8 @@ class HubSettings(BaseModel):
         if len(set(resolved_git_roots)) != len(resolved_git_roots):
             raise ValueError("GOFFY_GIT_REPO_ROOTS entries must be unique")
         self.git_repo_roots = tuple(resolved_git_roots)
+        if self.mac_app_open_enabled and not self.mac_app_allowlist:
+            raise ValueError("GOFFY_MAC_APP_OPEN_ENABLED requires GOFFY_MAC_APP_ALLOWLIST")
         return self
 
     @property
@@ -158,6 +161,7 @@ class HubSettings(BaseModel):
             mac_files_roots=_path_tuple("GOFFY_MAC_FILES_ROOTS"),
             git_repo_roots=_path_tuple("GOFFY_GIT_REPO_ROOTS"),
             mac_app_allowlist=_comma_separated("GOFFY_MAC_APP_ALLOWLIST"),
+            mac_app_open_enabled=_boolean_environment("GOFFY_MAC_APP_OPEN_ENABLED"),
             mac_clipboard_read_enabled=_boolean_environment("GOFFY_MAC_CLIPBOARD_READ_ENABLED"),
         )
 

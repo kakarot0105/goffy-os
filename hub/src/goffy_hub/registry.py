@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -113,10 +113,11 @@ class ToolHealthReport:
 
 
 class ToolRegistry:
-    def __init__(self) -> None:
+    def __init__(self, *, confirm_tool_names: Collection[str] = ()) -> None:
         self._tools: dict[str, ToolDefinition] = {}
         self._capabilities: dict[str, ToolCapability] = {}
         self._healthy: dict[str, bool] = {}
+        self._confirm_tool_names = frozenset(confirm_tool_names)
         self._capability_bytes = 0
         self._health_revision = 0
         self._health_lock = asyncio.Lock()
@@ -131,8 +132,12 @@ class ToolRegistry:
             raise ValueError(f"tool registry cannot exceed {MAX_REGISTERED_TOOLS} tools")
         if definition.permission is PermissionLevel.BLOCKED:
             raise ValueError("blocked tools cannot be registered")
-        if definition.permission is not PermissionLevel.SAFE:
-            raise ValueError("non-SAFE tools require an authorization policy before registration")
+        if definition.permission is PermissionLevel.SAFE:
+            self._validate_safe_definition(definition)
+        elif definition.permission is PermissionLevel.CONFIRM:
+            self._validate_confirm_definition(definition)
+        else:
+            raise ValueError("sensitive tools cannot be registered")
         if not 0 < definition.health_timeout_seconds <= MAX_TOOL_HEALTH_TIMEOUT_SECONDS:
             raise ValueError(
                 f"tool health timeout must be at most {MAX_TOOL_HEALTH_TIMEOUT_SECONDS:g} seconds"
@@ -141,14 +146,6 @@ class ToolRegistry:
             capability = definition.describe()
         except (ValidationError, ValueError) as error:
             raise ValueError("tool metadata is invalid") from error
-        if capability.annotations.read_only_hint is not True:
-            raise ValueError("SAFE tools must declare readOnlyHint=true")
-        if capability.annotations.destructive_hint is not False:
-            raise ValueError("SAFE tools must declare destructiveHint=false")
-        if capability.annotations.idempotent_hint is not True:
-            raise ValueError("SAFE tools must declare idempotentHint=true")
-        if capability.annotations.open_world_hint is not False:
-            raise ValueError("SAFE tools must declare openWorldHint=false")
         capability_bytes = len(
             capability.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8")
         )
@@ -171,18 +168,30 @@ class ToolRegistry:
     def is_sealed(self) -> bool:
         return self._sealed
 
-    def describe(self) -> list[ToolCapability]:
+    def describe(
+        self,
+        *,
+        permissions: frozenset[PermissionLevel] | None = None,
+    ) -> list[ToolCapability]:
         return [
             self._capabilities[name].model_copy(deep=True)
             for name in sorted(self._capabilities)
             if self._healthy[name]
+            and (permissions is None or self._tools[name].permission in permissions)
         ]
 
-    def discover(self, name: str) -> list[ToolCapability]:
+    def discover(
+        self,
+        name: str,
+        *,
+        permissions: frozenset[PermissionLevel] | None = None,
+    ) -> list[ToolCapability]:
         capability = self._capabilities.get(name)
         return (
             [capability.model_copy(deep=True)]
-            if capability is not None and self._healthy[name]
+            if capability is not None
+            and self._healthy[name]
+            and (permissions is None or self._tools[name].permission in permissions)
             else []
         )
 
@@ -280,6 +289,44 @@ class ToolRegistry:
             definition=definition,
             structured_content=structured_content,
         )
+
+    def _validate_safe_definition(self, definition: ToolDefinition) -> None:
+        annotations = definition.annotations
+        try:
+            read_only_hint = annotations.read_only_hint
+            destructive_hint = annotations.destructive_hint
+            idempotent_hint = annotations.idempotent_hint
+            open_world_hint = annotations.open_world_hint
+        except AttributeError as error:
+            raise ValueError("tool metadata is invalid") from error
+        if read_only_hint is not True:
+            raise ValueError("SAFE tools must declare readOnlyHint=true")
+        if destructive_hint is not False:
+            raise ValueError("SAFE tools must declare destructiveHint=false")
+        if idempotent_hint is not True:
+            raise ValueError("SAFE tools must declare idempotentHint=true")
+        if open_world_hint is not False:
+            raise ValueError("SAFE tools must declare openWorldHint=false")
+
+    def _validate_confirm_definition(self, definition: ToolDefinition) -> None:
+        if definition.name not in self._confirm_tool_names:
+            raise ValueError("CONFIRM tools require an explicit authorization policy")
+        annotations = definition.annotations
+        try:
+            read_only_hint = annotations.read_only_hint
+            destructive_hint = annotations.destructive_hint
+            idempotent_hint = annotations.idempotent_hint
+            open_world_hint = annotations.open_world_hint
+        except AttributeError as error:
+            raise ValueError("tool metadata is invalid") from error
+        if read_only_hint is not False:
+            raise ValueError("CONFIRM tools must declare readOnlyHint=false")
+        if destructive_hint is not False:
+            raise ValueError("CONFIRM tools must declare destructiveHint=false")
+        if idempotent_hint is not False:
+            raise ValueError("CONFIRM tools must declare idempotentHint=false")
+        if open_world_hint is not False:
+            raise ValueError("CONFIRM tools must declare openWorldHint=false")
 
     def _available_tool_names(self) -> tuple[str, ...]:
         return tuple(name for name in sorted(self._tools) if self._healthy[name])

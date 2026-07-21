@@ -9,12 +9,14 @@ import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatusArguments
 import dev.goffy.os.protocol.MAC_APPS_LIST_TOOL
+import dev.goffy.os.protocol.MAC_APPS_OPEN_TOOL
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_PROCESSES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.MacAppsListArguments
+import dev.goffy.os.protocol.MacAppsOpenArguments
 import dev.goffy.os.protocol.MacFilesLargestArguments
 import dev.goffy.os.protocol.MacFilesListArguments
 import dev.goffy.os.protocol.MacProcessesListArguments
@@ -74,6 +76,10 @@ object GoffyIntentRouter {
         pattern = "^(?:(?:show|list)(?: me)? my mac (?:apps|applications)|what apps are approved on my mac)[.!?]?$",
         option = RegexOption.IGNORE_CASE,
     )
+    private val macAppOpenCommand = Regex(
+        pattern = "^(?:open|launch) ([A-Za-z0-9][A-Za-z0-9 ._-]{0,79}) on my mac[.!?]?$",
+        option = RegexOption.IGNORE_CASE,
+    )
     private val gitStatusCommand = Regex(
         pattern = "^(?:show|check)(?: me)? my git status[.!?]?$",
         option = RegexOption.IGNORE_CASE,
@@ -118,6 +124,8 @@ object GoffyIntentRouter {
         val plan = when {
             macStatusCommand.matches(normalized) -> macStatusPlan(normalized)
             macProcessesListCommand.matches(normalized) -> macProcessesListPlan(normalized)
+            macAppOpenCommand.matches(normalized) ->
+                macAppOpenPlan(normalized) ?: return unsupported(normalized, localModelFallback)
             macAppsListCommand.matches(normalized) -> macAppsListPlan(normalized)
             macFilesLargestCommand.matches(normalized) -> macFilesLargestPlan(normalized)
             macFilesListCommand.matches(normalized) -> macFilesListPlan(normalized)
@@ -247,6 +255,26 @@ object GoffyIntentRouter {
         ),
         arguments = MacAppsListArguments(),
     )
+
+    private fun macAppOpenPlan(command: String): GoffyExecutionPlan? {
+        val match = requireNotNull(macAppOpenCommand.matchEntire(command))
+        val displayName = match.groupValues[1].trim()
+        val words = displayName.lowercase(Locale.US).split(whitespace)
+        if (words.any { it == "and" || it == "then" }) return null
+        return GoffyExecutionPlan(
+            command = command,
+            executionTarget = ExecutionTarget.MAC,
+            toolName = MAC_APPS_OPEN_TOOL,
+            permission = PermissionLevel.CONFIRM,
+            successCriteria = listOf(
+                "The user grants one visible approval before the Mac request is sent",
+                "Hub maps the typed display name to an explicitly approved bundle identifier",
+                "Hub verifies the approved app is running after Launch Services accepts the request",
+                "The result contains no file path, shell command, or installed-app scan authority",
+            ),
+            arguments = MacAppsOpenArguments(displayName),
+        )
+    }
 
     private fun macFilesListPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(
         command = command,

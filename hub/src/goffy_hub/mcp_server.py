@@ -57,7 +57,7 @@ from goffy_hub.registry import (
     ToolRegistry,
 )
 from goffy_hub.settings import HubSettings
-from goffy_protocol import ToolCapability
+from goffy_protocol import PermissionLevel, ToolCapability
 
 MCP_SERVER_VERSION = "0.2.0"
 MCP_SAFE_TOOL_SCOPE = SAFE_TOOL_SCOPE
@@ -104,7 +104,10 @@ class RegistryMcpAdapter:
         self._queue_timeout_seconds = queue_timeout_seconds
 
     async def list_tools(self) -> list[types.Tool]:
-        return [_to_mcp_tool(capability) for capability in self._registry.describe()]
+        return [
+            _to_mcp_tool(capability)
+            for capability in self._registry.describe(permissions=frozenset({PermissionLevel.SAFE}))
+        ]
 
     async def call_tool(
         self, name: str, arguments: dict[str, Any]
@@ -118,7 +121,10 @@ class RegistryMcpAdapter:
             raise _protocol_error(types.INTERNAL_ERROR, "The Hub is busy.") from error
 
         try:
-            result = await self._registry.invoke(name, arguments)
+            prepared = self._registry.preflight(name, arguments)
+            if prepared.definition.permission is not PermissionLevel.SAFE:
+                raise ToolNotFoundError(name)
+            result = await self._registry.invoke_prepared(prepared)
             return result.structured_content
         except ToolNotFoundError as error:
             raise _protocol_error(types.INVALID_PARAMS, "Unknown or unauthorized tool.") from error

@@ -10,6 +10,7 @@ from starlette.testclient import TestClient, WebSocketTestSession
 
 from goffy_hub.app import create_app
 from goffy_hub.settings import HubSettings
+from goffy_hub.tools import mac_apps
 from goffy_protocol import (
     PROTOCOL_VERSION,
     CapabilityDiscoveryResponsePayload,
@@ -165,6 +166,39 @@ def test_system_info_discovery_then_invocation_streams_progress_result_and_verif
     assert result["executionTarget"] == "MAC"
     assert result["structuredContent"]["status"] == "available"
     assert events[3].payload["succeeded"] is True
+
+
+def test_confirm_mac_app_open_fails_closed_on_safe_websocket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mac_apps, "is_mac_apps_supported", lambda: True)
+    monkeypatch.setattr(mac_apps, "mac_app_open_supported", lambda: True)
+    settings = HubSettings(
+        auth_token=SecretStr("test-token-that-is-long-enough"),
+        mac_app_allowlist=("Safari=com.apple.Safari",),
+        mac_app_open_enabled=True,
+    )
+    app = create_app(settings)
+    discovery_request = discovery("mac.apps.open")
+    invocation_request = invocation(
+        "mac.apps.open",
+        payload={"toolName": "mac.apps.open", "arguments": {"displayName": "Safari"}},
+    )
+
+    with (
+        TestClient(app, base_url="http://127.0.0.1:8787") as client,
+        client.websocket_connect("/ws/v1", headers=AUTH_HEADERS) as socket,
+    ):
+        socket.send_text(discovery_request.model_dump_json(by_alias=True))
+        discovery_response = receive_envelope(socket)
+        socket.send_text(invocation_request.model_dump_json(by_alias=True))
+        invocation_error = receive_envelope(socket)
+
+    payload = CapabilityDiscoveryResponsePayload.model_validate(discovery_response.payload)
+    assert payload.tools == []
+    assert invocation_error.message_type is MessageType.TOOL_ERROR
+    assert invocation_error.payload["code"] == "capability_discovery_required"
+    assert invocation_error.correlation_id == invocation_request.message_id
 
 
 def test_discovery_is_consumed_by_one_invocation_attempt(client: TestClient) -> None:

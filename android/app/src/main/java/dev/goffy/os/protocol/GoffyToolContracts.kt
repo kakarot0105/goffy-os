@@ -58,6 +58,9 @@ fun MacProcessesListArguments.matchesToolContract(): Boolean =
 fun MacAppsListArguments.matchesToolContract(): Boolean =
     maxEntries in 1..MAX_MAC_APP_ENTRIES
 
+fun MacAppsOpenArguments.matchesToolContract(): Boolean =
+    displayName.isSafeMacAppDisplayName()
+
 fun MacAppsList.matchesToolContract(): Boolean =
     status.isSafeDisplayField(MAX_MAC_APP_STATUS_LENGTH) &&
         appCount in 0..MAX_MAC_APP_COUNT &&
@@ -71,10 +74,14 @@ fun MacAppsList.matchesToolContract(): Boolean =
 
 fun MacAppCatalogEntry.matchesToolContract(): Boolean =
     appIndex in 0..MAX_MAC_APP_INDEX &&
-        displayName.isSafeDisplayField(MAX_MAC_APP_DISPLAY_NAME_LENGTH) &&
-        !displayName.contains("/") &&
-        !displayName.contains("\\") &&
+        displayName.isSafeMacAppDisplayName() &&
         bundleId.isSafeMacBundleId()
+
+fun MacAppOpened.matchesToolContract(): Boolean =
+    status == "running" &&
+        displayName.isSafeMacAppDisplayName() &&
+        bundleId.isSafeMacBundleId() &&
+        verified
 
 fun MacProcessesList.matchesToolContract(): Boolean =
     status.isSafeDisplayField(MAX_MAC_PROCESS_STATUS_TEXT_LENGTH) &&
@@ -305,6 +312,11 @@ private fun String.isSafeMacBundleId(): Boolean =
         contains(".") &&
         !contains("..") &&
         MAC_APP_BUNDLE_ID.matches(this)
+
+private fun String.isSafeMacAppDisplayName(): Boolean =
+    isSafeDisplayField(MAX_MAC_APP_DISPLAY_NAME_LENGTH) &&
+        !contains("/") &&
+        !contains("\\")
 
 private fun String.isSafeDisplayField(maximum: Int): Boolean =
     isNotBlank() &&

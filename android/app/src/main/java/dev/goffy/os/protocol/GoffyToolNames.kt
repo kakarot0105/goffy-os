@@ -2,6 +2,7 @@ package dev.goffy.os.protocol
 
 const val GIT_STATUS_TOOL = "git.status"
 const val MAC_APPS_LIST_TOOL = "mac.apps.list"
+const val MAC_APPS_OPEN_TOOL = "mac.apps.open"
 const val MAC_CLIPBOARD_READ_TOOL = "mac.clipboard.read"
 const val MAC_SYSTEM_INFO_TOOL = "mac.system_info"
 const val MAC_FILES_LARGEST_TOOL = "mac.files.largest"

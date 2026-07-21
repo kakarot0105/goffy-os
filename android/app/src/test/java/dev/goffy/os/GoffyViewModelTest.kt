@@ -52,6 +52,7 @@ import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.MacAppCatalogEntry
+import dev.goffy.os.protocol.MacAppOpened
 import dev.goffy.os.protocol.MacAppsList
 import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacProcessEntry
@@ -212,6 +213,31 @@ class GoffyViewModelTest {
         assertTrue(gateway.requests.single().encodedMessage.contains("\"toolName\":\"mac.apps.list\""))
         assertTrue(gateway.requests.single().encodedMessage.contains("\"maxEntries\":10"))
         assertFalse(gateway.requests.single().encodedMessage.contains("Safari"))
+    }
+
+    @Test
+    fun macAppOpenRequiresApprovalBeforeSendingHubInvocation() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf(*successfulMacAppOpenEvents().toTypedArray()) }
+        val viewModel = createViewModel(gateway)
+
+        assertTrue(viewModel.configureHub(endpoint, token))
+        viewModel.submitCommand("Open Safari on my Mac")
+        runCurrent()
+
+        val pending = requireNotNull(viewModel.uiState.value.pendingApproval)
+        assertEquals(TaskPhase.AWAITING_APPROVAL, viewModel.uiState.value.timeline.entries.single().phase)
+        assertEquals(0, gateway.requests.size)
+
+        assertTrue(viewModel.approvePendingTask(pending.taskId))
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals("Safari", (entry.result as MacAppOpened).displayName)
+        assertEquals(1, gateway.requests.size)
+        assertEquals(pending.expiresAtEpochMillis, gateway.requests.single().expiresAtEpochMillis)
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"toolName\":\"mac.apps.open\""))
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"displayName\":\"Safari\""))
     }
 
     @Test
@@ -1921,6 +1947,32 @@ class GoffyViewModelTest {
             succeeded = true,
             summary = "Verified",
             checks = listOf("output schema"),
+        ),
+    )
+
+    private fun successfulMacAppOpenEvents(): List<ExecutionEvent> = listOf(
+        ExecutionEvent.Starting(1),
+        ExecutionEvent.Ready,
+        ExecutionEvent.Progress(
+            ToolProgress("mac.apps.open", ExecutionTarget.MAC, "accepted", 0, "Accepted"),
+        ),
+        ExecutionEvent.Progress(
+            ToolProgress("mac.apps.open", ExecutionTarget.MAC, "completed", 1, "Completed"),
+        ),
+        ExecutionEvent.Result(
+            toolName = "mac.apps.open",
+            executionTarget = ExecutionTarget.MAC,
+            content = MacAppOpened(
+                status = "running",
+                displayName = "Safari",
+                bundleId = "com.apple.Safari",
+                verified = true,
+            ),
+        ),
+        ExecutionEvent.Verification(
+            succeeded = true,
+            summary = "Verified",
+            checks = listOf("output schema", "tool verification flag"),
         ),
     )
 

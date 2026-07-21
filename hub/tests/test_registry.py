@@ -159,7 +159,7 @@ def test_registry_rejects_duplicate_and_blocked_registrations() -> None:
     with pytest.raises(ValueError, match="blocked tools cannot be registered"):
         registry.register(build_test_tool(name="blocked.tool", permission=PermissionLevel.BLOCKED))
 
-    with pytest.raises(ValueError, match="non-SAFE tools require an authorization policy"):
+    with pytest.raises(ValueError, match="CONFIRM tools require an explicit authorization policy"):
         registry.register(build_test_tool(name="confirm.tool", permission=PermissionLevel.CONFIRM))
 
 

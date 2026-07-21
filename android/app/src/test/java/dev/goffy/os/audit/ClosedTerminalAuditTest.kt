@@ -9,6 +9,7 @@ import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
+import dev.goffy.os.protocol.MAC_APPS_OPEN_TOOL
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_PROCESSES_LIST_TOOL
@@ -356,17 +357,33 @@ class ClosedTerminalAuditTest {
         val denied = terminalEntry(
             phase = TaskPhase.CANCELLED,
             approvalGranted = false,
-            summary = "Approval denied; no phone tool was invoked",
+            summary = "Approval denied; no tool was invoked",
         )
         val expired = terminalEntry(
             phase = TaskPhase.FAILED,
             approvalGranted = false,
-            summary = "Approval expired; no phone tool was invoked",
+            summary = "Approval expired; no tool was invoked",
+        )
+        val approvedThenExpired = terminalEntry(
+            phase = TaskPhase.FAILED,
+            approvalGranted = true,
+            summary = "The approved action expired before it could be sent.",
+        ).copy(
+            executionTarget = ExecutionTarget.MAC,
+            toolName = MAC_APPS_OPEN_TOOL,
+            events = listOf(
+                TaskTimelineEvent(TaskEventKind.OBSERVE, "Observed app-open request"),
+                TaskTimelineEvent(TaskEventKind.AUTHORIZE, "Recorded approval grant"),
+                TaskTimelineEvent(
+                    TaskEventKind.ERROR,
+                    "approval_expired: The approved action expired before it could be sent.",
+                ),
+            ),
         )
         val cancelled = terminalEntry(
             phase = TaskPhase.CANCELLED,
             approvalGranted = false,
-            summary = "Approval cancelled; no phone tool was invoked",
+            summary = "Approval cancelled; no tool was invoked",
         )
 
         assertEquals(
@@ -384,6 +401,10 @@ class ClosedTerminalAuditTest {
         assertEquals(
             AuditApprovalOutcome.EXPIRED,
             expired.toClosedTerminalAuditRecord(13)?.approvalOutcome,
+        )
+        assertEquals(
+            AuditApprovalOutcome.EXPIRED,
+            approvedThenExpired.toClosedTerminalAuditRecord(15)?.approvalOutcome,
         )
         assertEquals(
             AuditApprovalOutcome.CANCELLED,

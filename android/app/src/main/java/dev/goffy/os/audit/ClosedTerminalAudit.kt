@@ -8,6 +8,7 @@ import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GOFFY_PROTOCOL_VERSION
 import dev.goffy.os.protocol.MAC_APPS_LIST_TOOL
+import dev.goffy.os.protocol.MAC_APPS_OPEN_TOOL
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
@@ -190,13 +191,19 @@ private fun AuditPermission?.toPermissionLevel(): PermissionLevel? = when (this)
 
 private fun TaskTimelineEntry.approvalOutcome(): AuditApprovalOutcome = when {
     permission != PermissionLevel.CONFIRM -> AuditApprovalOutcome.NOT_REQUIRED
-    approvalGranted -> AuditApprovalOutcome.APPROVED
+    phase == TaskPhase.FAILED && hasErrorCode(APPROVAL_EXPIRED_ERROR_CODE) -> AuditApprovalOutcome.EXPIRED
     phase == TaskPhase.CANCELLED && summary == APPROVAL_DENIED_SUMMARY -> AuditApprovalOutcome.DENIED
     phase == TaskPhase.CANCELLED && summary == APPROVAL_CANCELLED_SUMMARY -> AuditApprovalOutcome.CANCELLED
     phase == TaskPhase.FAILED && summary == APPROVAL_EXPIRED_SUMMARY -> AuditApprovalOutcome.EXPIRED
+    approvalGranted -> AuditApprovalOutcome.APPROVED
     phase == TaskPhase.CANCELLED -> AuditApprovalOutcome.CANCELLED
     else -> AuditApprovalOutcome.CANCELLED
 }
+
+private fun TaskTimelineEntry.hasErrorCode(code: String): Boolean =
+    events.any { event ->
+        event.kind == TaskEventKind.ERROR && event.message.startsWith("$code:")
+    }
 
 private fun TaskEventKind.displayMessage(
     approvalOutcome: AuditApprovalOutcome,
@@ -225,6 +232,7 @@ private fun TaskEventKind.displayMessage(
 private fun String?.displayCommand(): String = when (this) {
     GIT_STATUS_TOOL -> "Recorded Git status task"
     MAC_APPS_LIST_TOOL -> "Recorded Mac app catalog task"
+    MAC_APPS_OPEN_TOOL -> "Recorded Mac app open task"
     MAC_CLIPBOARD_READ_TOOL -> "Recorded Mac clipboard task"
     MAC_FILES_LARGEST_TOOL -> "Recorded largest Mac files task"
     MAC_FILES_LIST_TOOL -> "Recorded Mac file listing task"
@@ -241,15 +249,17 @@ private fun String?.displayCommand(): String = when (this) {
     else -> "Recorded task"
 }
 
-private const val APPROVAL_DENIED_SUMMARY = "Approval denied; no phone tool was invoked"
-private const val APPROVAL_CANCELLED_SUMMARY = "Approval cancelled; no phone tool was invoked"
-private const val APPROVAL_EXPIRED_SUMMARY = "Approval expired; no phone tool was invoked"
+private const val APPROVAL_DENIED_SUMMARY = "Approval denied; no tool was invoked"
+private const val APPROVAL_CANCELLED_SUMMARY = "Approval cancelled; no tool was invoked"
+private const val APPROVAL_EXPIRED_SUMMARY = "Approval expired; no tool was invoked"
+private const val APPROVAL_EXPIRED_ERROR_CODE = "approval_expired"
 internal const val SCHEMA_VERSION = 1
 internal const val MAX_EVENT_KINDS = 16
 internal val SUPPORTED_AUDIT_PROTOCOL_VERSIONS = setOf("0.2.0", GOFFY_PROTOCOL_VERSION)
 private val AUDIT_CAPABILITY_CONTRACTS = mapOf(
     GIT_STATUS_TOOL to (ExecutionTarget.MAC to AuditPermission.SAFE),
     MAC_APPS_LIST_TOOL to (ExecutionTarget.MAC to AuditPermission.SAFE),
+    MAC_APPS_OPEN_TOOL to (ExecutionTarget.MAC to AuditPermission.CONFIRM),
     MAC_CLIPBOARD_READ_TOOL to (ExecutionTarget.MAC to AuditPermission.SAFE),
     MAC_FILES_LARGEST_TOOL to (ExecutionTarget.MAC to AuditPermission.SAFE),
     MAC_FILES_LIST_TOOL to (ExecutionTarget.MAC to AuditPermission.SAFE),

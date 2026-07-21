@@ -173,6 +173,26 @@ class GoffyToolContractsTest {
         )
     }
 
+    @Test
+    fun macAppOpenContractRequiresSafeNameAndVerifiedRunningState() {
+        assertTrue(MacAppsOpenArguments("Safari").matchesToolContract())
+        assertFalse(MacAppsOpenArguments("/Applications/Safari").matchesToolContract())
+        assertFalse(MacAppsOpenArguments("Safari\u202E").matchesToolContract())
+
+        val valid = MacAppOpened(
+            status = "running",
+            displayName = "Safari",
+            bundleId = "com.apple.Safari",
+            verified = true,
+        )
+
+        assertTrue(valid.matchesToolContract())
+        assertFalse(valid.copy(status = "dispatched").matchesToolContract())
+        assertFalse(valid.copy(verified = false).matchesToolContract())
+        assertFalse(valid.copy(bundleId = "com..apple.Safari").matchesToolContract())
+        assertFalse(valid.copy(displayName = "Bad/Name").matchesToolContract())
+    }
+
     private fun validDeviceInfo(): PhoneDeviceInfo = PhoneDeviceInfo(
         manufacturer = "motorola",
         model = "moto g",

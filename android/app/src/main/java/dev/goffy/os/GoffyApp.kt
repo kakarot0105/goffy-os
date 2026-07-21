@@ -73,6 +73,7 @@ import dev.goffy.os.ocr.ForegroundOcrScanner
 import dev.goffy.os.qr.ForegroundQrScanner
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.MacAppOpened
 import dev.goffy.os.protocol.MacAppsList
 import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacFilesLargest
@@ -1783,6 +1784,21 @@ private fun TaskResult(result: ToolResultContent) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        is MacAppOpened -> {
+            Text(
+                text = "MAC APP OPEN / ${result.status.uppercase()}",
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = "${result.displayName} / ${result.bundleId} / verified ${result.verified}",
+                color = Signal,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         is MacProcessesList -> {
             Text(

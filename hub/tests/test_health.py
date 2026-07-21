@@ -71,6 +71,37 @@ def test_health_counts_optional_mac_app_catalog_when_configured(
     assert "mac.apps.list" in [tool.name for tool in app.state.registry.describe()]
 
 
+def test_health_counts_optional_mac_app_open_when_explicitly_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mac_apps, "is_mac_apps_supported", lambda: True)
+    monkeypatch.setattr(mac_apps, "mac_app_open_supported", lambda: True)
+    app = create_app(
+        HubSettings(
+            auth_token=SecretStr("test-token-that-is-long-enough"),
+            mac_app_allowlist=("Safari=com.apple.Safari",),
+            mac_app_open_enabled=True,
+        )
+    )
+
+    with TestClient(app, base_url="http://127.0.0.1:8787") as configured_client:
+        response = configured_client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert response.json()["healthyToolCount"] == 4
+    assert response.json()["unavailableToolCount"] == 0
+    assert "mac.apps.open" in [tool.name for tool in app.state.registry.describe()]
+
+
+def test_mac_app_open_requires_allowlist_configuration() -> None:
+    with pytest.raises(ValueError, match="GOFFY_MAC_APP_ALLOWLIST"):
+        HubSettings(
+            auth_token=SecretStr("test-token-that-is-long-enough"),
+            mac_app_open_enabled=True,
+        )
+
+
 def test_unhealthy_tool_is_removed_before_app_starts_serving(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

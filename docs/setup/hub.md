@@ -269,9 +269,25 @@ when at least one bounded, unique entry is configured. Output contains app
 indices, display names, and reverse-DNS bundle identifiers only. This tool does
 not scan `/Applications`, reveal app paths, launch apps, open files, or execute
 shell commands. Android invokes it through `List my Mac apps`,
-`Show my Mac applications`, or `What apps are approved on my Mac?`. Actual app
-opening remains a future confirmation-gated tool with a separate authorization
-policy.
+`Show my Mac applications`, or `What apps are approved on my Mac?`.
+
+`mac.apps.open` is a separate CONFIRM tool and is disabled unless the catalog
+allowlist is configured and app opening is explicitly enabled:
+
+```bash
+export GOFFY_MAC_APP_OPEN_ENABLED=true
+```
+
+When enabled, the Hub registers the CONFIRM tool but keeps it unavailable on the
+current SAFE-only WebSocket and MCP transports. Android has the typed route and
+approval UI scaffold for commands like `Open Safari on my Mac`, but a follow-up
+protocol increment must add a Hub-validated, one-time approval artifact before
+the Hub will execute the action end-to-end. The tool implementation is limited to
+the configured display name, maps it to the fixed allowlisted bundle identifier,
+uses `/usr/bin/open -b <bundle-id>` with a subprocess argument list, verifies the
+app is running through a bounded Launch Services/AppleScript check, and does not
+open files, scan installed app folders, interpolate shell strings, or expose
+itself over the current SAFE-only MCP surface.
 
 ## Approved Git Repository Roots
 

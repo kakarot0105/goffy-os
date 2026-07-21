@@ -33,6 +33,7 @@ class OkHttpHubGateway private constructor(
     private val ownsClient: Boolean,
     private val attemptTimeoutMillis: Long,
     private val timeoutDispatcher: CoroutineDispatcher,
+    private val nowMillis: () -> Long,
 ) : HubGateway {
     constructor() : this(
         defaultClient(),
@@ -40,6 +41,7 @@ class OkHttpHubGateway private constructor(
         ownsClient = true,
         attemptTimeoutMillis = DEFAULT_ATTEMPT_TIMEOUT_MILLIS,
         timeoutDispatcher = Dispatchers.IO,
+        nowMillis = System::currentTimeMillis,
     )
 
     internal constructor(
@@ -47,12 +49,14 @@ class OkHttpHubGateway private constructor(
         codec: GoffyProtocolCodec = GoffyProtocolCodec(),
         attemptTimeoutMillis: Long = DEFAULT_ATTEMPT_TIMEOUT_MILLIS,
         timeoutDispatcher: CoroutineDispatcher = Dispatchers.IO,
+        nowMillis: () -> Long = System::currentTimeMillis,
     ) : this(
         client,
         codec,
         ownsClient = false,
         attemptTimeoutMillis = attemptTimeoutMillis,
         timeoutDispatcher = timeoutDispatcher,
+        nowMillis = nowMillis,
     )
 
     init {
@@ -115,6 +119,10 @@ class OkHttpHubGateway private constructor(
         var attempt = 1
 
         while (attempt <= MAX_ATTEMPTS && !closed.get()) {
+            if (request.isExpired()) {
+                emit(approvalExpiredError())
+                return
+            }
             emit(ExecutionEvent.Starting(attempt))
 
             val outcome = withContext(timeoutDispatcher) {
@@ -192,6 +200,16 @@ class OkHttpHubGateway private constructor(
 
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (request.isExpired()) {
+                    closeWithOutcome(
+                        webSocket = webSocket,
+                        status = NORMAL_CLOSURE_STATUS,
+                        outcome = AttemptOutcome.FinalFailure(approvalExpiredError()),
+                        closingOutcome = closingOutcome,
+                        finish = ::finish,
+                    )
+                    return
+                }
                 discoverySent.set(true)
                 if (!webSocket.send(request.encodedDiscoveryMessage)) {
                     discoverySent.set(false)
@@ -250,6 +268,16 @@ class OkHttpHubGateway private constructor(
                         return
                     }
 
+                    if (request.isExpired()) {
+                        closeWithOutcome(
+                            webSocket = webSocket,
+                            status = NORMAL_CLOSURE_STATUS,
+                            outcome = AttemptOutcome.FinalFailure(approvalExpiredError()),
+                            closingOutcome = closingOutcome,
+                            finish = ::finish,
+                        )
+                        return
+                    }
                     invocationSent.set(true)
                     if (webSocket.send(request.encodedMessage)) {
                         emit(ExecutionEvent.Ready)
@@ -414,6 +442,18 @@ class OkHttpHubGateway private constructor(
             socket?.cancel()
         }
     }
+
+    private fun ToolInvocationRequest.isExpired(): Boolean {
+        val deadline = expiresAtEpochMillis ?: return false
+        return nowMillis() >= deadline
+    }
+
+    private fun approvalExpiredError(): ExecutionEvent.Error =
+        ExecutionEvent.Error(
+            code = "approval_expired",
+            message = "The approved action expired before it could be sent.",
+            retryable = false,
+        )
 
     private sealed interface AttemptOutcome {
         data object Completed : AttemptOutcome

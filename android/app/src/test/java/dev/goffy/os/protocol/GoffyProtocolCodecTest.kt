@@ -99,6 +99,25 @@ class GoffyProtocolCodecTest {
     }
 
     @Test
+    fun createsVersionedMacAppsOpenInvocationWithTypedArguments() {
+        val request = codec.createToolInvocation(
+            "android-test",
+            "mac.apps.open",
+            MacAppsOpenArguments(displayName = "Safari"),
+        )
+
+        assertEquals(messageId, request.messageId)
+        assertEquals("mac.apps.open", request.toolName)
+        assertEquals(
+            "{\"protocolVersion\":\"0.2.0\",\"messageId\":\"11111111-1111-4111-8111-111111111111\"," +
+                "\"timestamp\":\"2026-07-13T16:00:00Z\",\"deviceId\":\"android-test\"," +
+                "\"messageType\":\"ToolInvocation\",\"payload\":{\"toolName\":\"mac.apps.open\"," +
+                "\"arguments\":{\"displayName\":\"Safari\"}},\"correlationId\":null}",
+            request.encodedMessage,
+        )
+    }
+
+    @Test
     fun createsVersionedMacFilesLargestInvocationWithTypedArguments() {
         val request = codec.createToolInvocation(
             "android-test",
@@ -254,6 +273,26 @@ class GoffyProtocolCodecTest {
     }
 
     @Test
+    fun decodesCompatibleMacAppsOpenCapability() {
+        val response = codec.decodeCapabilityDiscovery(
+            capabilityEnvelope(macAppsOpenCapabilityTool()),
+            discoveryMessageId,
+            "mac.apps.open",
+        ) as CapabilityDiscoveryMessage.Response
+
+        assertEquals(
+            DiscoveredToolCapability(
+                name = "mac.apps.open",
+                toolVersion = "1.0.0",
+                executionTarget = ExecutionTarget.MAC,
+                permission = "CONFIRM",
+                timeoutMillis = 3_000,
+            ),
+            response.capability,
+        )
+    }
+
+    @Test
     fun decodesCompatibleGitStatusCapability() {
         val response = codec.decodeCapabilityDiscovery(
             capabilityEnvelope(gitStatusCapabilityTool()),
@@ -323,6 +362,20 @@ class GoffyProtocolCodecTest {
 
         assertThrows(ProtocolException::class.java) {
             codec.decodeCapabilityDiscovery(raw, discoveryMessageId, "mac.apps.list")
+        }
+    }
+
+    @Test
+    fun rejectsMacAppsOpenCapabilityIfItClaimsSafeReadOnlyAuthority() {
+        val raw = capabilityEnvelope(
+            macAppsOpenCapabilityTool()
+                .replace("\"dev.goffy/permission\":\"CONFIRM\"", "\"dev.goffy/permission\":\"SAFE\"")
+                .replace("\"readOnlyHint\":false", "\"readOnlyHint\":true")
+                .replace("\"idempotentHint\":false", "\"idempotentHint\":true"),
+        )
+
+        assertThrows(ProtocolException::class.java) {
+            codec.decodeCapabilityDiscovery(raw, discoveryMessageId, "mac.apps.open")
         }
     }
 
@@ -466,6 +519,33 @@ class GoffyProtocolCodecTest {
         assertEquals(listOf("Safari", "Terminal"), content.entries.map { it.displayName })
         assertEquals(listOf("com.apple.Safari", "com.apple.Terminal"), content.entries.map { it.bundleId })
         assertTrue(content.truncated)
+    }
+
+    @Test
+    fun decodesStructuredMacAppsOpenResult() {
+        val event = codec.decodeEvent(
+            macAppsOpenResultEnvelope(),
+            expectedCorrelationId = messageId,
+            expectedToolName = "mac.apps.open",
+        )
+
+        assertTrue(event is ExecutionEvent.Result)
+        val result = event as ExecutionEvent.Result
+        val content = result.content as MacAppOpened
+        assertEquals(ExecutionTarget.MAC, result.executionTarget)
+        assertEquals("running", content.status)
+        assertEquals("Safari", content.displayName)
+        assertEquals("com.apple.Safari", content.bundleId)
+        assertTrue(content.verified)
+    }
+
+    @Test
+    fun rejectsMacAppsOpenResultWithoutVerifiedState() {
+        val raw = macAppsOpenResultEnvelope().replace("\"verified\":true", "\"verified\":false")
+
+        assertThrows(ProtocolException::class.java) {
+            codec.decodeEvent(raw, messageId, "mac.apps.open")
+        }
     }
 
     @Test
@@ -633,6 +713,9 @@ class GoffyProtocolCodecTest {
     private fun macAppsResultEnvelope(): String =
         """{"protocolVersion":"0.2.0","messageId":"33333333-3333-4333-8333-333333333333","timestamp":"2026-07-13T16:00:01Z","deviceId":"goffy-hub","messageType":"ToolResult","payload":{"toolName":"mac.apps.list","executionTarget":"MAC","structuredContent":{"status":"available","appCount":3,"truncated":true,"entries":[{"appIndex":0,"displayName":"Safari","bundleId":"com.apple.Safari"},{"appIndex":1,"displayName":"Terminal","bundleId":"com.apple.Terminal"}]}},"correlationId":"$messageId"}"""
 
+    private fun macAppsOpenResultEnvelope(): String =
+        """{"protocolVersion":"0.2.0","messageId":"33333333-3333-4333-8333-333333333333","timestamp":"2026-07-13T16:00:01Z","deviceId":"goffy-hub","messageType":"ToolResult","payload":{"toolName":"mac.apps.open","executionTarget":"MAC","structuredContent":{"status":"running","displayName":"Safari","bundleId":"com.apple.Safari","verified":true}},"correlationId":"$messageId"}"""
+
     private fun gitStatusResultEnvelope(): String =
         """{"protocolVersion":"0.2.0","messageId":"33333333-3333-4333-8333-333333333333","timestamp":"2026-07-13T16:00:01Z","deviceId":"goffy-hub","messageType":"ToolResult","payload":{"toolName":"git.status","executionTarget":"MAC","structuredContent":{"status":"available","repoIndex":0,"repoName":"goffy","branch":"main","headOidShort":"0123456789abcdef","upstream":null,"ahead":null,"behind":null,"clean":false,"stagedCount":1,"unstagedCount":0,"untrackedCount":1,"conflictCount":0,"truncated":false,"approvedRepos":[{"repoIndex":0,"name":"goffy"}],"changes":[{"path":"README.md","pathTruncated":false,"indexStatus":"M","workingTreeStatus":".","kind":"tracked"},{"path":"TODO.md","pathTruncated":false,"indexStatus":"?","workingTreeStatus":"?","kind":"untracked"}]}},"correlationId":"$messageId"}"""
 
@@ -656,6 +739,9 @@ class GoffyProtocolCodecTest {
 
     private fun macAppsCapabilityTool(): String =
         """{"name":"mac.apps.list","title":"Mac approved app catalog","description":"List explicitly approved Mac applications by display name and bundle identifier without launching apps, reading installed app folders, or exposing file paths.","inputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"maxEntries":{"default":10,"maximum":25,"minimum":1,"type":"integer"}},"type":"object"},"outputSchema":{"${'$'}defs":{"MacAppCatalogEntryOutput":{"additionalProperties":false,"properties":{"appIndex":{"exclusiveMaximum":25,"minimum":0,"type":"integer"},"bundleId":{"maxLength":160,"minLength":1,"type":"string"},"displayName":{"maxLength":80,"minLength":1,"type":"string"}},"required":["appIndex","displayName","bundleId"],"type":"object"}},"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"appCount":{"maximum":25,"minimum":0,"type":"integer"},"entries":{"items":{"${'$'}ref":"#/${'$'}defs/MacAppCatalogEntryOutput"},"maxItems":25,"type":"array"},"status":{"maxLength":64,"minLength":1,"type":"string"},"truncated":{"type":"boolean"}},"required":["status","appCount","truncated","entries"],"type":"object"},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"_meta":{"dev.goffy/toolVersion":"1.0.0","dev.goffy/executionTarget":"MAC","dev.goffy/permission":"SAFE","dev.goffy/timeoutMs":3000}}"""
+
+    private fun macAppsOpenCapabilityTool(): String =
+        """{"name":"mac.apps.open","title":"Open approved Mac app","description":"Open one explicitly approved Mac application by display name using its fixed bundle identifier. The tool cannot open files, scan installed app folders, or run shell commands.","inputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"displayName":{"maxLength":80,"minLength":1,"type":"string"}},"required":["displayName"],"type":"object"},"outputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"bundleId":{"maxLength":160,"minLength":1,"type":"string"},"displayName":{"maxLength":80,"minLength":1,"type":"string"},"status":{"maxLength":64,"minLength":1,"type":"string"},"verified":{"type":"boolean"}},"required":["status","displayName","bundleId","verified"],"type":"object"},"annotations":{"readOnlyHint":false,"destructiveHint":false,"idempotentHint":false,"openWorldHint":false},"_meta":{"dev.goffy/toolVersion":"1.0.0","dev.goffy/executionTarget":"MAC","dev.goffy/permission":"CONFIRM","dev.goffy/timeoutMs":3000}}"""
 
     private fun gitStatusCapabilityTool(): String =
         """{"name":"git.status","title":"Approved Git repository status","description":"Read bounded status metadata for explicitly approved local Git repositories without running arbitrary commands or exposing repository root paths.","inputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"includeUntracked":{"default":true,"type":"boolean"},"maxChanges":{"default":25,"maximum":32,"minimum":1,"type":"integer"},"repoIndex":{"default":0,"exclusiveMaximum":8,"minimum":0,"type":"integer"}},"type":"object"},"outputSchema":{"${'$'}defs":{"GitStatusApprovedRepoOutput":{"additionalProperties":false,"properties":{"name":{"maxLength":64,"minLength":1,"type":"string"},"repoIndex":{"exclusiveMaximum":8,"minimum":0,"type":"integer"}},"required":["repoIndex","name"],"type":"object"},"GitStatusChangeOutput":{"additionalProperties":false,"properties":{"indexStatus":{"maxLength":1,"minLength":1,"type":"string"},"kind":{"enum":["tracked","untracked","conflict"],"type":"string"},"path":{"maxLength":160,"minLength":1,"type":"string"},"pathTruncated":{"type":"boolean"},"workingTreeStatus":{"maxLength":1,"minLength":1,"type":"string"}},"required":["path","pathTruncated","indexStatus","workingTreeStatus","kind"],"type":"object"}},"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"ahead":{"anyOf":[{"minimum":0,"type":"integer"},{"type":"null"}],"default":null},"approvedRepos":{"items":{"${'$'}ref":"#/${'$'}defs/GitStatusApprovedRepoOutput"},"maxItems":8,"type":"array"},"behind":{"anyOf":[{"minimum":0,"type":"integer"},{"type":"null"}],"default":null},"branch":{"anyOf":[{"maxLength":96,"type":"string"},{"type":"null"}],"default":null},"changes":{"items":{"${'$'}ref":"#/${'$'}defs/GitStatusChangeOutput"},"maxItems":32,"type":"array"},"clean":{"type":"boolean"},"conflictCount":{"minimum":0,"type":"integer"},"headOidShort":{"anyOf":[{"maxLength":16,"type":"string"},{"type":"null"}],"default":null},"repoIndex":{"exclusiveMaximum":8,"minimum":0,"type":"integer"},"repoName":{"maxLength":64,"minLength":1,"type":"string"},"stagedCount":{"minimum":0,"type":"integer"},"status":{"maxLength":64,"minLength":1,"type":"string"},"truncated":{"type":"boolean"},"unstagedCount":{"minimum":0,"type":"integer"},"untrackedCount":{"minimum":0,"type":"integer"},"upstream":{"anyOf":[{"maxLength":128,"type":"string"},{"type":"null"}],"default":null}},"required":["status","repoIndex","repoName","clean","stagedCount","unstagedCount","untrackedCount","conflictCount","truncated","approvedRepos","changes"],"type":"object"},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"_meta":{"dev.goffy/toolVersion":"1.0.0","dev.goffy/executionTarget":"MAC","dev.goffy/permission":"SAFE","dev.goffy/timeoutMs":3000}}"""

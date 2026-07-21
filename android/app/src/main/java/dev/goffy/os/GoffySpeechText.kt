@@ -3,6 +3,7 @@ package dev.goffy.os
 import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.MacAppOpened
 import dev.goffy.os.protocol.MacAppsList
 import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacFilesLargest
@@ -47,6 +48,8 @@ private fun ToolResultContent.speakableText(verified: Boolean): String =
         is MacAppsList ->
             "Mac approved app catalog returned ${entries.size} apps out of $appCount. " +
                 "I will not launch apps without confirmation."
+        is MacAppOpened ->
+            "Mac app $displayName opened and was verified as running."
         is MacFilesLargest ->
             "Largest-file scan returned ${entries.size} entries from approved root $rootName. " +
                 if (truncated) "The scan was truncated." else "The scan was not truncated."

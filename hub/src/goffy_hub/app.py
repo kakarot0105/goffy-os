@@ -30,6 +30,7 @@ from goffy_hub.tool_health import ToolHealthMonitor
 from goffy_hub.tools import (
     build_git_status_tool,
     build_mac_apps_list_tool,
+    build_mac_apps_open_tool,
     build_mac_clipboard_read_tool,
     build_mac_files_largest_tool,
     build_mac_files_list_tool,
@@ -44,6 +45,7 @@ from goffy_protocol import (
     CapabilityDiscoveryResponsePayload,
     MessageEnvelope,
     MessageType,
+    PermissionLevel,
     ToolErrorPayload,
     ToolInvocationPayload,
     ToolProgressPayload,
@@ -55,6 +57,7 @@ from goffy_protocol import (
 LOGGER = logging.getLogger(__name__)
 SendEvent = Callable[[MessageType, BaseModel, UUID | None], Awaitable[bool]]
 MAX_MESSAGES_PER_CONNECTION = 64
+WEBSOCKET_TOOL_PERMISSIONS = frozenset({PermissionLevel.SAFE})
 
 
 class HealthResponse(BaseModel):
@@ -69,7 +72,8 @@ class HealthResponse(BaseModel):
 
 
 def build_registry(settings: HubSettings) -> ToolRegistry:
-    registry = ToolRegistry()
+    confirm_tool_names = frozenset({"mac.apps.open"} if settings.mac_app_open_enabled else ())
+    registry = ToolRegistry(confirm_tool_names=confirm_tool_names)
     registry.register(
         build_mac_system_tool(
             settings.tool_timeout_seconds,
@@ -114,6 +118,14 @@ def build_registry(settings: HubSettings) -> ToolRegistry:
                 settings.tool_health_timeout_seconds,
             )
         )
+        if settings.mac_app_open_enabled:
+            registry.register(
+                build_mac_apps_open_tool(
+                    settings.mac_app_allowlist,
+                    settings.tool_timeout_seconds,
+                    settings.tool_health_timeout_seconds,
+                )
+            )
     if settings.mac_clipboard_read_enabled:
         registry.register(
             build_mac_clipboard_read_tool(
@@ -382,7 +394,10 @@ async def _handle_message(
             )
             return
 
-        tools = registry.discover(discovery_request.tool_name)
+        tools = registry.discover(
+            discovery_request.tool_name,
+            permissions=WEBSOCKET_TOOL_PERMISSIONS,
+        )
         if tools:
             discovered_tools.add(tools[0].name)
         await send_event(
@@ -445,6 +460,14 @@ async def _handle_message(
             send_event,
             code="invalid_tool_arguments",
             message="Arguments do not match the tool schema.",
+            correlation_id=envelope.message_id,
+        )
+        return
+    if prepared.definition.permission not in WEBSOCKET_TOOL_PERMISSIONS:
+        await _send_error(
+            send_event,
+            code="tool_not_found",
+            message="The requested tool is unavailable or unauthorized.",
             correlation_id=envelope.message_id,
         )
         return
