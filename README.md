@@ -141,6 +141,8 @@ the capability boundary.
 The previous browser concept is preserved in [`prototype/web-shell`](prototype/web-shell).
 The local phone model feasibility note is in
 [`docs/architecture/local-model.md`](docs/architecture/local-model.md).
+The Jarvis-style home/ROM UX contract is in
+[`docs/architecture/goffy-os-design.md`](docs/architecture/goffy-os-design.md).
 The ROM-first feasibility track is in [`ROM_FEASIBILITY.md`](ROM_FEASIBILITY.md).
 
 ## Repository map
