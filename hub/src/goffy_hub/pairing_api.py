@@ -231,6 +231,13 @@ def build_pairing_router(
         _require_loopback(request)
         redemption = await _read_redemption(request)
         _require_audit_ready_for_credential_mutation(audit_log)
+        _audit(
+            audit_log,
+            source="pairing",
+            action="challenge.redeem_requested",
+            outcome="succeeded",
+            principal=None,
+        )
         try:
             issued = await pairing_service.complete(
                 redemption.challenge_id,
@@ -316,6 +323,14 @@ def build_pairing_router(
         if credential_id is None:
             raise _api_error(403, "paired_principal_required", "Paired authentication required.")
         _require_audit_ready_for_credential_mutation(audit_log)
+        _audit(
+            audit_log,
+            source="pairing",
+            action="credential.self_revoke_requested",
+            outcome="succeeded",
+            principal=principal,
+            credential_id=credential_id,
+        )
         try:
             revoked = await pairing_service.revoke(credential_id)
         except CredentialStoreError as error:
@@ -355,6 +370,14 @@ def build_pairing_router(
             raise _api_error(401, "authentication_required", "Paired authentication required.")
 
         _require_audit_ready_for_credential_mutation(audit_log)
+        _audit(
+            audit_log,
+            source="pairing",
+            action="credential.rotate_requested",
+            outcome="succeeded",
+            principal=principal,
+            credential_id=credential_id,
+        )
         try:
             rotated = await pairing_service.rotate(credential_id, current_token)
         except CredentialStoreError as error:
@@ -394,6 +417,14 @@ def build_pairing_router(
     ) -> RevocationResponse:
         principal = await _require_loopback_admin(request, authenticator)
         _require_audit_ready_for_credential_mutation(audit_log)
+        _audit(
+            audit_log,
+            source="pairing",
+            action="credential.admin_revoke_requested",
+            outcome="succeeded",
+            principal=principal,
+            credential_id=credential_id,
+        )
         try:
             revoked = await pairing_service.revoke(credential_id)
         except CredentialStoreError as error:
@@ -514,9 +545,13 @@ def _audit(
             credential_id=credential_id or (principal.credential_id if principal else None),
             detail_code=detail_code,
         )
-    except OperatorAuditStoreError:
+    except OperatorAuditStoreError as error:
         if fail_closed:
-            raise
+            raise _api_error(
+                503,
+                "operator_audit_unavailable",
+                "Operator audit storage is temporarily unavailable.",
+            ) from error
         # Credential mutations may already be committed. Do not return a false
         # HTTP failure after changing credential state.
         return

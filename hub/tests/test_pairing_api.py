@@ -609,7 +609,38 @@ def test_paired_credential_rotation_replaces_bearer_and_closes_live_sessions(
     assert old_after_restart.status_code == 401
 
 
-def test_rotation_does_not_return_false_failure_when_audit_store_fails_after_mutation(
+def test_redeem_fails_closed_when_pre_mutation_audit_record_fails(
+    tmp_path: Path,
+) -> None:
+    with pairing_client(tmp_path) as client:
+        challenge = client.post(
+            "/admin/v1/pairing/challenges",
+            headers=BOOTSTRAP_HEADERS,
+        ).json()
+        app = cast(FastAPI, client.app)
+
+        def fail_audit_record(**_: object) -> None:
+            raise OperatorAuditStoreError("simulated audit persistence failure")
+
+        app.state.operator_audit_log.record = fail_audit_record
+        redeemed = client.post(
+            "/pairing/v1/redeem",
+            json={
+                "challengeId": challenge["challengeId"],
+                "pairingToken": challenge["pairingToken"],
+                "deviceId": "audit-fail-closed",
+                "displayName": "Moto G",
+            },
+        )
+        stored_credentials = app.state.credential_store.list_credentials()
+
+    assert redeemed.status_code == 503
+    assert redeemed.json()["detail"]["code"] == "operator_audit_unavailable"
+    assert challenge["pairingToken"] not in redeemed.text
+    assert stored_credentials == ()
+
+
+def test_rotation_fails_closed_when_pre_mutation_audit_record_fails(
     tmp_path: Path,
 ) -> None:
     with pairing_client(tmp_path) as client:
@@ -621,6 +652,32 @@ def test_rotation_does_not_return_false_failure_when_audit_store_fails_after_mut
 
         app.state.operator_audit_log.record = fail_audit_record
         rotation = client.post("/pairing/v1/rotate", headers=paired_headers(access_token))
+        stored_old_credential = app.state.credential_store.authenticate(access_token)
+        stored_credentials = app.state.credential_store.list_credentials()
+
+    assert rotation.status_code == 503
+    assert rotation.json()["detail"]["code"] == "operator_audit_unavailable"
+    assert access_token not in rotation.text
+    assert stored_old_credential is not None
+    assert str(stored_old_credential.credential_id) == credential_id
+    assert [str(credential.credential_id) for credential in stored_credentials] == [credential_id]
+
+
+def test_rotation_does_not_return_false_failure_when_success_audit_fails_after_mutation(
+    tmp_path: Path,
+) -> None:
+    with pairing_client(tmp_path) as client:
+        credential_id, access_token = pair_device(client)
+        app = cast(FastAPI, client.app)
+        original_audit_record = app.state.operator_audit_log.record
+
+        def fail_success_audit_record(**kwargs: object) -> object:
+            if kwargs.get("action") == "credential.rotate":
+                raise OperatorAuditStoreError("simulated audit persistence failure")
+            return original_audit_record(**kwargs)
+
+        app.state.operator_audit_log.record = fail_success_audit_record
+        rotation = client.post("/pairing/v1/rotate", headers=paired_headers(access_token))
         old_token_replay = client.post(
             "/pairing/v1/rotate",
             headers=paired_headers(access_token),
@@ -629,6 +686,9 @@ def test_rotation_does_not_return_false_failure_when_audit_store_fails_after_mut
             rotation.json()["accessToken"]
         )
         stored_old_credential = app.state.credential_store.authenticate(access_token)
+        action_pairs = {
+            (event.source, event.action) for event in app.state.operator_audit_log.snapshot().events
+        }
 
     assert rotation.status_code == 200
     rotated = rotation.json()
@@ -638,6 +698,8 @@ def test_rotation_does_not_return_false_failure_when_audit_store_fails_after_mut
     assert stored_new_credential is not None
     assert str(stored_new_credential.credential_id) == credential_id
     assert stored_old_credential is None
+    assert ("pairing", "credential.rotate_requested") in action_pairs
+    assert ("pairing", "credential.rotate") not in action_pairs
 
 
 def test_rotation_fails_closed_when_operator_audit_is_already_tampered(
