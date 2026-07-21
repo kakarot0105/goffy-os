@@ -150,6 +150,9 @@ It intentionally targets a non-privileged system app first:
   GOFFY release key before ROM import.
 - No `priv-app` permission grants.
 - No signature or privileged Android permissions.
+- The ROM descriptor and validator now require `dev.goffy.os/.MainActivity` to
+  stay exported and user-selectable as Android HOME, while still keeping GOFFY
+  non-privileged and user-approved for camera/microphone access.
 - Camera remains foreground and user-approved only.
 - The Android manifest declares a separate Home-shell intent filter so GOFFY can
   be selected as the home surface when installed or preinstalled.

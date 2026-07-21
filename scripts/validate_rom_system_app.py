@@ -28,6 +28,30 @@ REQUIRED_RUNTIME_PERMISSION_POLICY = {
     "android.permission.CAMERA": "foreground_user_approved_only",
     "android.permission.RECORD_AUDIO": "foreground_user_approved_only",
 }
+HOME_SURFACE_ACTIVITY = ".MainActivity"
+HOME_SURFACE_MAIN_ACTION = "android.intent.action.MAIN"
+HOME_SURFACE_LAUNCHER_CATEGORY = "android.intent.category.LAUNCHER"
+HOME_SURFACE_HOME_CATEGORIES = (
+    "android.intent.category.DEFAULT",
+    "android.intent.category.HOME",
+)
+REQUIRED_LAUNCHER_FILTER = (
+    frozenset((HOME_SURFACE_MAIN_ACTION,)),
+    frozenset((HOME_SURFACE_LAUNCHER_CATEGORY,)),
+)
+REQUIRED_HOME_FILTER = (
+    frozenset((HOME_SURFACE_MAIN_ACTION,)),
+    frozenset(HOME_SURFACE_HOME_CATEGORIES),
+)
+REQUIRED_MAIN_ACTIVITY_FILTERS = frozenset((REQUIRED_LAUNCHER_FILTER, REQUIRED_HOME_FILTER))
+REQUIRED_HOME_SURFACE = {
+    "activity": HOME_SURFACE_ACTIVITY,
+    "exported": True,
+    "main_action": HOME_SURFACE_MAIN_ACTION,
+    "launcher_category": HOME_SURFACE_LAUNCHER_CATEGORY,
+    "home_categories": list(HOME_SURFACE_HOME_CATEGORIES),
+    "policy": "user_selectable_default_home",
+}
 BLOCKED_TEMPLATE_PATTERNS = (
     "privileged: true",
     'certificate: "platform"',
@@ -45,6 +69,7 @@ def validate_rom_system_app(
     findings: list[str] = []
     descriptor = load_descriptor(descriptor_path)
     manifest_permissions = manifest_requested_permissions(manifest_path)
+    manifest_findings = validate_manifest_home_surface(manifest_path)
     application_id = android_application_id(android_build_path)
 
     if descriptor.get("schema_version") != SCHEMA_VERSION:
@@ -108,6 +133,10 @@ def validate_rom_system_app(
             "foreground_user_approved_only"
         )
 
+    if descriptor.get("home_surface") != REQUIRED_HOME_SURFACE:
+        findings.append("home_surface must keep MainActivity as a user-selectable HOME surface")
+    findings.extend(manifest_findings)
+
     return findings
 
 
@@ -126,6 +155,74 @@ def manifest_requested_permissions(path: Path) -> set[str]:
         for element in manifest.findall("uses-permission")
         if element.attrib.get(name_attribute)
     }
+
+
+def validate_manifest_home_surface(path: Path) -> list[str]:
+    manifest = ET.parse(path).getroot()  # noqa: S314
+    name_attribute = f"{{{ANDROID_NAMESPACE}}}name"
+    exported_attribute = f"{{{ANDROID_NAMESPACE}}}exported"
+    home_categories = set(HOME_SURFACE_HOME_CATEGORIES)
+    findings: list[str] = []
+
+    main_activity = None
+    for activity in manifest.findall("./application/activity"):
+        activity_name = activity.attrib.get(name_attribute)
+        if activity_name == HOME_SURFACE_ACTIVITY:
+            main_activity = activity
+        elif activity_declares_home_surface(activity, name_attribute, home_categories):
+            findings.append("Only MainActivity may declare a HOME intent filter")
+    for alias in manifest.findall("./application/activity-alias"):
+        if activity_declares_home_surface(alias, name_attribute, home_categories):
+            findings.append("Only MainActivity may declare a HOME intent filter")
+    if main_activity is None:
+        return ["Android manifest must declare .MainActivity for the ROM home surface"]
+    if main_activity.attrib.get(exported_attribute) != "true":
+        findings.append("MainActivity ROM home surface must remain exported=true")
+
+    filter_shapes = frozenset(intent_filter_shapes(main_activity, name_attribute))
+    if REQUIRED_LAUNCHER_FILTER not in filter_shapes:
+        findings.append("MainActivity must keep a MAIN/LAUNCHER intent filter")
+    if REQUIRED_HOME_FILTER not in filter_shapes:
+        findings.append("MainActivity must keep a MAIN/HOME/DEFAULT intent filter")
+    if filter_shapes != REQUIRED_MAIN_ACTIVITY_FILTERS:
+        findings.append("MainActivity intent filters must match the ROM home-surface contract")
+    return findings
+
+
+def intent_filter_shapes(
+    activity: ET.Element,
+    name_attribute: str,
+) -> tuple[tuple[frozenset[str], frozenset[str]], ...]:
+    shapes: list[tuple[frozenset[str], frozenset[str]]] = []
+    for intent_filter in activity.findall("intent-filter"):
+        actions = frozenset(
+            str(element.attrib.get(name_attribute, ""))
+            for element in intent_filter.findall("action")
+            if element.attrib.get(name_attribute)
+        )
+        categories = frozenset(
+            str(element.attrib.get(name_attribute, ""))
+            for element in intent_filter.findall("category")
+            if element.attrib.get(name_attribute)
+        )
+        shapes.append((actions, categories))
+    return tuple(shapes)
+
+
+def activity_declares_home_surface(
+    activity: ET.Element,
+    name_attribute: str,
+    home_categories: set[str],
+) -> bool:
+    for intent_filter in activity.findall("intent-filter"):
+        categories = {
+            str(element.attrib.get(name_attribute, ""))
+            for element in intent_filter.findall("category")
+            if element.attrib.get(name_attribute)
+        }
+        if categories.intersection(home_categories):
+            return True
+    return False
 
 
 def android_application_id(path: Path) -> str:

@@ -16,6 +16,7 @@
 - [x] Rollback Markdown template and exact archive/SHA evidence validation
 - [x] Local stock-restore archive hashing helper with redacted evidence output
 - [x] Non-privileged ROM system-app descriptor and validator
+- [x] ROM home-surface contract validator for user-selectable GOFFY HOME
 - [x] Safe AOSP product-overlay template and validator for `GoffyOS`
 - [x] Dry-run release signing plan for externally keyed ROM APK
 - [x] Local signed ROM APK verification evidence generator

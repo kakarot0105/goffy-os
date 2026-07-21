@@ -11,6 +11,11 @@ metadata tools, optional Git status, optional Mac clipboard text read, and a
 redacted Android-local audit trail for terminal tasks, not a general command
 channel.
 
+ROM packaging treats GOFFY as a non-privileged system app with an explicit
+home-surface contract: `.MainActivity` must stay exported for `MAIN/LAUNCHER`
+and `MAIN/HOME/DEFAULT`, while validators continue to reject platform signing,
+priv-app permission grants, and background camera or microphone authority.
+
 ```text
 GOFFY ROM or bootstrap Android command surface
         |

@@ -255,6 +255,10 @@ include real credentials or unrelated personal data.
 - CI validates both the strict source manifest and freshly merged debug and release
   manifests, rejecting permission variants, undeclared hardware features, and
   non-intent package queries.
+- ROM system-app validation requires `.MainActivity` to remain the only GOFFY
+  HOME surface: exported for `MAIN/LAUNCHER` and `MAIN/HOME/DEFAULT`, but still
+  non-privileged, non-platform-signed, and without background camera/microphone
+  authority.
 - `mac.system_info` uses Python standard-library APIs and never invokes a shell.
 - `mac.processes.list` registers only on macOS Hub hosts, fails closed off
   macOS, uses `psutil` directly, and never invokes a shell. It exposes only

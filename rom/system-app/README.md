@@ -6,7 +6,7 @@ system app.
 Files:
 
 - [`goffy-system-app.json`](goffy-system-app.json) records the intended package,
-  permissions, install class, and runtime policy.
+  permissions, install class, home-surface contract, and runtime policy.
 - [`Android.bp.template`](Android.bp.template) is a Soong `android_app_import`
   template for an AOSP/GSI-derived build tree.
 
@@ -35,6 +35,9 @@ Policy:
   and v2/v3 signature evidence before AOSP import planning.
 - Keep `privileged_permission_allowlist` empty.
 - Keep `CAMERA` and `RECORD_AUDIO` foreground and user-approved only.
+- Keep `.MainActivity` exported with both `MAIN/LAUNCHER` and
+  `MAIN/HOME/DEFAULT` intent filters so a future ROM can present GOFFY as the
+  user-selectable home surface without granting privileged authority.
 - Re-run the validator after any Android manifest permission change.
 
 This is not a flashable image and does not modify the phone.

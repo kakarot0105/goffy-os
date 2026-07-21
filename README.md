@@ -48,6 +48,8 @@ the capability boundary.
 ## Current vertical slice
 
 - Kotlin/Jetpack Compose GOFFY LITE home shell
+- ROM system-app home-surface contract requiring GOFFY to remain user-selectable
+  as Android HOME without privileged or platform-signed authority
 - Deterministic route for exact `Show/Check [me] my Mac status`
 - Offline deterministic route for battery status commands
 - Permission-free, allowlisted `SAFE phone.battery.status` execution

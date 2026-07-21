@@ -17,6 +17,17 @@
     "com.android.alarm.permission.SET_ALARM"
   ],
   "privileged_permission_allowlist": [],
+  "home_surface": {
+    "activity": ".MainActivity",
+    "exported": true,
+    "main_action": "android.intent.action.MAIN",
+    "launcher_category": "android.intent.category.LAUNCHER",
+    "home_categories": [
+      "android.intent.category.DEFAULT",
+      "android.intent.category.HOME"
+    ],
+    "policy": "user_selectable_default_home"
+  },
   "runtime_permission_policy": {
     "android.permission.CAMERA": "foreground_user_approved_only",
     "android.permission.RECORD_AUDIO": "foreground_user_approved_only"

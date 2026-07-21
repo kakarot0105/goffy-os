@@ -11,6 +11,21 @@ MANIFEST = """\
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <application>
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
 </manifest>
 """
 
@@ -53,6 +68,17 @@ def descriptor() -> dict[str, object]:
             "com.android.alarm.permission.SET_ALARM",
         ],
         "privileged_permission_allowlist": [],
+        "home_surface": {
+            "activity": ".MainActivity",
+            "exported": True,
+            "main_action": "android.intent.action.MAIN",
+            "launcher_category": "android.intent.category.LAUNCHER",
+            "home_categories": [
+                "android.intent.category.DEFAULT",
+                "android.intent.category.HOME",
+            ],
+            "policy": "user_selectable_default_home",
+        },
         "runtime_permission_policy": {
             "android.permission.CAMERA": "foreground_user_approved_only",
             "android.permission.RECORD_AUDIO": "foreground_user_approved_only",
@@ -136,6 +162,148 @@ def test_rom_system_app_descriptor_rejects_permission_drift(tmp_path: Path) -> N
     )
 
     assert "descriptor requested_permissions must match Android manifest" in findings
+
+
+def test_rom_system_app_descriptor_requires_home_surface_contract(tmp_path: Path) -> None:
+    payload = descriptor()
+    payload["home_surface"] = {
+        "activity": ".MainActivity",
+        "exported": False,
+        "main_action": "android.intent.action.MAIN",
+        "launcher_category": "android.intent.category.LAUNCHER",
+        "home_categories": ["android.intent.category.HOME"],
+        "policy": "launcher_only",
+    }
+    descriptor_path, manifest_path, build_path = write_fixture(tmp_path, payload)
+
+    findings = validate_rom_system_app(
+        descriptor_path=descriptor_path,
+        manifest_path=manifest_path,
+        android_build_path=build_path,
+        root=tmp_path,
+    )
+
+    assert "home_surface must keep MainActivity as a user-selectable HOME surface" in findings
+
+
+def test_rom_system_app_descriptor_requires_manifest_home_intent(tmp_path: Path) -> None:
+    descriptor_path, manifest_path, build_path = write_fixture(tmp_path, descriptor())
+    manifest_path.write_text(
+        MANIFEST.replace(
+            '<category android:name="android.intent.category.HOME" />\n'
+            '                <category android:name="android.intent.category.DEFAULT" />',
+            '<category android:name="android.intent.category.DEFAULT" />',
+        ),
+        encoding="utf-8",
+    )
+
+    findings = validate_rom_system_app(
+        descriptor_path=descriptor_path,
+        manifest_path=manifest_path,
+        android_build_path=build_path,
+        root=tmp_path,
+    )
+
+    assert "MainActivity must keep a MAIN/HOME/DEFAULT intent filter" in findings
+
+
+def test_rom_system_app_descriptor_requires_exported_main_activity(tmp_path: Path) -> None:
+    descriptor_path, manifest_path, build_path = write_fixture(tmp_path, descriptor())
+    manifest_path.write_text(
+        MANIFEST.replace('android:exported="true"', 'android:exported="false"'),
+        encoding="utf-8",
+    )
+
+    findings = validate_rom_system_app(
+        descriptor_path=descriptor_path,
+        manifest_path=manifest_path,
+        android_build_path=build_path,
+        root=tmp_path,
+    )
+
+    assert "MainActivity ROM home surface must remain exported=true" in findings
+
+
+def test_rom_system_app_descriptor_rejects_second_home_surface(tmp_path: Path) -> None:
+    descriptor_path, manifest_path, build_path = write_fixture(tmp_path, descriptor())
+    manifest_path.write_text(
+        MANIFEST.replace(
+            "    </application>",
+            """        <activity
+            android:name=".OtherActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+            </intent-filter>
+        </activity>
+    </application>""",
+        ),
+        encoding="utf-8",
+    )
+
+    findings = validate_rom_system_app(
+        descriptor_path=descriptor_path,
+        manifest_path=manifest_path,
+        android_build_path=build_path,
+        root=tmp_path,
+    )
+
+    assert "Only MainActivity may declare a HOME intent filter" in findings
+
+
+def test_rom_system_app_descriptor_rejects_home_activity_alias(tmp_path: Path) -> None:
+    descriptor_path, manifest_path, build_path = write_fixture(tmp_path, descriptor())
+    manifest_path.write_text(
+        MANIFEST.replace(
+            "    </application>",
+            """        <activity-alias
+            android:name=".AliasActivity"
+            android:targetActivity=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+    </application>""",
+        ),
+        encoding="utf-8",
+    )
+
+    findings = validate_rom_system_app(
+        descriptor_path=descriptor_path,
+        manifest_path=manifest_path,
+        android_build_path=build_path,
+        root=tmp_path,
+    )
+
+    assert "Only MainActivity may declare a HOME intent filter" in findings
+
+
+def test_rom_system_app_descriptor_rejects_extra_main_activity_filter(tmp_path: Path) -> None:
+    descriptor_path, manifest_path, build_path = write_fixture(tmp_path, descriptor())
+    manifest_path.write_text(
+        MANIFEST.replace(
+            "        </activity>",
+            """            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.BROWSABLE" />
+            </intent-filter>
+        </activity>""",
+        ),
+        encoding="utf-8",
+    )
+
+    findings = validate_rom_system_app(
+        descriptor_path=descriptor_path,
+        manifest_path=manifest_path,
+        android_build_path=build_path,
+        root=tmp_path,
+    )
+
+    assert "MainActivity intent filters must match the ROM home-surface contract" in findings
 
 
 def test_rom_system_app_descriptor_rejects_privileged_template(tmp_path: Path) -> None:
