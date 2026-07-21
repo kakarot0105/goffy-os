@@ -153,6 +153,8 @@ It intentionally targets a non-privileged system app first:
 - Camera remains foreground and user-approved only.
 - The Android manifest declares a separate Home-shell intent filter so GOFFY can
   be selected as the home surface when installed or preinstalled.
+- Physical Moto validation after debug reinstall showed `dev.goffy.os/.MainActivity`
+  in both Android HOME and normal LAUNCHER query results.
 
 The descriptor is validated by:
 

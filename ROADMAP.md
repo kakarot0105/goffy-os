@@ -13,7 +13,7 @@
 - [x] Official stock restore source identified through Motorola Software Fix
 - [x] Manual restore/unlock evidence validator and sensitive-key rejection
 - [x] Non-privileged ROM system-app descriptor and validator
-- [x] Android Home-shell intent declared and security-scanned
+- [x] Android Home-shell intent declared, security-scanned, and physically queried
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist
 - [ ] User-approved destructive unlock/flash decision point
