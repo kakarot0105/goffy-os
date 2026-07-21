@@ -19,9 +19,11 @@ MAX_AUDIT_TEXT_LENGTH = 80
 AUDIT_TOKEN_PATTERN = re.compile(r"^[a-z0-9_.:-]{1,80}$")
 AUDIT_HASH_DOMAIN = b"goffy-operator-audit-v1\x00"
 GENESIS_AUDIT_HASH = b"\x00" * 32
-CURRENT_AUDIT_SCHEMA_VERSION = 2
+CURRENT_AUDIT_SCHEMA_VERSION = 3
 CHAIN_TIP_SEQUENCE_KEY = "chain_tip_sequence"
 CHAIN_TIP_HASH_KEY = "chain_tip_hash"
+HIGH_WATER_SEQUENCE_KEY = "high_water_sequence"
+HIGH_WATER_HASH_KEY = "high_water_hash"
 
 Clock = Callable[[], datetime]
 
@@ -156,7 +158,8 @@ class OperatorAuditLog:
                     connection.execute("BEGIN IMMEDIATE")
                     stored_rows = self._fetch_stored_rows(connection)
                     chain_tip = self._read_chain_tip(connection)
-                    integrity = _verify_stored_rows(stored_rows, chain_tip)
+                    high_water_mark = self._read_high_water_mark(connection)
+                    integrity = _verify_stored_rows(stored_rows, chain_tip, high_water_mark)
             except ValueError as error:
                 raise OperatorAuditStoreError(
                     "operator audit database integrity check failed"
@@ -170,7 +173,8 @@ class OperatorAuditLog:
             connection.execute("BEGIN IMMEDIATE")
             stored_rows = self._fetch_stored_rows(connection)
             chain_tip = self._read_chain_tip(connection)
-            integrity = _verify_stored_rows(stored_rows, chain_tip)
+            high_water_mark = self._read_high_water_mark(connection)
+            integrity = _verify_stored_rows(stored_rows, chain_tip, high_water_mark)
             if integrity == "tamper_detected":
                 self._integrity = integrity
                 raise OperatorAuditStoreError("operator audit database integrity check failed")
@@ -227,10 +231,15 @@ class OperatorAuditLog:
                 connection,
                 _AuditChainTip(sequence=persistent_event.sequence, event_hash=event_hash),
             )
+            self._write_high_water_mark(
+                connection,
+                _AuditChainTip(sequence=persistent_event.sequence, event_hash=event_hash),
+            )
             self._prune_oldest(connection)
             stored_rows = self._fetch_stored_rows(connection)
             chain_tip = self._read_chain_tip(connection)
-            self._integrity = _verify_stored_rows(stored_rows, chain_tip)
+            high_water_mark = self._read_high_water_mark(connection)
+            self._integrity = _verify_stored_rows(stored_rows, chain_tip, high_water_mark)
         self._last_hash = event_hash
         return persistent_event
 
@@ -269,7 +278,7 @@ class OperatorAuditLog:
         try:
             with self._connect() as connection:
                 schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if schema_version not in {0, 1, CURRENT_AUDIT_SCHEMA_VERSION}:
+                if schema_version not in {0, 1, 2, CURRENT_AUDIT_SCHEMA_VERSION}:
                     raise OperatorAuditStoreError("operator audit database schema is unsupported")
                 connection.execute(
                     """
@@ -320,8 +329,13 @@ class OperatorAuditLog:
                     raise OperatorAuditStoreError(
                         "operator audit database metadata schema is invalid"
                     )
-                if schema_version < CURRENT_AUDIT_SCHEMA_VERSION:
+                if schema_version < 2:
                     self._refresh_chain_tip_metadata(connection)
+                if schema_version < 3:
+                    chain_tip = self._read_chain_tip(connection)
+                    if chain_tip is None:
+                        raise OperatorAuditStoreError("operator audit database metadata is invalid")
+                    self._write_high_water_mark(connection, chain_tip)
                 connection.execute(f"PRAGMA user_version = {CURRENT_AUDIT_SCHEMA_VERSION}")
         except sqlite3.DatabaseError as error:
             raise OperatorAuditStoreError(
@@ -333,13 +347,15 @@ class OperatorAuditLog:
             connection.execute("BEGIN IMMEDIATE")
             stored_rows = self._fetch_stored_rows(connection)
             chain_tip = self._read_chain_tip(connection)
-            integrity = _verify_stored_rows(stored_rows, chain_tip)
+            high_water_mark = self._read_high_water_mark(connection)
+            integrity = _verify_stored_rows(stored_rows, chain_tip, high_water_mark)
             self._integrity = integrity
             if integrity != "tamper_detected":
                 self._prune_oldest(connection)
                 stored_rows = self._fetch_stored_rows(connection)
                 chain_tip = self._read_chain_tip(connection)
-                integrity = _verify_stored_rows(stored_rows, chain_tip)
+                high_water_mark = self._read_high_water_mark(connection)
+                integrity = _verify_stored_rows(stored_rows, chain_tip, high_water_mark)
 
         self._integrity = integrity
         self._events = deque(row.event for row in stored_rows[-self._max_events :])
@@ -384,20 +400,40 @@ class OperatorAuditLog:
         return tuple(_row_to_stored_event(row) for row in rows)
 
     def _read_chain_tip(self, connection: sqlite3.Connection) -> _AuditChainTip | None:
+        return self._read_chain_metadata(
+            connection,
+            sequence_key=CHAIN_TIP_SEQUENCE_KEY,
+            hash_key=CHAIN_TIP_HASH_KEY,
+        )
+
+    def _read_high_water_mark(self, connection: sqlite3.Connection) -> _AuditChainTip | None:
+        return self._read_chain_metadata(
+            connection,
+            sequence_key=HIGH_WATER_SEQUENCE_KEY,
+            hash_key=HIGH_WATER_HASH_KEY,
+        )
+
+    def _read_chain_metadata(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        sequence_key: str,
+        hash_key: str,
+    ) -> _AuditChainTip | None:
         rows = connection.execute(
             """
             SELECT key, value
             FROM operator_audit_metadata
             WHERE key IN (?, ?)
             """,
-            (CHAIN_TIP_SEQUENCE_KEY, CHAIN_TIP_HASH_KEY),
+            (sequence_key, hash_key),
         ).fetchall()
         values = {str(row[0]): str(row[1]) for row in rows}
-        if set(values) != {CHAIN_TIP_SEQUENCE_KEY, CHAIN_TIP_HASH_KEY}:
+        if set(values) != {sequence_key, hash_key}:
             return None
         try:
-            sequence = int(values[CHAIN_TIP_SEQUENCE_KEY])
-            event_hash = bytes.fromhex(values[CHAIN_TIP_HASH_KEY])
+            sequence = int(values[sequence_key])
+            event_hash = bytes.fromhex(values[hash_key])
         except ValueError:
             return None
         if sequence < 0 or len(event_hash) != 32:
@@ -409,6 +445,33 @@ class OperatorAuditLog:
         connection: sqlite3.Connection,
         chain_tip: _AuditChainTip,
     ) -> None:
+        self._write_chain_metadata(
+            connection,
+            chain_tip,
+            sequence_key=CHAIN_TIP_SEQUENCE_KEY,
+            hash_key=CHAIN_TIP_HASH_KEY,
+        )
+
+    def _write_high_water_mark(
+        self,
+        connection: sqlite3.Connection,
+        high_water_mark: _AuditChainTip,
+    ) -> None:
+        self._write_chain_metadata(
+            connection,
+            high_water_mark,
+            sequence_key=HIGH_WATER_SEQUENCE_KEY,
+            hash_key=HIGH_WATER_HASH_KEY,
+        )
+
+    def _write_chain_metadata(
+        self,
+        connection: sqlite3.Connection,
+        chain_tip: _AuditChainTip,
+        *,
+        sequence_key: str,
+        hash_key: str,
+    ) -> None:
         connection.executemany(
             """
             INSERT INTO operator_audit_metadata (key, value)
@@ -416,8 +479,8 @@ class OperatorAuditLog:
             ON CONFLICT(key) DO UPDATE SET value = excluded.value
             """,
             (
-                (CHAIN_TIP_SEQUENCE_KEY, str(chain_tip.sequence)),
-                (CHAIN_TIP_HASH_KEY, chain_tip.event_hash.hex()),
+                (sequence_key, str(chain_tip.sequence)),
+                (hash_key, chain_tip.event_hash.hex()),
             ),
         )
 
@@ -498,13 +561,17 @@ def _audit_event_hash(event: OperatorAuditEvent, previous_hash: bytes) -> bytes:
 def _verify_stored_rows(
     stored_rows: tuple[_StoredAuditRow, ...],
     chain_tip: _AuditChainTip | None,
+    high_water_mark: _AuditChainTip | None,
 ) -> str:
-    if chain_tip is None:
+    if chain_tip is None or high_water_mark is None:
         return "tamper_detected"
     if not stored_rows:
         return (
             "verified"
-            if chain_tip.sequence == 0 and chain_tip.event_hash == GENESIS_AUDIT_HASH
+            if chain_tip.sequence == 0
+            and chain_tip.event_hash == GENESIS_AUDIT_HASH
+            and high_water_mark.sequence == 0
+            and high_water_mark.event_hash == GENESIS_AUDIT_HASH
             else "tamper_detected"
         )
     expected_previous = (
@@ -519,6 +586,11 @@ def _verify_stored_rows(
         expected_previous = row.event_hash
     last_row = stored_rows[-1]
     if chain_tip.sequence != last_row.event.sequence or chain_tip.event_hash != last_row.event_hash:
+        return "tamper_detected"
+    if (
+        high_water_mark.sequence != chain_tip.sequence
+        or high_water_mark.event_hash != chain_tip.event_hash
+    ):
         return "tamper_detected"
     return status
 

@@ -223,6 +223,52 @@ def test_persistent_operator_audit_detects_tail_truncation(tmp_path: Path) -> No
     assert reopened.snapshot().integrity == "tamper_detected"
 
 
+def test_persistent_operator_audit_detects_tail_truncation_with_rewritten_tip(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "operator-audit.sqlite3"
+    log = OperatorAuditLog(
+        max_events=16,
+        database_path=database_path,
+        clock=lambda: datetime(2026, 7, 14, 12, 0, tzinfo=UTC),
+    )
+    first = log.record(
+        source="pairing",
+        action="bundle.created",
+        outcome="succeeded",
+        principal_kind="bootstrap",
+    )
+    log.record(
+        source="mcp",
+        action="http.post",
+        outcome="succeeded",
+        principal_kind="paired",
+    )
+
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("DELETE FROM operator_audit_events WHERE sequence = 2")
+        connection.execute(
+            """
+            UPDATE operator_audit_metadata
+            SET value = ?
+            WHERE key = 'chain_tip_sequence'
+            """,
+            (str(first.sequence),),
+        )
+        connection.execute(
+            """
+            UPDATE operator_audit_metadata
+            SET value = ?
+            WHERE key = 'chain_tip_hash'
+            """,
+            (first.event_hash,),
+        )
+
+    reopened = OperatorAuditLog(max_events=16, database_path=database_path)
+
+    assert reopened.snapshot().integrity == "tamper_detected"
+
+
 def test_persistent_operator_audit_assigns_sequences_from_database_tip(
     tmp_path: Path,
 ) -> None:
