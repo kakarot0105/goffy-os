@@ -1,11 +1,16 @@
 package dev.goffy.os
 
+import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.Bundle
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Bundle
+import android.provider.Settings
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -54,6 +59,7 @@ class MainActivity : ComponentActivity() {
                 onStartVoiceInput = ::startVoiceInput,
                 onVoicePermissionDenied = ::voicePermissionDenied,
                 onSpeakLatest = ::speakLatestResult,
+                onOpenSystemSettings = ::openSystemSettings,
             )
         }
     }
@@ -105,6 +111,28 @@ class MainActivity : ComponentActivity() {
         } else {
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
+    }
+
+    private fun openSystemSettings() {
+        val intent = packageManager.resolveTrustedSystemSettingsIntent()
+        if (intent == null) {
+            showSystemSettingsUnavailable()
+            return
+        }
+        try {
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            showSystemSettingsUnavailable()
+        } catch (_: SecurityException) {
+            showSystemSettingsUnavailable()
+        }
+    }
+
+    private fun showSystemSettingsUnavailable() {
+        voiceInputState = GoffyVoiceInputState(
+            notice = getString(R.string.system_settings_unavailable),
+            warning = true,
+        )
     }
 
     private fun speakLatestResult(text: String) {
@@ -288,3 +316,49 @@ class MainActivity : ComponentActivity() {
         const val MAX_SPEECH_UTTERANCE_LENGTH = 480
     }
 }
+
+@Suppress("DEPRECATION")
+internal fun PackageManager.resolveTrustedSystemSettingsIntent(): Intent? {
+    val implicitIntent = Intent(Settings.ACTION_SETTINGS)
+    val resolved = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        resolveActivity(
+            implicitIntent,
+            PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong()),
+        )
+    } else {
+        resolveActivity(implicitIntent, PackageManager.MATCH_DEFAULT_ONLY)
+    } ?: return null
+    val activity = resolved.activityInfo ?: return null
+    val systemFlags = ApplicationInfo.FLAG_SYSTEM or ApplicationInfo.FLAG_UPDATED_SYSTEM_APP
+    val descriptor = SystemSettingsHandlerDescriptor(
+        packageName = activity.packageName,
+        enabled = activity.enabled,
+        exported = activity.exported,
+        systemApplication = activity.applicationInfo.flags and systemFlags != 0,
+    )
+    if (!descriptor.isTrustedSystemSettingsHandler()) return null
+    val className = if (activity.name.startsWith('.')) {
+        activity.packageName + activity.name
+    } else {
+        activity.name
+    }
+    return Intent(implicitIntent).apply {
+        component = ComponentName(activity.packageName, className)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+}
+
+internal data class SystemSettingsHandlerDescriptor(
+    val packageName: String,
+    val enabled: Boolean,
+    val exported: Boolean,
+    val systemApplication: Boolean,
+)
+
+internal fun SystemSettingsHandlerDescriptor.isTrustedSystemSettingsHandler(): Boolean =
+    packageName in ALLOWLISTED_SYSTEM_SETTINGS_PACKAGES &&
+        enabled &&
+        exported &&
+        systemApplication
+
+private val ALLOWLISTED_SYSTEM_SETTINGS_PACKAGES = setOf("com.android.settings")

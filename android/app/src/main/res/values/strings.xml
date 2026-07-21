@@ -4,6 +4,9 @@
     <string name="home_kicker">AGENTIC OPERATING ENVIRONMENT</string>
     <string name="home_title">GOFFY</string>
     <string name="home_subtitle">Observe. Plan. Act. Verify.</string>
+    <string name="system_settings_short">SETTINGS</string>
+    <string name="system_settings_description">Open Android Settings. GOFFY launches only the system settings screen from this button.</string>
+    <string name="system_settings_unavailable">Android Settings could not be opened safely. Use the hardware/system gesture if available.</string>
     <string name="orb_description">GOFFY orb state: %1$s. Execution target: %2$s. Task phase: %3$s.</string>
     <string name="orb_loop_label">LOOP / %1$s</string>
     <string name="orb_phase_label">PHASE / %1$s</string>

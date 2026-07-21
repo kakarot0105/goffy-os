@@ -149,6 +149,7 @@ fun GoffyApp(
     onStartVoiceInput: ((String) -> Unit) -> Unit = {},
     onVoicePermissionDenied: () -> Unit = {},
     onSpeakLatest: (String) -> Unit = {},
+    onOpenSystemSettings: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -359,6 +360,7 @@ fun GoffyApp(
                 onRotateHub = { showRotateConfirmation = true },
                 onForgetHub = { showForgetConfirmation = true },
                 onRefreshHubAudit = viewModel::refreshHubOperatorAudit,
+                onOpenSystemSettings = onOpenSystemSettings,
                 onVoiceInput = {
                     if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
                         PackageManager.PERMISSION_GRANTED
@@ -664,6 +666,7 @@ private fun GoffyHomeScreen(
     onRotateHub: () -> Unit,
     onForgetHub: () -> Unit,
     onRefreshHubAudit: () -> Unit,
+    onOpenSystemSettings: () -> Unit,
     onVoiceInput: () -> Unit,
     onSpeakLatest: (String) -> Unit,
     onSubmit: () -> Unit,
@@ -684,7 +687,7 @@ private fun GoffyHomeScreen(
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(horizontal = 20.dp, vertical = 18.dp),
     ) {
-        Header()
+        Header(onOpenSystemSettings)
         Spacer(Modifier.height(20.dp))
         GoffyOrb(state.toGoffyOrbUiModel(voiceInputState))
         Spacer(Modifier.height(20.dp))
@@ -812,7 +815,8 @@ private fun LocalModelRuntimeSection(
 }
 
 @Composable
-private fun Header() {
+private fun Header(onOpenSystemSettings: () -> Unit) {
+    val systemSettingsDescription = stringResource(R.string.system_settings_description)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -840,15 +844,30 @@ private fun Header() {
                 fontSize = 14.sp,
             )
         }
-        Text(
-            text = stringResource(R.string.performance_lite),
-            color = Acid,
-            fontFamily = FontFamily.Monospace,
-            fontSize = 10.sp,
-            modifier = Modifier
-                .border(1.dp, Acid.copy(alpha = 0.55f), RoundedCornerShape(99.dp))
-                .padding(horizontal = 10.dp, vertical = 7.dp),
-        )
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = stringResource(R.string.performance_lite),
+                color = Acid,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                modifier = Modifier
+                    .border(1.dp, Acid.copy(alpha = 0.55f), RoundedCornerShape(99.dp))
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onOpenSystemSettings,
+                modifier = Modifier.semantics {
+                    contentDescription = systemSettingsDescription
+                },
+            ) {
+                Text(
+                    text = stringResource(R.string.system_settings_short),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                )
+            }
+        }
     }
 }
 
