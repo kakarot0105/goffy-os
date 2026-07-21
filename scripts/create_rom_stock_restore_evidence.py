@@ -3,14 +3,19 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-
-from scripts.validate_rom_manual_gates import ARCHIVE_NAME_PATTERN, SHA256_PATTERN
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
+if __package__ in {None, ""} and str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.validate_rom_manual_gates import ARCHIVE_NAME_PATTERN, SHA256_PATTERN  # noqa: E402
+
 JSON_SCHEMA_VERSION = "goffy.rom-stock-restore-evidence.v1"
 VALIDATION_DIR = ROOT / ".goffy-validation"
 
@@ -67,8 +72,13 @@ def validate_inputs(
         findings.append("archive path must point to an existing file")
     if not ARCHIVE_NAME_PATTERN.fullmatch(archive_path.name):
         findings.append("archive filename contains unsupported characters")
-    if not source_url.startswith("https://"):
+    parsed_source = urlsplit(source_url)
+    if parsed_source.scheme != "https" or not parsed_source.netloc:
         findings.append("source URL must be https")
+    elif parsed_source.username or parsed_source.password or "@" in parsed_source.netloc:
+        findings.append("source URL must not include credentials")
+    elif parsed_source.query or parsed_source.fragment:
+        findings.append("source URL must not include query or fragment")
 
     rollback = Path(rollback_doc)
     if not rollback_doc:
@@ -97,19 +107,58 @@ def render_json(evidence: StockRestoreEvidence) -> str:
 
 
 def output_path_allowed(path: Path, *, root: Path = ROOT) -> bool:
+    validation_root = root / ".goffy-validation"
+    expanded = path.expanduser()
+    candidate = expanded if expanded.is_absolute() else root / expanded
     try:
-        path.expanduser().resolve().relative_to((root / ".goffy-validation").resolve())
+        relative = candidate.relative_to(validation_root)
     except ValueError:
         return False
-    return True
+    if ".." in relative.parts:
+        return False
+    if validation_root.is_symlink():
+        return False
+    if candidate.is_symlink():
+        return False
+    return not any(parent.is_symlink() for parent in candidate.parents)
 
 
 def write_output(path: Path, text: str, *, root: Path = ROOT) -> None:
+    output_path, relative_parts = confined_output_path(path, root=root)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    write_text_no_follow(root / ".goffy-validation", relative_parts, text)
+
+
+def confined_output_path(path: Path, *, root: Path) -> tuple[Path, tuple[str, ...]]:
     if not output_path_allowed(path, root=root):
         raise ValueError("output path must be under .goffy-validation")
-    resolved = path.expanduser().resolve()
-    resolved.parent.mkdir(parents=True, exist_ok=True)
-    resolved.write_text(text, encoding="utf-8")
+    expanded = path.expanduser()
+    candidate = expanded if expanded.is_absolute() else root / expanded
+    validation_root = root / ".goffy-validation"
+    relative = candidate.relative_to(validation_root)
+    if not relative.parts:
+        raise ValueError("output path must be a file under .goffy-validation")
+    return candidate, tuple(relative.parts)
+
+
+def write_text_no_follow(validation_root: Path, relative_parts: tuple[str, ...], text: str) -> None:
+    validation_flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
+    child_flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
+    file_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    encoding = text.encode("utf-8")
+    dir_fd = os.open(validation_root, validation_flags)
+    try:
+        for part in relative_parts[:-1]:
+            next_dir_fd = os.open(part, child_flags, dir_fd=dir_fd)
+            os.close(dir_fd)
+            dir_fd = next_dir_fd
+        file_fd = os.open(relative_parts[-1], file_flags, 0o600, dir_fd=dir_fd)
+        try:
+            os.write(file_fd, encoding)
+        finally:
+            os.close(file_fd)
+    finally:
+        os.close(dir_fd)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

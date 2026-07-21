@@ -93,9 +93,10 @@ evidence fragment without committing the archive or its local path:
   --output .goffy-validation/rom-stock-restore-evidence.json
 ```
 
-The helper hashes the local archive, records only the archive filename, writes
-only under `.goffy-validation` when `--output` is used, and performs no network,
-ADB, fastboot, unlock, flash, or root action.
+The helper hashes the local archive, records only the archive filename, rejects
+source URLs with credentials, query, or fragment components, writes only under a
+non-symlinked `.goffy-validation` path when `--output` is used, and performs no
+network, ADB, fastboot, unlock, flash, or root action.
 
 ## Rollback Doc Requirements
 
