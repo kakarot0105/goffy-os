@@ -798,12 +798,28 @@ def test_paired_credential_runs_websocket_and_mcp_tool_discovery(tmp_path: Path)
                 "payload": {"toolName": "mac.system_info"},
             }
         )
+        process_request = MessageEnvelope.model_validate(
+            {
+                "protocolVersion": PROTOCOL_VERSION,
+                "messageId": UUID("51515151-5151-4151-8151-515151515151"),
+                "timestamp": datetime(2026, 7, 13, 12, 0, tzinfo=UTC),
+                "deviceId": "android-test",
+                "messageType": MessageType.CAPABILITY_DISCOVERY_REQUEST,
+                "payload": {"toolName": "mac.processes.list"},
+            }
+        )
         with client.websocket_connect(
             "/ws/v1",
             headers=paired_headers(access_token),
         ) as socket:
             socket.send_text(request.model_dump_json(by_alias=True))
             websocket_response = MessageEnvelope.model_validate_json(socket.receive_text())
+        with client.websocket_connect(
+            "/ws/v1",
+            headers=paired_headers(access_token),
+        ) as socket:
+            socket.send_text(process_request.model_dump_json(by_alias=True))
+            process_websocket_response = MessageEnvelope.model_validate_json(socket.receive_text())
 
         session_id = initialize_mcp(client, access_token)
         mcp_response = client.post(
@@ -814,8 +830,13 @@ def test_paired_credential_runs_websocket_and_mcp_tool_discovery(tmp_path: Path)
 
     assert websocket_response.message_type is MessageType.CAPABILITY_DISCOVERY_RESPONSE
     assert websocket_response.payload["tools"][0]["name"] == "mac.system_info"
+    assert process_websocket_response.message_type is MessageType.CAPABILITY_DISCOVERY_RESPONSE
+    assert process_websocket_response.payload["tools"][0]["name"] == "mac.processes.list"
     assert mcp_response.status_code == 200
-    assert mcp_response.json()["result"]["tools"][0]["name"] == "mac.system_info"
+    assert {tool["name"] for tool in mcp_response.json()["result"]["tools"]} == {
+        "mac.processes.list",
+        "mac.system_info",
+    }
 
 
 def test_mcp_session_is_owned_by_one_paired_credential(tmp_path: Path) -> None:

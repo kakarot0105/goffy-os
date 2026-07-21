@@ -7,8 +7,10 @@ import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
+import dev.goffy.os.protocol.MAC_PROCESSES_LIST_TOOL
 import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacFilesLargest
+import dev.goffy.os.protocol.MacProcessesList
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.MacFilesList
@@ -511,6 +513,9 @@ data class TaskTimelineState(
         MAC_FILES_LIST_TOOL -> executionTarget == ExecutionTarget.MAC &&
             content is MacFilesList &&
             content.matchesToolContract()
+        MAC_PROCESSES_LIST_TOOL -> executionTarget == ExecutionTarget.MAC &&
+            content is MacProcessesList &&
+            content.matchesToolContract()
         MAC_SYSTEM_INFO_TOOL -> executionTarget == ExecutionTarget.MAC && content is MacSystemInfo
         PHONE_BATTERY_STATUS_TOOL -> executionTarget == ExecutionTarget.PHONE &&
             content is PhoneBatteryStatus &&
@@ -629,6 +634,7 @@ private fun ToolResultContent.summaryText(): String = when (this) {
     is MacClipboardRead -> macClipboardSummary()
     is MacFilesLargest -> largestMacFilesSummary()
     is MacFilesList -> macFilesSummary()
+    is MacProcessesList -> macProcessesSummary()
     is MacSystemInfo -> "$operatingSystem $architecture: $status"
     is PhoneBatteryStatus -> "Battery $levelPercent%: ${if (charging) "charging" else "not charging"}"
     is PhoneDeviceInfo -> deviceInfoSummary()
@@ -688,6 +694,12 @@ private fun MacFilesLargest.largestMacFilesSummary(): String {
     val pathLabel = relativePath.ifBlank { rootName }
     val truncatedLabel = if (truncated) " (truncated)" else ""
     return "${entries.size} largest Mac files in $pathLabel$truncatedLabel"
+}
+
+private fun MacProcessesList.macProcessesSummary(): String {
+    val truncatedLabel = if (truncated) " (truncated)" else ""
+    val skippedLabel = if (skippedCount > 0) ", skipped $skippedCount" else ""
+    return "${entries.size} running Mac processes shown of $processCount$skippedLabel$truncatedLabel"
 }
 
 private fun PhoneDeviceInfo.deviceInfoSummary(): String {

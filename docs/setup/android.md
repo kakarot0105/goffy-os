@@ -48,6 +48,12 @@ review both published checksums during any wrapper upgrade.
 
 - Supported commands are the exact `Show/Check [me] my Mac status` family with
   normalized whitespace and optional trailing `.`, `!`, or `?`.
+- `What's running on my Mac`, `What is running on my Mac`,
+  `Show my Mac processes`, `List my Mac processes`, and
+  `Check me my Mac processes` route to MAC only when the Hub advertises
+  schema-compatible `SAFE mac.processes.list`. Android sends bounded default
+  arguments, displays process metadata, rejects path-like names, and does not
+  read process names aloud.
 - `List my Mac files` and `Show my Mac files` route to MAC only when the Hub
   advertises schema-compatible `SAFE mac.files.list`. Android sends bounded
   default approved-root arguments, displays entry metadata, and never requests
@@ -337,9 +343,12 @@ link is valid, or pass a short-lived local debug token file under
 ```
 
 That optional path configures only the fixed localhost debug link when a token
-file is provided, types only `check my Mac status`, and verifies a fresh visible
-`mac.system_info` task card. The token file contains the real raw bearer token;
-for ADB-safe entry it must be one line, 24..120 characters, using only
+file is provided, types only an allowlisted MAC smoke command, and verifies a
+fresh visible task card. The default is `check my Mac status` for
+`mac.system_info`; the process-list route can be smoked with
+`--mac-command "What is running on my Mac"` for `mac.processes.list`. The token
+file contains the real raw bearer token; for ADB-safe entry it must be one line,
+24..120 characters, using only
 `A-Z`, `a-z`, `0-9`, `.`, `_`, or `-`. Rendered reports and saved debug-link
 artifacts redact the token. The runner does not clear app data, tap
 `Forget link`, start the Hub, accept custom execute commands, print the debug
@@ -512,7 +521,9 @@ GOFFY process logcat capture. The Moto G MAC localhost smoke is also verified
 over USB `adb reverse` with a raw ADB-safe debug token file whose reports and
 debug-link artifacts are redacted, fixed `check my Mac status` entry, fresh
 `mac.system_info` task-card verification, screenshot capture, and bounded GOFFY
-process logcat capture.
+process logcat capture. The same script now has an allowlisted process-list MAC
+smoke path via `--mac-command "What is running on my Mac"` that verifies a fresh
+`mac.processes.list` task card.
 
 The Moto G device-info slice is verified with `what phone is this`; the visible
 task card shows `VERIFIED`, the Moto model, Android/API level, and

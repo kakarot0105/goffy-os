@@ -5,10 +5,11 @@ ROM or GSI-derived system image on the Moto G `kansas` hardware. The current
 Android app/default-launcher layer remains the safe bootstrap and fallback while
 ROM feasibility is proven. Across both forms, GOFFY separates intent, policy,
 transport, and capability execution so no model or UI can directly acquire
-ambient authority. The current runtime has five offline PHONE tools, one default
-authenticated MAC tool, optional approved-root MAC file metadata tools, optional
-Git status, optional Mac clipboard text read, and a redacted Android-local audit
-trail for terminal tasks, not a general command channel.
+ambient authority. The current runtime has five offline PHONE tools, default
+authenticated MAC status/process metadata tools, optional approved-root MAC file
+metadata tools, optional Git status, optional Mac clipboard text read, and a
+redacted Android-local audit trail for terminal tasks, not a general command
+channel.
 
 ```text
 GOFFY ROM or bootstrap Android command surface
@@ -26,6 +27,7 @@ deterministic router
                          |            |-> discover locally allowlisted tool
                          |            `-> invoke only after compatibility gate
                          `--------------> FastAPI Hub -> SAFE mac.system_info
+                                                      -> SAFE mac.processes.list
                                                       -> optional SAFE mac.files.list
                                                       -> optional SAFE mac.files.largest
                                                       -> optional SAFE git.status
@@ -133,6 +135,13 @@ approval state, active work, and execution authority are not revived.
     plaintext only on explicit invocation, does not read clipboard content during
     health checks, rejects plaintext containing `file://`, and exposes no binary
     formats, file URLs, or write authority.
+35. `mac.processes.list` is a default SAFE metadata tool only on macOS Hub
+    hosts. Non-macOS hosts do not register it, and direct health/execution checks
+    fail closed. It uses bounded `psutil` process snapshots, returns
+    process-name basenames, status, PID, RSS memory, and optional start time
+    only, and excludes command lines, executable paths, environment variables,
+    open files, network data, current working directories, and user names.
+    Android rejects path-like names and does not speak process names aloud.
 
 ## Performance posture
 
@@ -153,6 +162,9 @@ per probe. Current probes use local platform/path APIs and perform no network I/
 `git.status` invokes the fixed Git command only for explicit tool calls, not for
 periodic health checks. `mac.clipboard.read` is disabled by default, and its
 health probe checks provider availability only, not clipboard content.
+`mac.processes.list` health checks only confirm macOS plus `psutil` availability
+through a boot-time read; they do not enumerate processes until explicit
+invocation.
 Android re-discovers before every Mac invocation. MCP clients re-run `tools/list`;
 the Hub signals changed availability over authenticated MCP GET/SSE without
 introducing Android polling.

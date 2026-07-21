@@ -2,6 +2,8 @@ package dev.goffy.os.hub
 
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.ExecutionEvent
+import dev.goffy.os.protocol.MacProcessEntry
+import dev.goffy.os.protocol.MacProcessesList
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.ToolInvocationRequest
 import java.util.UUID
@@ -102,6 +104,99 @@ class OkHttpHubGatewayTest {
                 events[5],
             )
             assertEquals(1, server.requestCount)
+        }
+    }
+
+    @Test
+    fun streamsMacProcessesListThroughDiscoveryAndInvocation() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            server.enqueue(
+                MockResponse.Builder()
+                    .webSocketUpgrade(
+                        object : ClosingServerListener() {
+                            override fun onMessage(webSocket: WebSocket, text: String) {
+                                when {
+                                    text.contains("\"messageType\":\"CapabilityDiscoveryRequest\"") ->
+                                        webSocket.send(
+                                            capabilityEnvelope(
+                                                PROCESS_REQUEST.discoveryMessageId,
+                                                processCapabilityTool(),
+                                            ),
+                                        )
+                                    text.contains("\"messageType\":\"ToolInvocation\"") -> {
+                                        assertTrue(text.contains("\"toolName\":\"mac.processes.list\""))
+                                        assertTrue(text.contains("\"maxEntries\":10"))
+                                        webSocket.send(
+                                            processProgressEnvelope(
+                                                PROCESS_REQUEST.messageId,
+                                                0,
+                                                "accepted",
+                                                "Invocation accepted by the Hub.",
+                                            ),
+                                        )
+                                        webSocket.send(
+                                            processProgressEnvelope(
+                                                PROCESS_REQUEST.messageId,
+                                                1,
+                                                "completed",
+                                                "Tool returned schema-valid structured output.",
+                                            ),
+                                        )
+                                        webSocket.send(processResultEnvelope(PROCESS_REQUEST.messageId))
+                                        webSocket.send(
+                                            processVerificationEnvelope(PROCESS_REQUEST.messageId),
+                                        )
+                                    }
+                                    else -> error("unexpected client message")
+                                }
+                            }
+                        },
+                    )
+                    .build(),
+            )
+
+            val events = collectEvents(server, PROCESS_REQUEST)
+
+            assertEquals(ExecutionEvent.Starting(1), events[0])
+            assertEquals(ExecutionEvent.Ready, events[1])
+            assertEquals(
+                ExecutionEvent.Result(
+                    toolName = "mac.processes.list",
+                    executionTarget = ExecutionTarget.MAC,
+                    content = MacProcessesList(
+                        status = "available",
+                        processCount = 2,
+                        skippedCount = 0,
+                        truncated = false,
+                        entries = listOf(
+                            MacProcessEntry(
+                                pid = 88,
+                                name = "WindowServer",
+                                status = "running",
+                                rssBytes = 512_000_000L,
+                                createTimeEpochSeconds = 1_784_620_000L,
+                            ),
+                            MacProcessEntry(
+                                pid = 99,
+                                name = "loginwindow",
+                                status = "sleeping",
+                                rssBytes = 128_000_000L,
+                                createTimeEpochSeconds = null,
+                            ),
+                        ),
+                    ),
+                ),
+                events[4],
+            )
+            assertEquals(
+                ExecutionEvent.Verification(
+                    succeeded = true,
+                    summary = "mac.processes.list output matched the registered schema.",
+                    checks = listOf("tool allowlist", "input schema", "output schema"),
+                ),
+                events[5],
+            )
         }
     }
 
@@ -415,10 +510,13 @@ class OkHttpHubGatewayTest {
         client.connectionPool.evictAll()
     }
 
-    private suspend fun collectEvents(server: MockWebServer): List<ExecutionEvent> {
+    private suspend fun collectEvents(
+        server: MockWebServer,
+        request: ToolInvocationRequest = TEST_REQUEST,
+    ): List<ExecutionEvent> {
         val gateway = OkHttpHubGateway()
         return try {
-            gateway.invoke(loopbackConfig(server), TEST_REQUEST).toList()
+            gateway.invoke(loopbackConfig(server), request).toList()
         } finally {
             gateway.close()
         }
@@ -461,6 +559,16 @@ class OkHttpHubGatewayTest {
                 """{"protocolVersion":"0.2.0","messageId":"77777777-7777-4777-8777-777777777777","timestamp":"2026-07-13T16:00:00Z","deviceId":"android-test","messageType":"CapabilityDiscoveryRequest","payload":{"toolName":"mac.system_info"},"correlationId":null}""",
         )
 
+        private val PROCESS_REQUEST = ToolInvocationRequest(
+            messageId = UUID.fromString("12121212-1212-4212-8212-121212121212"),
+            toolName = "mac.processes.list",
+            encodedMessage =
+                """{"protocolVersion":"0.2.0","messageId":"12121212-1212-4212-8212-121212121212","timestamp":"2026-07-13T16:00:00Z","deviceId":"android-test","messageType":"ToolInvocation","payload":{"toolName":"mac.processes.list","arguments":{"maxEntries":10}},"correlationId":null}""",
+            discoveryMessageId = UUID.fromString("78787878-7878-4878-8878-787878787878"),
+            encodedDiscoveryMessage =
+                """{"protocolVersion":"0.2.0","messageId":"78787878-7878-4878-8878-787878787878","timestamp":"2026-07-13T16:00:00Z","deviceId":"android-test","messageType":"CapabilityDiscoveryRequest","payload":{"toolName":"mac.processes.list"},"correlationId":null}""",
+        )
+
         private fun progressEnvelope(
             correlationId: UUID,
             sequence: Int,
@@ -484,6 +592,29 @@ class OkHttpHubGatewayTest {
                     """{"toolName":"mac.system_info","executionTarget":"MAC","structuredContent":{"status":"available","operatingSystem":"Darwin","architecture":"arm64"}}""",
             )
 
+        private fun processProgressEnvelope(
+            correlationId: UUID,
+            sequence: Int,
+            stage: String,
+            message: String,
+        ): String =
+            eventEnvelope(
+                messageId = "77777777-7777-4777-8777-77777777777$sequence",
+                messageType = "ToolProgress",
+                correlationId = correlationId,
+                payload =
+                    """{"toolName":"mac.processes.list","executionTarget":"MAC","stage":"$stage","sequence":$sequence,"message":"$message"}""",
+            )
+
+        private fun processResultEnvelope(correlationId: UUID): String =
+            eventEnvelope(
+                messageId = "77777777-7777-4777-8777-777777777778",
+                messageType = "ToolResult",
+                correlationId = correlationId,
+                payload =
+                    """{"toolName":"mac.processes.list","executionTarget":"MAC","structuredContent":{"status":"available","processCount":2,"skippedCount":0,"truncated":false,"entries":[{"pid":88,"name":"WindowServer","status":"running","rssBytes":512000000,"createTimeEpochSeconds":1784620000},{"pid":99,"name":"loginwindow","status":"sleeping","rssBytes":128000000,"createTimeEpochSeconds":null}]}}""",
+            )
+
         private fun verificationEnvelope(correlationId: UUID): String =
             eventEnvelope(
                 messageId = "55555555-5555-4555-8555-555555555555",
@@ -491,6 +622,15 @@ class OkHttpHubGatewayTest {
                 correlationId = correlationId,
                 payload =
                     """{"succeeded":true,"summary":"mac.system_info output matched the registered schema.","checks":["tool allowlist","input schema","output schema"]}""",
+            )
+
+        private fun processVerificationEnvelope(correlationId: UUID): String =
+            eventEnvelope(
+                messageId = "77777777-7777-4777-8777-777777777779",
+                messageType = "VerificationResult",
+                correlationId = correlationId,
+                payload =
+                    """{"succeeded":true,"summary":"mac.processes.list output matched the registered schema.","checks":["tool allowlist","input schema","output schema"]}""",
             )
 
         private fun toolErrorEnvelope(correlationId: UUID): String =
@@ -513,6 +653,9 @@ class OkHttpHubGatewayTest {
 
         private fun capabilityTool(): String =
             """{"name":"mac.system_info","title":"Mac system information","description":"Read a minimal, non-sensitive snapshot of the Hub host.","inputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{},"type":"object"},"outputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"architecture":{"type":"string"},"operatingSystem":{"type":"string"},"status":{"type":"string"}},"required":["status","operatingSystem","architecture"],"type":"object"},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"_meta":{"dev.goffy/toolVersion":"1.0.0","dev.goffy/executionTarget":"MAC","dev.goffy/permission":"SAFE","dev.goffy/timeoutMs":3000}}"""
+
+        private fun processCapabilityTool(): String =
+            """{"name":"mac.processes.list","title":"Mac running process summary","description":"List bounded read-only metadata for running Mac processes without exposing command lines, executable paths, environment variables, open files, or network data.","inputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"maxEntries":{"default":10,"maximum":25,"minimum":1,"type":"integer"}},"type":"object"},"outputSchema":{"${'$'}defs":{"MacProcessEntryOutput":{"additionalProperties":false,"properties":{"createTimeEpochSeconds":{"anyOf":[{"minimum":0,"type":"integer"},{"type":"null"}],"default":null},"name":{"maxLength":96,"minLength":1,"type":"string"},"pid":{"maximum":2147483647,"minimum":0,"type":"integer"},"rssBytes":{"maximum":9223372036854775807,"minimum":0,"type":"integer"},"status":{"maxLength":32,"minLength":1,"type":"string"}},"required":["pid","name","status","rssBytes"],"type":"object"}},"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"entries":{"items":{"${'$'}ref":"#/${'$'}defs/MacProcessEntryOutput"},"maxItems":25,"type":"array"},"processCount":{"maximum":100000,"minimum":0,"type":"integer"},"skippedCount":{"maximum":100000,"minimum":0,"type":"integer"},"status":{"maxLength":64,"minLength":1,"type":"string"},"truncated":{"type":"boolean"}},"required":["status","processCount","skippedCount","truncated","entries"],"type":"object"},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"_meta":{"dev.goffy/toolVersion":"1.0.0","dev.goffy/executionTarget":"MAC","dev.goffy/permission":"SAFE","dev.goffy/timeoutMs":3000}}"""
 
         private fun eventEnvelope(
             messageId: String,

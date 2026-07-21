@@ -1,5 +1,5 @@
 # MCP Servers
 
-This directory reserves narrow capability packages for Milestone 3. Milestone 0
-uses an MCP-shaped in-process registry; no standards-compliant MCP server is
-claimed yet.
+This directory reserves narrow capability packages for Milestone 3. The Hub now
+serves standards-compatible MCP over `/mcp` through an in-process typed registry.
+Standalone server packages remain placeholders until a future split is needed.

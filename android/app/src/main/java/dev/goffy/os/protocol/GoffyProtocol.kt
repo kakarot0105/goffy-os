@@ -22,6 +22,7 @@ const val MAC_SYSTEM_INFO_TOOL_VERSION = "1.0.0"
 const val MAC_FILES_LARGEST_TOOL_VERSION = "1.0.0"
 const val MAC_FILES_LIST_TOOL_VERSION = "1.0.0"
 const val MAC_CLIPBOARD_READ_TOOL_VERSION = "1.0.0"
+const val MAC_PROCESSES_LIST_TOOL_VERSION = "1.0.0"
 const val GIT_STATUS_TOOL_VERSION = "1.0.0"
 const val MAX_PROTOCOL_MESSAGE_BYTES = 32_768
 
@@ -89,6 +90,10 @@ sealed interface ToolArguments
 
 data object NoToolArguments : ToolArguments
 
+data class MacProcessesListArguments(
+    val maxEntries: Int = DEFAULT_MAC_PROCESS_ENTRIES,
+) : ToolArguments
+
 data class MacFilesListArguments(
     val rootIndex: Int = 0,
     val relativePath: String = "",
@@ -127,6 +132,22 @@ data class MacSystemInfo(
     val status: String,
     val operatingSystem: String,
     val architecture: String,
+) : ToolResultContent
+
+data class MacProcessEntry(
+    val pid: Int,
+    val name: String,
+    val status: String,
+    val rssBytes: Long,
+    val createTimeEpochSeconds: Long?,
+)
+
+data class MacProcessesList(
+    val status: String,
+    val processCount: Int,
+    val skippedCount: Int,
+    val truncated: Boolean,
+    val entries: List<MacProcessEntry>,
 ) : ToolResultContent
 
 data class MacFilesApprovedRoot(
@@ -369,6 +390,16 @@ class GoffyProtocolCodec(
                 }
                 JsonObject(emptyMap())
             }
+            MAC_PROCESSES_LIST_TOOL -> {
+                val value = arguments as? MacProcessesListArguments
+                    ?: throw ProtocolException("mac.processes.list requires typed arguments")
+                if (!value.matchesToolContract()) {
+                    throw ProtocolException("mac.processes.list arguments failed local policy")
+                }
+                buildJsonObject {
+                    put("maxEntries", value.maxEntries)
+                }
+            }
             MAC_FILES_LARGEST_TOOL -> {
                 val value = arguments as? MacFilesLargestArguments
                     ?: throw ProtocolException("mac.files.largest requires typed arguments")
@@ -537,6 +568,10 @@ class GoffyProtocolCodec(
                 validateMacClipboardReadInputSchema(tool.requireObject("inputSchema"))
                 validateMacClipboardReadOutputSchema(tool.requireObject("outputSchema"))
             }
+            MAC_PROCESSES_LIST_TOOL -> {
+                validateMacProcessesListInputSchema(tool.requireObject("inputSchema"))
+                validateMacProcessesListOutputSchema(tool.requireObject("outputSchema"))
+            }
             GIT_STATUS_TOOL -> {
                 validateGitStatusInputSchema(tool.requireObject("inputSchema"))
                 validateGitStatusOutputSchema(tool.requireObject("outputSchema"))
@@ -553,6 +588,7 @@ class GoffyProtocolCodec(
             MAC_FILES_LARGEST_TOOL -> MAC_FILES_LARGEST_TOOL_VERSION
             MAC_FILES_LIST_TOOL -> MAC_FILES_LIST_TOOL_VERSION
             MAC_CLIPBOARD_READ_TOOL -> MAC_CLIPBOARD_READ_TOOL_VERSION
+            MAC_PROCESSES_LIST_TOOL -> MAC_PROCESSES_LIST_TOOL_VERSION
             GIT_STATUS_TOOL -> GIT_STATUS_TOOL_VERSION
             else -> throw ProtocolException("unsupported discovered tool")
         }
@@ -891,6 +927,104 @@ class GoffyProtocolCodec(
         properties.requireObject("characterCountTruncated").requireTypeOnly("boolean")
     }
 
+    private fun validateMacProcessesListInputSchema(schema: JsonObject) {
+        schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS)
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(MAC_PROCESSES_LIST_INPUT_KEYS)
+        properties.requireObject("maxEntries").also { maxEntries ->
+            maxEntries.requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS + "maximum" + "default")
+            maxEntries.requireType("integer")
+            maxEntries.requireInt("minimum").requireExactValue(1, "maxEntries minimum")
+            maxEntries.requireInt("maximum").requireExactValue(
+                MAX_MAC_PROCESS_ENTRIES,
+                "maxEntries maximum",
+            )
+            maxEntries.requireInt("default").requireExactValue(
+                DEFAULT_MAC_PROCESS_ENTRIES,
+                "maxEntries default",
+            )
+        }
+    }
+
+    private fun validateMacProcessesListOutputSchema(schema: JsonObject) {
+        schema.requireKeys(OUTPUT_SCHEMA_KEYS + "\$defs")
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(MAC_PROCESSES_LIST_OUTPUT_KEYS)
+        schema.requireArray("required").requireExactStrings(
+            MAC_PROCESSES_LIST_OUTPUT_KEYS,
+            "process list required",
+        )
+
+        properties.requireObject("status").validateBoundedStringSchema(
+            "status",
+            1,
+            MAX_MAC_PROCESS_STATUS_TEXT_LENGTH,
+        )
+        properties.requireObject("processCount").validateBoundedIntInclusiveSchema(
+            "processCount",
+            0,
+            MAX_MAC_PROCESS_COUNT,
+        )
+        properties.requireObject("skippedCount").validateBoundedIntInclusiveSchema(
+            "skippedCount",
+            0,
+            MAX_MAC_PROCESS_COUNT,
+        )
+        properties.requireObject("truncated").requireTypeOnly("boolean")
+        properties.requireObject("entries").also { entries ->
+            entries.requireKeys(ARRAY_REF_SCHEMA_KEYS + "maxItems")
+            entries.requireType("array")
+            entries.requireInt("maxItems").requireExactValue(
+                MAX_MAC_PROCESS_ENTRIES,
+                "entries maxItems",
+            )
+            entries.requireObject("items").requireString("\$ref").requireExactString(
+                "#/\$defs/MacProcessEntryOutput",
+                "entries ref",
+            )
+        }
+
+        val definitions = schema.requireObject("\$defs")
+        definitions.requireKeys(setOf("MacProcessEntryOutput"))
+        validateMacProcessEntryDefinition(definitions.requireObject("MacProcessEntryOutput"))
+    }
+
+    private fun validateMacProcessEntryDefinition(definition: JsonObject) {
+        definition.requireKeys(OBJECT_DEFINITION_KEYS)
+        validateObjectSchemaRootWithoutDialect(definition)
+        val properties = definition.requireObject("properties")
+        properties.requireKeys(MAC_PROCESS_ENTRY_KEYS)
+        properties.requireObject("pid").validateBoundedIntInclusiveSchema(
+            "pid",
+            0,
+            MAX_MAC_PROCESS_PID,
+        )
+        properties.requireObject("name").validateBoundedStringSchema(
+            "process name",
+            1,
+            MAX_MAC_PROCESS_NAME_LENGTH,
+        )
+        properties.requireObject("status").validateBoundedStringSchema(
+            "process status",
+            1,
+            MAX_MAC_PROCESS_STATUS_LENGTH,
+        )
+        properties.requireObject("rssBytes").validateBoundedLongSchema(
+            "rssBytes",
+            0,
+            MAX_MAC_PROCESS_RSS_BYTES,
+        )
+        properties.requireObject("createTimeEpochSeconds").validateNullableNonNegativeIntegerSchema(
+            "createTimeEpochSeconds",
+        )
+        definition.requireArray("required").requireExactStrings(
+            MAC_PROCESS_ENTRY_REQUIRED_KEYS,
+            "process entry required",
+        )
+    }
+
     private fun validateGitStatusInputSchema(schema: JsonObject) {
         schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS)
         validateObjectSchemaRoot(schema)
@@ -1126,6 +1260,12 @@ class GoffyProtocolCodec(
                     throw ProtocolException("mac.clipboard.read returned an unexpected execution target")
                 }
                 decodeMacClipboardRead(content)
+            }
+            MAC_PROCESSES_LIST_TOOL -> {
+                if (target != ExecutionTarget.MAC) {
+                    throw ProtocolException("mac.processes.list returned an unexpected execution target")
+                }
+                decodeMacProcessesList(content)
             }
             GIT_STATUS_TOOL -> {
                 if (target != ExecutionTarget.MAC) {
@@ -1368,6 +1508,43 @@ class GoffyProtocolCodec(
         return result
     }
 
+    private fun decodeMacProcessesList(content: JsonObject): MacProcessesList {
+        content.requireKeys(MAC_PROCESSES_LIST_OUTPUT_KEYS)
+        val entries = content.requireArray("entries").boundedObjects(
+            maximum = MAX_MAC_PROCESS_ENTRIES,
+            field = "entries",
+        ) { entry ->
+            entry.requireKeys(MAC_PROCESS_ENTRY_REQUIRED_KEYS, setOf("createTimeEpochSeconds"))
+            MacProcessEntry(
+                pid = entry.requireBoundedInt("pid", 0, MAX_MAC_PROCESS_PID),
+                name = entry.requireBoundedString("name", 1, MAX_MAC_PROCESS_NAME_LENGTH),
+                status = entry.requireBoundedString("status", 1, MAX_MAC_PROCESS_STATUS_LENGTH),
+                rssBytes = entry.requireBoundedLong(
+                    "rssBytes",
+                    0,
+                    MAX_MAC_PROCESS_RSS_BYTES,
+                ),
+                createTimeEpochSeconds = entry.requireNullableLong("createTimeEpochSeconds")
+                    ?.also { created ->
+                        if (created < 0L) {
+                            throw ProtocolException("createTimeEpochSeconds cannot be negative")
+                        }
+                    },
+            )
+        }
+        val result = MacProcessesList(
+            status = content.requireBoundedString("status", 1, MAX_MAC_PROCESS_STATUS_TEXT_LENGTH),
+            processCount = content.requireBoundedInt("processCount", 0, MAX_MAC_PROCESS_COUNT),
+            skippedCount = content.requireBoundedInt("skippedCount", 0, MAX_MAC_PROCESS_COUNT),
+            truncated = content.requireBoolean("truncated"),
+            entries = entries,
+        )
+        if (!result.matchesToolContract()) {
+            throw ProtocolException("process list result failed local policy")
+        }
+        return result
+    }
+
     private fun decodeVerification(payload: JsonObject): ExecutionEvent {
         payload.requireKeys(VERIFICATION_KEYS)
         val checks = payload.requireArray("checks")
@@ -1534,6 +1711,20 @@ private fun JsonObject.validateNonNegativeIntegerSchema(field: String) {
     requireInt("minimum").requireExactValue(0, "$field minimum")
 }
 
+private fun JsonObject.validateBoundedIntInclusiveSchema(field: String, minimum: Int, maximum: Int) {
+    requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS + "maximum")
+    requireType("integer")
+    requireInt("minimum").requireExactValue(minimum, "$field minimum")
+    requireInt("maximum").requireExactValue(maximum, "$field maximum")
+}
+
+private fun JsonObject.validateBoundedLongSchema(field: String, minimum: Long, maximum: Long) {
+    requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS + "maximum")
+    requireType("integer")
+    requireLong("minimum").requireExactValue(minimum, "$field minimum")
+    requireLong("maximum").requireExactValue(maximum, "$field maximum")
+}
+
 private fun JsonObject.validateNullableBoundedStringSchema(field: String, maximum: Int) {
     requireKeys(NULLABLE_SCHEMA_KEYS)
     if (this["default"] !== JsonNull) {
@@ -1594,6 +1785,12 @@ private fun JsonArray.requireExactStrings(expected: Set<String>, field: String) 
 }
 
 private fun Int.requireExactValue(expected: Int, field: String) {
+    if (this != expected) {
+        throw ProtocolException("$field does not match the local contract")
+    }
+}
+
+private fun Long.requireExactValue(expected: Long, field: String) {
     if (this != expected) {
         throw ProtocolException("$field does not match the local contract")
     }
@@ -1678,6 +1875,27 @@ private val MAC_FILES_LIST_INPUT_KEYS = setOf(
     "relativePath",
     "maxEntries",
     "includeHidden",
+)
+private val MAC_PROCESSES_LIST_INPUT_KEYS = setOf("maxEntries")
+private val MAC_PROCESSES_LIST_OUTPUT_KEYS = setOf(
+    "status",
+    "processCount",
+    "skippedCount",
+    "truncated",
+    "entries",
+)
+private val MAC_PROCESS_ENTRY_KEYS = setOf(
+    "pid",
+    "name",
+    "status",
+    "rssBytes",
+    "createTimeEpochSeconds",
+)
+private val MAC_PROCESS_ENTRY_REQUIRED_KEYS = setOf(
+    "pid",
+    "name",
+    "status",
+    "rssBytes",
 )
 private val MAC_FILES_LARGEST_INPUT_KEYS = setOf(
     "rootIndex",

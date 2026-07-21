@@ -173,9 +173,9 @@ GOFFY_HUB_TOKEN='replace-with-the-same-development-token' \
   .venv/bin/python scripts/demo_mcp.py
 ```
 
-The demo succeeds only after negotiating the expected protocol, discovering
-exactly `mac.system_info`, calling it with no arguments, and validating the typed
-structured output. It never prints the token.
+The demo succeeds only after negotiating the expected protocol, discovering the
+default SAFE Mac tools, calling one typed tool with bounded arguments, and
+validating the structured output. It never prints the token.
 
 The local MCP Host and Origin allowlists are derived from port `8787`. Override
 them only with exact comma-separated values:
@@ -208,7 +208,25 @@ store capped at 64 events and 16 KiB. It does not retain tool results, share
 cursors between sessions, or replay across termination, idle expiry, or Hub
 restart. Unknown, foreign, and evicted cursors replay no retained history; they
 receive a fresh re-list signal and attach to the current session's live tail. No
-network health probe or busy polling is used by the current `mac.system_info` tool.
+network health probe or busy polling is used by the current default Mac tools.
+
+## Mac Process List
+
+`mac.processes.list` is enabled by default on macOS Hub hosts as a SAFE,
+read-only metadata tool. Non-macOS hosts do not register it. It uses `psutil`
+directly, not shell commands. Tool input accepts only `maxEntries`, bounded from
+1 through 25. Output contains bounded process count, skipped count, truncation
+state, and entries with PID, process-name basename, status, RSS memory, and
+optional start time. It deliberately omits command lines, executable paths,
+environment variables, open files, network connections, current working
+directories, and user names.
+
+Health checks call only a lightweight `psutil.boot_time()` availability probe and
+do not enumerate processes; off-macOS checks fail closed. Android can invoke the exact
+`What's running on my Mac`, `What is running on my Mac`,
+`Show my Mac processes`, `List my Mac processes`, or
+`Check me my Mac processes` routes after discovery shows this tool healthy;
+Android TTS reports counts without reading process names aloud.
 
 ## Approved Mac File Roots
 

@@ -99,6 +99,31 @@ MAC_UI_XML = "\n".join(
 )
 
 
+MAC_PROCESS_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,900][660,1040]" />',
+        '  <node text="Send" class="android.widget.TextView" enabled="true" '
+        'bounds="[520,1100][660,1180]" />',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,1200][260,1240]" />',
+        '  <node text="What is running on my Mac" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,1200][430,1240]" />',
+        '  <node text="VERIFIED" class="android.widget.TextView" enabled="true" '
+        'bounds="[500,1200][650,1240]" />',
+        '  <node text="MAC  /  mac.processes.list  /  SAFE" '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1260][600,1300]" />',
+        '  <node text="MAC PROCESSES / 2" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,1320][320,1360]" />',
+        '  <node text="mac.processes.list output matched the registered schema." '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1380][660,1420]" />',
+        "</hierarchy>",
+    ]
+)
+
+
 DEBUG_SETUP_UI_XML = "\n".join(
     [
         "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
@@ -236,7 +261,7 @@ def test_execute_rejects_non_smoke_commands(
     assert not report.ok
     assert {step.detail for step in report.steps} == {
         "execute mode only supports the fixed PHONE smoke command",
-        "execute mode only supports the fixed MAC smoke command",
+        "execute mode only supports the fixed MAC smoke commands",
     }
 
 
@@ -519,6 +544,57 @@ def test_include_mac_requires_mac_visible_markers(
         execute=True,
         confirm_device_mutation=True,
         include_mac=True,
+        runner=runner,
+        trusted_root=tmp_path,
+        output_directory=tmp_path / "artifacts",
+    )
+
+    assert report.ok
+    assert any(
+        step.name == "MAC command smoke" and step.status is StepStatus.OK for step in report.steps
+    )
+
+
+def test_include_mac_can_smoke_process_list_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    apk = tmp_path / smoke.DEBUG_APK_RELATIVE_PATH
+    apk.parent.mkdir(parents=True)
+    apk.write_bytes(b"apk")
+    monkeypatch.setattr(smoke, "trusted_adb_path", lambda: adb)
+    monkeypatch.setattr(
+        smoke,
+        "capture_screenshot",
+        lambda **kwargs: DeviceSmokeStep(
+            name="Capture screenshot",
+            status=StepStatus.OK,
+            artifact="final.png",
+        ),
+    )
+    cat_calls = 0
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        nonlocal cat_calls
+        target = target_runner(command)
+        if target is not None:
+            return target
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            cat_calls += 1
+            if cat_calls >= 8:
+                return CommandResult(0, MAC_PROCESS_UI_XML, "")
+            return CommandResult(0, PHONE_UI_XML if cat_calls >= 5 else BASE_UI_XML, "")
+        if adb_args(command) == ("shell", "pidof", smoke.PACKAGE_NAME):
+            return CommandResult(1, "", "")
+        return CommandResult(0, "ok", "")
+
+    report = build_report(
+        root=tmp_path,
+        execute=True,
+        confirm_device_mutation=True,
+        include_mac=True,
+        mac_command=smoke.DEFAULT_MAC_PROCESS_COMMAND,
         runner=runner,
         trusted_root=tmp_path,
         output_directory=tmp_path / "artifacts",

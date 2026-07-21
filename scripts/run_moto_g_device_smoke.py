@@ -35,6 +35,7 @@ MAIN_ACTIVITY = f"{PACKAGE_NAME}/.MainActivity"
 HUB_REVERSE_ENDPOINT = "tcp:8787"
 DEFAULT_PHONE_COMMAND = "check my battery level"
 DEFAULT_MAC_COMMAND = "check my Mac status"
+DEFAULT_MAC_PROCESS_COMMAND = "What is running on my Mac"
 DEBUG_HUB_ENDPOINT = "ws://127.0.0.1:8787/ws/v1"
 REMOTE_UI_XML = "/sdcard/goffy-device-smoke-window.xml"
 MAX_INPUT_TEXT_LENGTH = 120
@@ -45,6 +46,18 @@ MAX_LOGCAT_LINES = 200
 MOTO_G_MODEL_PATTERN = re.compile(r"\bmoto\s*g\b|moto_g", re.IGNORECASE)
 DEVICE_SERIAL_PLACEHOLDER = "<device-serial>"
 DEBUG_HUB_TOKEN_PLACEHOLDER = "<redacted-debug-hub-token>"  # noqa: S105
+MAC_SMOKE_MARKERS = {
+    DEFAULT_MAC_COMMAND.casefold(): (
+        "VERIFIED",
+        "Darwin",
+        "mac.system_info output matched the registered schema.",
+    ),
+    DEFAULT_MAC_PROCESS_COMMAND.casefold(): (
+        "VERIFIED",
+        "MAC PROCESSES",
+        "mac.processes.list output matched the registered schema.",
+    ),
+}
 
 
 class StepStatus(StrEnum):
@@ -223,7 +236,7 @@ def planned_steps(
                 name="MAC command smoke",
                 status=StepStatus.PLANNED,
                 mutates_device=True,
-                detail=f"would submit `{mac_command}` and verify mac.system_info",
+                detail=f"would submit `{mac_command}` and verify {mac_tool_for_smoke(mac_command)}",
             )
         )
     steps.extend(
@@ -447,11 +460,7 @@ def build_report(
                 timeout_seconds=timeout_seconds,
                 wait_timeout_seconds=wait_timeout_seconds,
                 command=mac_command,
-                expected_markers=(
-                    "VERIFIED",
-                    "Darwin",
-                    "mac.system_info output matched the registered schema.",
-                ),
+                expected_markers=mac_smoke_markers(mac_command),
                 step_name="MAC command smoke",
                 artifact_prefix="mac-command",
                 output_directory=artifacts,
@@ -510,8 +519,8 @@ def execution_blockers(
         blockers.append("missing explicit --confirm-device-mutation")
     if phone_command != DEFAULT_PHONE_COMMAND:
         blockers.append("execute mode only supports the fixed PHONE smoke command")
-    if include_mac and mac_command != DEFAULT_MAC_COMMAND:
-        blockers.append("execute mode only supports the fixed MAC smoke command")
+    if include_mac and mac_command.casefold() not in MAC_SMOKE_MARKERS:
+        blockers.append("execute mode only supports the fixed MAC smoke commands")
     if root.resolve() != trusted_root.resolve():
         blockers.append(
             "repo-root/mutating mode only supports the checked-out GOFFY repository root"
@@ -533,6 +542,20 @@ def execution_blockers(
     if not apk.is_file():
         blockers.append("android/debug APK missing")
     return tuple(blockers)
+
+
+def mac_smoke_markers(command: str) -> tuple[str, ...]:
+    return MAC_SMOKE_MARKERS.get(
+        command.casefold(), MAC_SMOKE_MARKERS[DEFAULT_MAC_COMMAND.casefold()]
+    )
+
+
+def mac_tool_for_smoke(command: str) -> str:
+    return (
+        "mac.processes.list"
+        if command.casefold() == DEFAULT_MAC_PROCESS_COMMAND.casefold()
+        else "mac.system_info"
+    )
 
 
 def resolve_debug_hub_token_file(root: Path, token_file: Path) -> Path:

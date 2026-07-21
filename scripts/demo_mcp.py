@@ -9,6 +9,7 @@ import httpx
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 
+from goffy_hub.tools.mac_processes import MacProcessesListOutput
 from goffy_hub.tools.mac_system import MacSystemInfoOutput
 from goffy_protocol import MCP_PROTOCOL_VERSION
 
@@ -38,6 +39,7 @@ async def demo() -> None:
         initialization = await session.initialize()
         tools = await session.list_tools()
         result = await session.call_tool("mac.system_info", {})
+        process_result = await session.call_tool("mac.processes.list", {"maxEntries": 3})
 
         session_id = get_session_id()
         if session_id is None:
@@ -57,18 +59,26 @@ async def demo() -> None:
     tool_names = sorted(tool.name for tool in tools.tools)
     if "mac.system_info" not in tool_names:
         raise RuntimeError("Hub did not expose the required mac.system_info tool")
+    if "mac.processes.list" not in tool_names:
+        raise RuntimeError("Hub did not expose the required mac.processes.list tool")
     if result.isError or result.structuredContent is None:
         raise RuntimeError("mac.system_info returned an MCP tool error")
+    if process_result.isError or process_result.structuredContent is None:
+        raise RuntimeError("mac.processes.list returned an MCP tool error")
 
     output = MacSystemInfoOutput.model_validate(result.structuredContent)
+    process_output = MacProcessesListOutput.model_validate(process_result.structuredContent)
     print(
         json.dumps(
             {
                 "protocolVersion": initialization.protocolVersion,
                 "tools": tool_names,
                 "result": output.model_dump(mode="json", by_alias=True),
+                "processResult": process_output.model_dump(mode="json", by_alias=True),
                 "sessionTerminated": True,
-                "verified": output.status == "available",
+                "verified": output.status == "available"
+                and process_output.status == "available"
+                and len(process_output.entries) <= 3,
             },
             indent=2,
             sort_keys=True,

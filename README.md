@@ -12,7 +12,7 @@ the capability boundary.
 > repo now treats ROM/GSI feasibility for the exact Moto G 2025 `kansas` target
 > as the primary product track, with the launcher/app layer kept for safe
 > validation and fallback. The current repo implements five
-> offline PHONE actions, discovery-gated SAFE Mac status/file-list actions, an
+> offline PHONE actions, discovery-gated SAFE Mac status/process/file-list actions, an
 > approved-repo SAFE Git status MCP tool, an opt-in SAFE Mac clipboard-read MCP
 > tool, an official MCP
 > Streamable HTTP boundary, stable Hub paired-device credentials, Keystore-backed
@@ -98,6 +98,10 @@ the capability boundary.
 - Persistent, hash-chained paired-mode Hub operator audit storage with integrity
   reporting
 - Allowlisted, read-only `SAFE mac.system_info` tool
+- macOS-gated, allowlisted, read-only `SAFE mac.processes.list` tool for bounded running
+  process metadata, including an Android `What's running on my Mac` route that
+  does not request command lines, executable paths, environment variables, open
+  files, or network data
 - Optional `SAFE mac.files.list` and `SAFE mac.files.largest` tools for
   explicitly configured Mac file roots, including Android routes for listing
   and finding largest files in the default approved root
@@ -175,6 +179,16 @@ GOFFY_HUB_TOKEN='replace-with-the-same-development-token' .venv/bin/python scrip
 `/mcp` is the separate session-aware MCP `2025-11-25` JSON-RPC endpoint. Both are
 backed by the same fail-closed typed tool registry; neither provides arbitrary
 shell execution.
+
+Default Mac process listing requires no extra configuration on macOS Hub hosts.
+Non-macOS hosts do not register the tool. The Hub exposes `SAFE
+mac.processes.list` with bounded process count, PID, process-name basename,
+status, RSS memory, and optional start-time metadata. It uses `psutil` directly,
+never invokes a shell, never returns command lines, executable paths, environment
+variables, open files, network connections, or user names, and Android can invoke
+it with `What's running on my Mac`, `What is running on my Mac`,
+`Show my Mac processes`, `List my Mac processes`, or
+`Check me my Mac processes`. TTS reports only counts, not process names.
 
 Optional file listing is disabled until approved roots are configured:
 
@@ -476,9 +490,12 @@ local debug token file under `.goffy-validation`:
 ```
 
 The MAC path configures only the fixed localhost debug link when a token file is
-provided, types only `check my Mac status`, and verifies a fresh visible
-`mac.system_info` task card. The token file contains the real raw bearer token;
-for ADB-safe entry it must be one line, 24..120 characters, using only
+provided, types only an allowlisted MAC smoke command, and verifies a fresh
+visible task card. The default is `check my Mac status` for `mac.system_info`;
+the process-list route can be smoked with
+`--mac-command "What is running on my Mac"` for `mac.processes.list`. The token
+file contains the real raw bearer token; for ADB-safe entry it must be one line,
+24..120 characters, using only
 `A-Z`, `a-z`, `0-9`, `.`, `_`, or `-`. Rendered reports and saved debug-link
 artifacts redact the token. The script does not clear app data, tap
 `Forget link`, start the Hub, accept custom execute commands, print the debug

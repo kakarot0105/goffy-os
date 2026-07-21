@@ -200,7 +200,7 @@ class AndroidSqliteTerminalAuditStore(
                     "CHECK (($COLUMN_TOOL_NAME IS NULL AND $COLUMN_PERMISSION IS NULL) OR " +
                     "($COLUMN_TOOL_NAME IN " +
                     "('mac.clipboard.read', 'mac.files.largest', 'mac.files.list', " +
-                    "'mac.system_info', 'git.status') AND " +
+                    "'mac.processes.list', 'mac.system_info', 'git.status') AND " +
                     "$COLUMN_EXECUTION_TARGET = 'MAC' AND $COLUMN_PERMISSION = 'SAFE') OR " +
                     "($COLUMN_TOOL_NAME IN ('phone.battery.status', 'phone.device.info', " +
                     "'phone.ocr.read', 'phone.qr.read') AND " +
@@ -216,7 +216,7 @@ class AndroidSqliteTerminalAuditStore(
 
     private companion object {
         const val DATABASE_NAME = "goffy_terminal_audit.db"
-        const val DATABASE_VERSION = 4
+        const val DATABASE_VERSION = 5
         const val TABLE_AUDIT = "terminal_audit"
         const val TABLE_AUDIT_V1 = "terminal_audit_v1"
         const val COLUMN_SCHEMA_VERSION = "schema_version"

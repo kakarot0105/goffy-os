@@ -11,9 +11,11 @@ import dev.goffy.os.protocol.GitStatusArguments
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
+import dev.goffy.os.protocol.MAC_PROCESSES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.MacFilesLargestArguments
 import dev.goffy.os.protocol.MacFilesListArguments
+import dev.goffy.os.protocol.MacProcessesListArguments
 import dev.goffy.os.protocol.MAX_TIMER_SECONDS
 import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
@@ -62,6 +64,10 @@ object GoffyIntentRouter {
         pattern = "^(?:find|show|list)(?: me)? (?:the )?largest files on my mac[.!?]?$",
         option = RegexOption.IGNORE_CASE,
     )
+    private val macProcessesListCommand = Regex(
+        pattern = "^(?:what(?:'s| is) running on my mac|(?:show|check|list)(?: me)? my mac processes)[.!?]?$",
+        option = RegexOption.IGNORE_CASE,
+    )
     private val gitStatusCommand = Regex(
         pattern = "^(?:show|check)(?: me)? my git status[.!?]?$",
         option = RegexOption.IGNORE_CASE,
@@ -105,6 +111,7 @@ object GoffyIntentRouter {
         val normalized = command.trim().replace(whitespace, " ")
         val plan = when {
             macStatusCommand.matches(normalized) -> macStatusPlan(normalized)
+            macProcessesListCommand.matches(normalized) -> macProcessesListPlan(normalized)
             macFilesLargestCommand.matches(normalized) -> macFilesLargestPlan(normalized)
             macFilesListCommand.matches(normalized) -> macFilesListPlan(normalized)
             gitStatusCommand.matches(normalized) -> gitStatusPlan(normalized)
@@ -206,6 +213,19 @@ object GoffyIntentRouter {
             "Hub returns schema-valid structured system information",
             "Hub emits a successful verification result",
         ),
+    )
+
+    private fun macProcessesListPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = command,
+        executionTarget = ExecutionTarget.MAC,
+        toolName = MAC_PROCESSES_LIST_TOOL,
+        permission = PermissionLevel.SAFE,
+        successCriteria = listOf(
+            "Hub returns schema-valid bounded running-process metadata",
+            "Hub emits a successful verification result",
+            "The result contains no command lines, executable paths, environment variables, open files, or network data",
+        ),
+        arguments = MacProcessesListArguments(),
     )
 
     private fun macFilesListPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(

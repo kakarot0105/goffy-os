@@ -10,6 +10,7 @@ import dev.goffy.os.protocol.GOFFY_PROTOCOL_VERSION
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
+import dev.goffy.os.protocol.MAC_PROCESSES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
@@ -225,6 +226,7 @@ private fun String?.displayCommand(): String = when (this) {
     MAC_CLIPBOARD_READ_TOOL -> "Recorded Mac clipboard task"
     MAC_FILES_LARGEST_TOOL -> "Recorded largest Mac files task"
     MAC_FILES_LIST_TOOL -> "Recorded Mac file listing task"
+    MAC_PROCESSES_LIST_TOOL -> "Recorded Mac process list task"
     MAC_SYSTEM_INFO_TOOL -> "Recorded Mac status task"
     PHONE_BATTERY_STATUS_TOOL -> "Recorded battery status task"
     PHONE_DEVICE_INFO_TOOL -> "Recorded device info task"
@@ -248,6 +250,7 @@ private val AUDIT_CAPABILITY_CONTRACTS = mapOf(
     MAC_CLIPBOARD_READ_TOOL to (ExecutionTarget.MAC to AuditPermission.SAFE),
     MAC_FILES_LARGEST_TOOL to (ExecutionTarget.MAC to AuditPermission.SAFE),
     MAC_FILES_LIST_TOOL to (ExecutionTarget.MAC to AuditPermission.SAFE),
+    MAC_PROCESSES_LIST_TOOL to (ExecutionTarget.MAC to AuditPermission.SAFE),
     MAC_SYSTEM_INFO_TOOL to (ExecutionTarget.MAC to AuditPermission.SAFE),
     PHONE_BATTERY_STATUS_TOOL to (ExecutionTarget.PHONE to AuditPermission.SAFE),
     PHONE_DEVICE_INFO_TOOL to (ExecutionTarget.PHONE to AuditPermission.SAFE),

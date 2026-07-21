@@ -109,6 +109,42 @@ class GoffyToolContractsTest {
         assertFalse(valid.copy(scannedEntries = MAX_MAC_FILES_LARGEST_SCANNED_ENTRIES + 1).matchesToolContract())
     }
 
+    @Test
+    fun macProcessesContractRequiresBoundedSortedDisplaySafeMetadata() {
+        assertTrue(MacProcessesListArguments().matchesToolContract())
+        assertFalse(MacProcessesListArguments(maxEntries = 0).matchesToolContract())
+        assertFalse(MacProcessesListArguments(maxEntries = MAX_MAC_PROCESS_ENTRIES + 1).matchesToolContract())
+
+        val valid = validProcesses()
+
+        assertTrue(valid.matchesToolContract())
+        assertFalse(valid.copy(skippedCount = 3).matchesToolContract())
+        assertFalse(valid.copy(truncated = false).matchesToolContract())
+        assertFalse(
+            valid.copy(
+                entries = listOf(
+                    valid.entries[1],
+                    valid.entries[0],
+                ),
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                entries = listOf(valid.entries[0].copy(name = "/Users/example/private")),
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                entries = listOf(valid.entries[0].copy(name = "safe\u202Eevil")),
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                entries = listOf(valid.entries[0].copy(rssBytes = -1)),
+            ).matchesToolContract(),
+        )
+    }
+
     private fun validDeviceInfo(): PhoneDeviceInfo = PhoneDeviceInfo(
         manufacturer = "motorola",
         model = "moto g",
@@ -142,6 +178,29 @@ class GoffyToolContractsTest {
                 nameTruncated = false,
                 sizeBytes = 1_024L,
                 modifiedEpochSeconds = 2L,
+            ),
+        ),
+    )
+
+    private fun validProcesses(): MacProcessesList = MacProcessesList(
+        status = "available",
+        processCount = 3,
+        skippedCount = 0,
+        truncated = true,
+        entries = listOf(
+            MacProcessEntry(
+                pid = 88,
+                name = "WindowServer",
+                status = "running",
+                rssBytes = 512_000_000L,
+                createTimeEpochSeconds = 1_784_620_000L,
+            ),
+            MacProcessEntry(
+                pid = 99,
+                name = "loginwindow",
+                status = "sleeping",
+                rssBytes = 128_000_000L,
+                createTimeEpochSeconds = null,
             ),
         ),
     )

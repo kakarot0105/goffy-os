@@ -147,6 +147,10 @@
    - [x] Optional opt-in `mac.clipboard.read` Hub/MCP tool
    - [x] Android route, typed codec, timeline, speech, and audit handling for
      `mac.clipboard.read`
+   - [x] Default `SAFE mac.processes.list` Hub/MCP tool for bounded running
+     process metadata
+   - [x] Android route, typed codec, timeline, speech, and audit handling for
+     default `mac.processes.list`
 6. Inspectable and deletable user-approved memory
 7. Polished, accessible, battery-aware GOFFY UI
 8. Signed beta, packaged Hub, diagnostics, upgrade, and rollback

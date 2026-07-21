@@ -50,6 +50,33 @@ fun MacFilesLargestArguments.matchesToolContract(): Boolean =
         maxEntries in 1..MAX_MAC_FILES_LARGEST_ENTRIES &&
         maxDepth in 0..MAX_MAC_FILES_LARGEST_DEPTH
 
+fun MacProcessesListArguments.matchesToolContract(): Boolean =
+    maxEntries in 1..MAX_MAC_PROCESS_ENTRIES
+
+fun MacProcessesList.matchesToolContract(): Boolean =
+    status.isSafeDisplayField(MAX_MAC_PROCESS_STATUS_TEXT_LENGTH) &&
+        processCount in 0..MAX_MAC_PROCESS_COUNT &&
+        skippedCount in 0..MAX_MAC_PROCESS_COUNT &&
+        skippedCount <= processCount &&
+        entries.size <= MAX_MAC_PROCESS_ENTRIES &&
+        entries.size <= processCount &&
+        (if (truncated) {
+            entries.size <= processCount - skippedCount
+        } else {
+            entries.size == processCount - skippedCount
+        }) &&
+        entries.all(MacProcessEntry::matchesToolContract) &&
+        entries.zipWithNext().all { (first, second) -> first.rssBytes >= second.rssBytes }
+
+fun MacProcessEntry.matchesToolContract(): Boolean =
+    pid in 0..MAX_MAC_PROCESS_PID &&
+        name.isSafeDisplayField(MAX_MAC_PROCESS_NAME_LENGTH) &&
+        !name.contains("/") &&
+        !name.contains("\\") &&
+        status.isSafeDisplayField(MAX_MAC_PROCESS_STATUS_LENGTH) &&
+        rssBytes in 0..MAX_MAC_PROCESS_RSS_BYTES &&
+        (createTimeEpochSeconds == null || createTimeEpochSeconds >= 0L)
+
 fun MacFilesLargest.matchesToolContract(): Boolean =
     status.isSafeDisplayField(64) &&
         rootIndex in 0..MAX_MAC_FILES_ROOT_INDEX &&
@@ -278,6 +305,14 @@ const val MAX_MAC_FILES_LARGEST_PATH_LENGTH = 192
 const val MAX_MAC_FILES_ROOT_NAME_LENGTH = 64
 const val MAX_MAC_FILES_ENTRY_NAME_LENGTH = 96
 val MAC_FILES_ENTRY_KINDS = setOf("file", "directory", "symlink", "other")
+const val DEFAULT_MAC_PROCESS_ENTRIES = 10
+const val MAX_MAC_PROCESS_ENTRIES = 25
+const val MAX_MAC_PROCESS_COUNT = 100_000
+const val MAX_MAC_PROCESS_PID = Int.MAX_VALUE
+const val MAX_MAC_PROCESS_RSS_BYTES = Long.MAX_VALUE
+const val MAX_MAC_PROCESS_NAME_LENGTH = 96
+const val MAX_MAC_PROCESS_STATUS_LENGTH = 32
+const val MAX_MAC_PROCESS_STATUS_TEXT_LENGTH = 64
 const val DEFAULT_GIT_STATUS_CHANGES = 25
 const val MAX_GIT_STATUS_REPOS = 8
 const val MAX_GIT_STATUS_REPO_INDEX = MAX_GIT_STATUS_REPOS - 1

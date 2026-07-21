@@ -9,8 +9,10 @@ import dev.goffy.os.protocol.GitStatusArguments
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
+import dev.goffy.os.protocol.MAC_PROCESSES_LIST_TOOL
 import dev.goffy.os.protocol.MacFilesLargestArguments
 import dev.goffy.os.protocol.MacFilesListArguments
+import dev.goffy.os.protocol.MacProcessesListArguments
 import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
@@ -68,6 +70,22 @@ class GoffyIntentRouterTest {
         assertEquals(3, plan.successCriteria.size)
         assertTrue(GoffyIntentRouter.route("Show me largest files on my Mac") is RoutingDecision.Routed)
         assertTrue(GoffyIntentRouter.route("list the largest files on my mac?") is RoutingDecision.Routed)
+    }
+
+    @Test
+    fun routesMacProcessListToSafeMacTool() {
+        val decision = GoffyIntentRouter.route("What's running on my Mac")
+
+        assertTrue(decision is RoutingDecision.Routed)
+        val plan = (decision as RoutingDecision.Routed).plan
+        assertEquals(ExecutionTarget.MAC, plan.executionTarget)
+        assertEquals(PermissionLevel.SAFE, plan.permission)
+        assertEquals(MAC_PROCESSES_LIST_TOOL, plan.toolName)
+        assertEquals(MacProcessesListArguments(), plan.arguments)
+        assertEquals(3, plan.successCriteria.size)
+        assertTrue(GoffyIntentRouter.route("what is running on my mac?") is RoutingDecision.Routed)
+        assertTrue(GoffyIntentRouter.route("Show my Mac processes") is RoutingDecision.Routed)
+        assertTrue(GoffyIntentRouter.route("check me my mac processes") is RoutingDecision.Routed)
     }
 
     @Test

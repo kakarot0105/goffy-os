@@ -18,6 +18,8 @@ import dev.goffy.os.protocol.MacFilesLargest
 import dev.goffy.os.protocol.MacFilesLargestEntry
 import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacFilesListEntry
+import dev.goffy.os.protocol.MacProcessEntry
+import dev.goffy.os.protocol.MacProcessesList
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
@@ -159,6 +161,49 @@ class GoffySpeechTextTest {
 
         assertTrue(speechText.contains("1 entries"))
         assertFalse(speechText.contains("private-plan.txt"))
+    }
+
+    @Test
+    fun macProcessNamesAreNotReadAloud() {
+        val state = GoffyUiState(
+            hubEndpoint = endpoint,
+            timeline = TaskTimelineState(
+                entries = listOf(
+                    entry(
+                        toolName = "mac.processes.list",
+                        target = ExecutionTarget.MAC,
+                        result = MacProcessesList(
+                            status = "available",
+                            processCount = 2,
+                            skippedCount = 0,
+                            truncated = false,
+                            entries = listOf(
+                                MacProcessEntry(
+                                    pid = 88,
+                                    name = "private-agent",
+                                    status = "running",
+                                    rssBytes = 512_000_000L,
+                                    createTimeEpochSeconds = null,
+                                ),
+                                MacProcessEntry(
+                                    pid = 99,
+                                    name = "helper",
+                                    status = "sleeping",
+                                    rssBytes = 128_000_000L,
+                                    createTimeEpochSeconds = null,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val speechText = requireNotNull(state.latestSpeakableText())
+
+        assertTrue(speechText.contains("2 process summaries"))
+        assertTrue(speechText.contains("will not read process names aloud"))
+        assertFalse(speechText.contains("private-agent"))
     }
 
     @Test

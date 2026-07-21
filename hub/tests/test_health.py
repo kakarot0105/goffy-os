@@ -22,12 +22,13 @@ def test_health_is_typed_and_minimal(client: TestClient) -> None:
         "status": "ok",
         "protocolVersion": PROTOCOL_VERSION,
         "toolAccess": "enabled",
-        "healthyToolCount": 1,
+        "healthyToolCount": 2,
         "unavailableToolCount": 0,
         "toolRegistryRevision": 1,
     }
     assert [tool.name for tool in cast(FastAPI, client.app).state.registry.describe()] == [
-        "mac.system_info"
+        "mac.processes.list",
+        "mac.system_info",
     ]
     assert cast(FastAPI, client.app).version == "0.2.0"
 
@@ -45,7 +46,7 @@ def test_health_counts_optional_mac_file_tools_when_roots_are_configured(tmp_pat
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["healthyToolCount"] == 3
+    assert response.json()["healthyToolCount"] == 4
     assert response.json()["unavailableToolCount"] == 0
 
 
@@ -89,10 +90,11 @@ def test_clipboard_tool_is_healthy_when_opt_in_provider_is_available(
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["healthyToolCount"] == 2
+    assert response.json()["healthyToolCount"] == 3
     assert response.json()["unavailableToolCount"] == 0
     assert [tool.name for tool in app.state.registry.describe()] == [
         "mac.clipboard.read",
+        "mac.processes.list",
         "mac.system_info",
     ]
 
@@ -113,6 +115,9 @@ def test_clipboard_tool_is_unavailable_when_opt_in_provider_is_missing(
 
     assert response.status_code == 200
     assert response.json()["status"] == "degraded"
-    assert response.json()["healthyToolCount"] == 1
+    assert response.json()["healthyToolCount"] == 2
     assert response.json()["unavailableToolCount"] == 1
-    assert [tool.name for tool in app.state.registry.describe()] == ["mac.system_info"]
+    assert [tool.name for tool in app.state.registry.describe()] == [
+        "mac.processes.list",
+        "mac.system_info",
+    ]

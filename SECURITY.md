@@ -162,8 +162,8 @@ include real credentials or unrelated personal data.
 - MAC invocation requires an authenticated, same-socket capability discovery
   preflight. Discovery is bound to one locally allowlisted tool and consumed by
   one invocation attempt; it cannot grant authority for an unknown tool.
-- Android validates the exact `mac.system_info` tool version, target, permission,
-  schema subset, and safety annotations before sending invocation bytes. Configured
+- Android validates exact known Mac tool versions, targets, permissions, schema
+  subsets, and safety annotations before sending invocation bytes. Configured
   timeout metadata is range-checked rather than treated as authority.
 - Hub registration currently rejects every non-`SAFE`, non-read-only Mac tool.
   SAFE metadata must also be non-destructive, idempotent, closed-world, and use
@@ -256,6 +256,11 @@ include real credentials or unrelated personal data.
   manifests, rejecting permission variants, undeclared hardware features, and
   non-intent package queries.
 - `mac.system_info` uses Python standard-library APIs and never invokes a shell.
+- `mac.processes.list` registers only on macOS Hub hosts, fails closed off
+  macOS, uses `psutil` directly, and never invokes a shell. It exposes only
+  bounded process metadata and excludes command lines, executable paths,
+  environment variables, open files, network data, current working directories,
+  and user names.
 - Protocol inputs reject unknown fields and unsupported versions.
 - GOFFY protocol `0.2.0`, MCP metadata revision `2025-11-25`, and individual tool
   contract versions are separate compatibility boundaries.

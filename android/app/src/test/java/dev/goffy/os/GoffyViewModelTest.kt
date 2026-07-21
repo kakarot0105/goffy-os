@@ -52,6 +52,8 @@ import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.MacClipboardRead
+import dev.goffy.os.protocol.MacProcessEntry
+import dev.goffy.os.protocol.MacProcessesList
 import dev.goffy.os.protocol.MacFilesApprovedRoot
 import dev.goffy.os.protocol.MacFilesLargest
 import dev.goffy.os.protocol.MacFilesLargestEntry
@@ -172,6 +174,24 @@ class GoffyViewModelTest {
         assertTrue(gateway.requests.single().encodedMessage.contains("\"maxEntries\":10"))
         assertTrue(gateway.requests.single().encodedMessage.contains("\"maxDepth\":4"))
         assertFalse(gateway.requests.single().encodedMessage.contains("private-plan"))
+    }
+
+    @Test
+    fun macProcessesCommandSendsTypedDefaultProcessArguments() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf(*successfulMacProcessesEvents().toTypedArray()) }
+        val viewModel = createViewModel(gateway)
+
+        assertTrue(viewModel.configureHub(endpoint, token))
+        viewModel.submitCommand("What's running on my Mac")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals(3, (entry.result as MacProcessesList).processCount)
+        assertEquals(1, gateway.requests.size)
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"toolName\":\"mac.processes.list\""))
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"maxEntries\":10"))
+        assertFalse(gateway.requests.single().encodedMessage.contains("WindowServer"))
     }
 
     @Test
@@ -1697,6 +1717,48 @@ class GoffyViewModelTest {
                         nameTruncated = false,
                         sizeBytes = 12_345L,
                         modifiedEpochSeconds = 1784610000L,
+                    ),
+                ),
+            ),
+        ),
+        ExecutionEvent.Verification(
+            succeeded = true,
+            summary = "Verified",
+            checks = listOf("output schema"),
+        ),
+    )
+
+    private fun successfulMacProcessesEvents(): List<ExecutionEvent> = listOf(
+        ExecutionEvent.Starting(1),
+        ExecutionEvent.Ready,
+        ExecutionEvent.Progress(
+            ToolProgress("mac.processes.list", ExecutionTarget.MAC, "accepted", 0, "Accepted"),
+        ),
+        ExecutionEvent.Progress(
+            ToolProgress("mac.processes.list", ExecutionTarget.MAC, "completed", 1, "Completed"),
+        ),
+        ExecutionEvent.Result(
+            toolName = "mac.processes.list",
+            executionTarget = ExecutionTarget.MAC,
+            content = MacProcessesList(
+                status = "available",
+                processCount = 3,
+                skippedCount = 0,
+                truncated = true,
+                entries = listOf(
+                    MacProcessEntry(
+                        pid = 88,
+                        name = "WindowServer",
+                        status = "running",
+                        rssBytes = 512_000_000L,
+                        createTimeEpochSeconds = 1_784_620_000L,
+                    ),
+                    MacProcessEntry(
+                        pid = 99,
+                        name = "loginwindow",
+                        status = "sleeping",
+                        rssBytes = 128_000_000L,
+                        createTimeEpochSeconds = null,
                     ),
                 ),
             ),

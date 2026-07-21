@@ -11,6 +11,7 @@ import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
+import dev.goffy.os.protocol.MAC_PROCESSES_LIST_TOOL
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
@@ -270,6 +271,40 @@ class ClosedTerminalAuditTest {
         assertEquals("Recorded largest Mac files task", restored.command)
         assertEquals(MAC_FILES_LARGEST_TOOL, restored.toolName)
         assertEquals(null, restored.result)
+    }
+
+    @Test
+    fun macProcessesAuditRoundTripsWithoutProcessNames() {
+        val secretProcess = "private-agent"
+        val entry = TaskTimelineEntry(
+            id = UUID.fromString("66666666-6666-4666-8666-666666666666"),
+            command = "What's running on my Mac",
+            executionTarget = ExecutionTarget.MAC,
+            toolName = MAC_PROCESSES_LIST_TOOL,
+            phase = TaskPhase.VERIFIED,
+            summary = "2 running Mac processes shown of 2",
+            events = listOf(
+                TaskTimelineEvent(TaskEventKind.OBSERVE, "Observed command"),
+                TaskTimelineEvent(TaskEventKind.RESULT, "Returned $secretProcess metadata"),
+                TaskTimelineEvent(TaskEventKind.VERIFY, "Verified process list"),
+            ),
+            result = null,
+            permission = PermissionLevel.SAFE,
+            approvalGranted = false,
+        )
+
+        val record = entry.toClosedTerminalAuditRecord(recordedAtEpochMillis = 1_720_000_000_000)
+
+        assertNotNull(record)
+        assertEquals(MAC_PROCESSES_LIST_TOOL, record?.toolName)
+        assertEquals(AuditPermission.SAFE, record?.permission)
+        assertFalse(record.toString().contains(secretProcess))
+
+        val restored = requireNotNull(record).toTimelineEntry()
+        assertEquals("Recorded Mac process list task", restored.command)
+        assertEquals(MAC_PROCESSES_LIST_TOOL, restored.toolName)
+        assertEquals(null, restored.result)
+        assertFalse(restored.toString().contains(secretProcess))
     }
 
     @Test

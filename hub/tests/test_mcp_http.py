@@ -126,6 +126,7 @@ async def test_official_client_initializes_lists_and_calls_registry_tool() -> No
             initialization = await session.initialize()
             listed = await session.list_tools()
             result = await session.call_tool("mac.system_info", {})
+            processes = await session.call_tool("mac.processes.list", {"maxEntries": 3})
             with pytest.raises(McpError) as unknown_error:
                 await session.call_tool("mac.not_registered", {})
 
@@ -133,8 +134,8 @@ async def test_official_client_initializes_lists_and_calls_registry_tool() -> No
     assert initialization.capabilities.tools is not None
     assert initialization.capabilities.tools.listChanged is True
     assert get_session_id() is not None
-    assert len(listed.tools) == 1
-    tool = listed.tools[0]
+    assert sorted(tool.name for tool in listed.tools) == ["mac.processes.list", "mac.system_info"]
+    tool = next(tool for tool in listed.tools if tool.name == "mac.system_info")
     assert tool.name == "mac.system_info"
     assert tool.outputSchema is not None
     assert tool.annotations is not None
@@ -150,6 +151,16 @@ async def test_official_client_initializes_lists_and_calls_registry_tool() -> No
     assert result.structuredContent is not None
     assert result.structuredContent["status"] == "available"
     assert set(result.structuredContent) == {"status", "operatingSystem", "architecture"}
+    assert processes.isError is False
+    assert processes.structuredContent is not None
+    assert processes.structuredContent["status"] == "available"
+    assert set(processes.structuredContent) == {
+        "status",
+        "processCount",
+        "skippedCount",
+        "truncated",
+        "entries",
+    }
     assert isinstance(result.content[0], types.TextContent)
     assert json.loads(result.content[0].text) == result.structuredContent
     assert unknown_error.value.error.code == types.INVALID_PARAMS
@@ -190,6 +201,7 @@ async def test_official_client_lists_approved_mac_file_root(tmp_path) -> None:
     assert sorted(tool.name for tool in listed.tools) == [
         "mac.files.largest",
         "mac.files.list",
+        "mac.processes.list",
         "mac.system_info",
     ]
     assert result.isError is False
@@ -256,7 +268,11 @@ async def test_official_client_reads_approved_git_status(
             result = await session.call_tool("git.status", {"repoIndex": 0, "maxChanges": 5})
 
     assert initialization.protocolVersion == MCP_PROTOCOL_VERSION
-    assert sorted(tool.name for tool in listed.tools) == ["git.status", "mac.system_info"]
+    assert sorted(tool.name for tool in listed.tools) == [
+        "git.status",
+        "mac.processes.list",
+        "mac.system_info",
+    ]
     assert result.isError is False
     assert result.structuredContent is not None
     assert result.structuredContent["repoIndex"] == 0
@@ -409,13 +425,13 @@ async def test_official_client_relists_after_tool_health_changes(
     assert isinstance(unavailable_notification.root, types.ToolListChangedNotification)
     assert isinstance(restored_notification.root, types.ToolListChangedNotification)
     assert isinstance(reconnect_resync.root, types.ToolListChangedNotification)
-    assert [tool.name for tool in initial_tools.tools] == ["mac.system_info"]
+    assert [tool.name for tool in initial_tools.tools] == ["mac.processes.list", "mac.system_info"]
     assert unavailable.changed is True
     assert unavailable_tools.tools == []
     assert unavailable_call.value.error.code == types.INVALID_PARAMS
     assert "unauthorized" in unavailable_call.value.error.message.lower()
     assert restored.changed is True
-    assert [tool.name for tool in restored_tools.tools] == ["mac.system_info"]
+    assert [tool.name for tool in restored_tools.tools] == ["mac.processes.list", "mac.system_info"]
 
 
 @pytest.mark.parametrize("authorization", [None, "Bearer incorrect-token-that-is-long-enough"])
@@ -918,8 +934,11 @@ async def test_active_mcp_get_keeps_session_alive_past_idle_deadline(
             await asyncio.sleep(0.1)
             after_idle_deadline = await session.list_tools()
 
-    assert [tool.name for tool in initial.tools] == ["mac.system_info"]
-    assert [tool.name for tool in after_idle_deadline.tools] == ["mac.system_info"]
+    assert [tool.name for tool in initial.tools] == ["mac.processes.list", "mac.system_info"]
+    assert [tool.name for tool in after_idle_deadline.tools] == [
+        "mac.processes.list",
+        "mac.system_info",
+    ]
 
 
 @pytest.mark.asyncio
@@ -967,7 +986,10 @@ async def test_mcp_get_rotates_at_bounded_lifetime(
     assert rotated.status_code == 200
     assert "id:" in rotated.text
     assert listed.status_code == 200
-    assert listed.json()["result"]["tools"][0]["name"] == "mac.system_info"
+    assert [tool["name"] for tool in listed.json()["result"]["tools"]] == [
+        "mac.processes.list",
+        "mac.system_info",
+    ]
 
 
 @pytest.mark.asyncio

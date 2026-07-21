@@ -9,6 +9,7 @@ import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GOFFY_PROTOCOL_VERSION
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
+import dev.goffy.os.protocol.MAC_PROCESSES_LIST_TOOL
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
@@ -200,6 +201,23 @@ class AndroidSqliteTerminalAuditStoreTest {
     }
 
     @Test
+    fun databaseAcceptsMacProcessesSafeMetadata() = runTest {
+        val application = RuntimeEnvironment.getApplication()
+        val databaseName = uniqueDatabaseName()
+        application.deleteDatabase(databaseName)
+        val processRecord = record(index = 1, recordedAtEpochMillis = 100).copy(
+            executionTarget = ExecutionTarget.MAC,
+            toolName = MAC_PROCESSES_LIST_TOOL,
+            permission = AuditPermission.SAFE,
+        )
+
+        AndroidSqliteTerminalAuditStore(application, databaseName).useStore { store ->
+            assertEquals(processRecord, store.upsert(processRecord))
+            assertEquals(listOf(processRecord), store.load().records)
+        }
+    }
+
+    @Test
     fun databaseAcceptsForegroundQrAndOcrSafeMetadata() = runTest {
         val application = RuntimeEnvironment.getApplication()
         val databaseName = uniqueDatabaseName()
@@ -288,7 +306,7 @@ class AndroidSqliteTerminalAuditStoreTest {
         SQLiteDatabase.openDatabase(databasePath, null, SQLiteDatabase.OPEN_READWRITE).use { database ->
             database.rawQuery("PRAGMA user_version", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(4, cursor.getInt(0))
+                assertEquals(5, cursor.getInt(0))
             }
             database.insertOrThrow(
                 "terminal_audit",

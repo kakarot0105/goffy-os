@@ -76,6 +76,7 @@ import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacFilesLargest
 import dev.goffy.os.protocol.MacFilesList
+import dev.goffy.os.protocol.MacProcessesList
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
@@ -1737,6 +1738,30 @@ private fun TaskResult(result: ToolResultContent) {
             result.entries.take(5).forEach { entry ->
                 Text(
                     text = "${entry.sizeBytes.toReadableFileSize()} / ${entry.relativePath}",
+                    color = Mist,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        is MacProcessesList -> {
+            Text(
+                text = "MAC PROCESSES / ${result.processCount}",
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = "${result.entries.size} shown / skipped ${result.skippedCount}" +
+                    if (result.truncated) " / truncated" else "",
+                color = Signal,
+                fontSize = 11.sp,
+            )
+            result.entries.take(5).forEach { entry ->
+                Text(
+                    text = "#${entry.pid} / ${entry.name} / ${entry.rssBytes.toReadableFileSize()} / ${entry.status}",
                     color = Mist,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,

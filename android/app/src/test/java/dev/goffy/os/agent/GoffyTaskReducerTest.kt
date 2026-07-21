@@ -9,6 +9,8 @@ import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.MacClipboardRead
+import dev.goffy.os.protocol.MacProcessEntry
+import dev.goffy.os.protocol.MacProcessesList
 import dev.goffy.os.protocol.MacFilesLargest
 import dev.goffy.os.protocol.MacFilesLargestEntry
 import dev.goffy.os.protocol.MacFilesList
@@ -42,6 +44,7 @@ class GoffyTaskReducerTest {
     private val largestMacFilesPlan =
         (GoffyIntentRouter.route("Find the largest files on my Mac") as RoutingDecision.Routed).plan
     private val gitStatusPlan = (GoffyIntentRouter.route("Show my git status") as RoutingDecision.Routed).plan
+    private val macProcessesPlan = (GoffyIntentRouter.route("What's running on my Mac") as RoutingDecision.Routed).plan
     private val macClipboardPlan =
         (GoffyIntentRouter.route("Read my Mac clipboard") as RoutingDecision.Routed).plan
     private val phonePlan = GoffyExecutionPlan(
@@ -178,6 +181,34 @@ class GoffyTaskReducerTest {
 
         assertEquals(TaskPhase.VERIFIED, state.entries.single().phase)
         assertTrue(state.entries.single().result is GitStatus)
+    }
+
+    @Test
+    fun macProcessListRequiresTypedResultAndVerification() {
+        var state = TaskTimelineState().start(taskId, macProcessesPlan)
+        state = state.apply(taskId, ExecutionEvent.Starting(1))
+        state = state.apply(taskId, ExecutionEvent.Ready)
+        state = state.apply(taskId, progress(macProcessesPlan.toolName, ExecutionTarget.MAC, "accepted", 0))
+        state = state.apply(taskId, progress(macProcessesPlan.toolName, ExecutionTarget.MAC, "completed", 1))
+        state = state.apply(
+            taskId,
+            ExecutionEvent.Result(
+                macProcessesPlan.toolName,
+                ExecutionTarget.MAC,
+                validProcessList(),
+            ),
+        )
+
+        assertEquals(TaskPhase.COMPLETED_UNVERIFIED, state.entries.single().phase)
+        assertEquals("2 running Mac processes shown of 3 (truncated)", state.entries.single().summary)
+
+        state = state.apply(
+            taskId,
+            ExecutionEvent.Verification(true, "Schema verified", listOf("output schema")),
+        )
+
+        assertEquals(TaskPhase.VERIFIED, state.entries.single().phase)
+        assertTrue(state.entries.single().result is MacProcessesList)
     }
 
     @Test
@@ -912,6 +943,29 @@ class GoffyTaskReducerTest {
         changes = listOf(
             GitStatusChange("README.md", false, "M", ".", "tracked"),
             GitStatusChange("TODO.md", false, "?", "?", "untracked"),
+        ),
+    )
+
+    private fun validProcessList(): MacProcessesList = MacProcessesList(
+        status = "available",
+        processCount = 3,
+        skippedCount = 0,
+        truncated = true,
+        entries = listOf(
+            MacProcessEntry(
+                pid = 88,
+                name = "WindowServer",
+                status = "running",
+                rssBytes = 512_000_000L,
+                createTimeEpochSeconds = 1_784_620_000L,
+            ),
+            MacProcessEntry(
+                pid = 99,
+                name = "loginwindow",
+                status = "sleeping",
+                rssBytes = 128_000_000L,
+                createTimeEpochSeconds = null,
+            ),
         ),
     )
 }

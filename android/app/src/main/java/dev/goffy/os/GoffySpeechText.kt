@@ -6,6 +6,7 @@ import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacFilesLargest
 import dev.goffy.os.protocol.MacFilesList
+import dev.goffy.os.protocol.MacProcessesList
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
@@ -48,6 +49,9 @@ private fun ToolResultContent.speakableText(verified: Boolean): String =
         is MacFilesList ->
             "Mac file listing returned ${entries.size} entries from approved root $rootName. " +
                 if (truncated) "The listing was truncated." else "The listing was not truncated."
+        is MacProcessesList ->
+            "Mac process list returned ${entries.size} process summaries out of $processCount. " +
+                "I will not read process names aloud."
         is MacSystemInfo ->
             "Mac status is $status. System: $operatingSystem on $architecture."
         is PhoneBatteryStatus ->

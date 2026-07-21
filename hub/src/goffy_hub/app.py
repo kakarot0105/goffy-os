@@ -32,8 +32,10 @@ from goffy_hub.tools import (
     build_mac_clipboard_read_tool,
     build_mac_files_largest_tool,
     build_mac_files_list_tool,
+    build_mac_processes_list_tool,
     build_mac_system_tool,
 )
+from goffy_hub.tools.mac_processes import is_mac_processes_supported
 from goffy_protocol import (
     MCP_PROTOCOL_VERSION,
     PROTOCOL_VERSION,
@@ -73,6 +75,13 @@ def build_registry(settings: HubSettings) -> ToolRegistry:
             settings.tool_health_timeout_seconds,
         )
     )
+    if is_mac_processes_supported():
+        registry.register(
+            build_mac_processes_list_tool(
+                settings.tool_timeout_seconds,
+                settings.tool_health_timeout_seconds,
+            )
+        )
     if settings.mac_files_roots:
         registry.register(
             build_mac_files_list_tool(
