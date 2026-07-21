@@ -16,12 +16,22 @@ class GoffyToolContractsTest {
     @Test
     fun deviceInfoContractRejectsMissingOversizedOrSpoofableFields() {
         assertTrue(validDeviceInfo().matchesToolContract())
+        assertTrue(
+            validDeviceInfo()
+                .copy(goffySystemApp = true, goffyHomeCandidate = true, goffyDefaultHome = true)
+                .matchesToolContract(),
+        )
         assertFalse(validDeviceInfo().copy(manufacturer = "").matchesToolContract())
         assertFalse(validDeviceInfo().copy(model = "x".repeat(129)).matchesToolContract())
         assertFalse(validDeviceInfo().copy(model = "moto\u202Eg").matchesToolContract())
         assertFalse(validDeviceInfo().copy(androidRelease = "15\n").matchesToolContract())
         assertFalse(validDeviceInfo().copy(sdkInt = 25).matchesToolContract())
         assertFalse(validDeviceInfo().copy(sdkInt = Int.MAX_VALUE).matchesToolContract())
+        assertFalse(
+            validDeviceInfo()
+                .copy(goffyHomeCandidate = false, goffyDefaultHome = true)
+                .matchesToolContract(),
+        )
     }
 
     @Test

@@ -1060,6 +1060,10 @@ private fun TaskCard(
             )
         }
         Spacer(Modifier.height(5.dp))
+        entry.result?.let { result ->
+            TaskResult(result)
+            Spacer(Modifier.height(7.dp))
+        }
         Text(entry.summary, color = Mist, fontSize = 12.sp)
         entry.toolName?.let { tool ->
             Spacer(Modifier.height(7.dp))
@@ -1087,9 +1091,6 @@ private fun TaskCard(
                 fontFamily = FontFamily.Monospace,
                 fontSize = 9.sp,
             )
-        }
-        entry.result?.let { result ->
-            TaskResult(result)
         }
         approval?.let {
             ApprovalActions(it, onApprove, onDeny)
@@ -1184,6 +1185,12 @@ private fun TaskResult(result: ToolResultContent) {
             )
         }
         is PhoneDeviceInfo -> {
+            val homeStatus = when {
+                result.goffyDefaultHome -> "default"
+                result.goffyHomeCandidate -> "available"
+                else -> "not available"
+            }
+            val systemStatus = if (result.goffySystemApp) "yes" else "no"
             Text(
                 text = result.model,
                 color = Bone,
@@ -1199,6 +1206,11 @@ private fun TaskResult(result: ToolResultContent) {
                     result.sdkInt,
                 ),
                 color = Signal,
+                fontSize = 11.sp,
+            )
+            Text(
+                text = "GOFFY home=$homeStatus / system=$systemStatus",
+                color = Mist,
                 fontSize = 11.sp,
             )
         }

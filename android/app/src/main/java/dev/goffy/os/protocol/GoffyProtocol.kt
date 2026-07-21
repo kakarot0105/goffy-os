@@ -113,6 +113,9 @@ data class PhoneDeviceInfo(
     val model: String,
     val androidRelease: String,
     val sdkInt: Int,
+    val goffySystemApp: Boolean = false,
+    val goffyHomeCandidate: Boolean = false,
+    val goffyDefaultHome: Boolean = false,
 ) : ToolResultContent
 
 data class PhoneNoteCreated(

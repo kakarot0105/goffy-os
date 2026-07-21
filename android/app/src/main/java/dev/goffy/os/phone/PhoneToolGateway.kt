@@ -259,7 +259,7 @@ class DefaultPhoneToolGateway internal constructor(
                     summary = "Device information matched the privacy-minimized local contract.",
                     checks = listOf(
                         "phone tool allowlist",
-                        "approved display fields only",
+                        "approved display/status fields only",
                         "field bounds and control characters",
                         "minimum SDK contract",
                     ),

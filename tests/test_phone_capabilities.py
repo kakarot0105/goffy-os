@@ -52,6 +52,9 @@ def test_phone_capability_schemas_accept_canonical_examples() -> None:
                 "model": "moto g",
                 "androidRelease": "15",
                 "sdkInt": 35,
+                "goffySystemApp": False,
+                "goffyHomeCandidate": True,
+                "goffyDefaultHome": False,
             },
         ),
         "phone.flashlight.set": (

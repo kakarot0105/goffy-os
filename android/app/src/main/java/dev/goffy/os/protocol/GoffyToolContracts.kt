@@ -7,7 +7,8 @@ fun PhoneDeviceInfo.matchesToolContract(): Boolean =
     manufacturer.isSafeDisplayField(MAX_DEVICE_NAME_LENGTH) &&
         model.isSafeDisplayField(MAX_DEVICE_NAME_LENGTH) &&
         androidRelease.isSafeDisplayField(MAX_ANDROID_RELEASE_LENGTH) &&
-        sdkInt in MIN_SUPPORTED_SDK..MAX_REASONABLE_SDK
+        sdkInt in MIN_SUPPORTED_SDK..MAX_REASONABLE_SDK &&
+        (!goffyDefaultHome || goffyHomeCandidate)
 
 fun PhoneNoteCreated.matchesToolContract(): Boolean =
     noteId > 0 &&

@@ -595,10 +595,21 @@ private fun Float.displayConfidence(): String = String.format(Locale.US, "%.2f",
 private fun ToolResultContent.summaryText(): String = when (this) {
     is MacSystemInfo -> "$operatingSystem $architecture: $status"
     is PhoneBatteryStatus -> "Battery $levelPercent%: ${if (charging) "charging" else "not charging"}"
-    is PhoneDeviceInfo -> "$manufacturer $model / Android $androidRelease (API $sdkInt)"
+    is PhoneDeviceInfo -> deviceInfoSummary()
     is PhoneFlashlightState ->
         "Flashlight ${if (enabled) "on" else "off"}; state observed" +
             if (stateChanged) " after state change" else " (already requested state)"
     is PhoneNoteCreated -> "Note #$noteId stored: $text"
     is PhoneTimerDispatched -> "Timer intent for $durationSeconds seconds dispatched to $clockPackage"
+}
+
+private fun PhoneDeviceInfo.deviceInfoSummary(): String {
+    val homeStatus = when {
+        goffyDefaultHome -> "default"
+        goffyHomeCandidate -> "available"
+        else -> "not available"
+    }
+    val systemStatus = if (goffySystemApp) "yes" else "no"
+    return "$manufacturer $model / Android $androidRelease (API $sdkInt); " +
+        "GOFFY home=$homeStatus, system=$systemStatus"
 }

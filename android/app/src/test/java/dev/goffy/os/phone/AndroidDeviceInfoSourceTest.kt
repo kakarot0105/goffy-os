@@ -13,6 +13,9 @@ class AndroidDeviceInfoSourceTest {
             model = { "moto g" },
             androidRelease = { "15" },
             sdkInt = { 35 },
+            goffySystemApp = { true },
+            goffyHomeCandidate = { true },
+            goffyDefaultHome = { false },
         )
 
         assertEquals(
@@ -21,6 +24,9 @@ class AndroidDeviceInfoSourceTest {
                 model = "moto g",
                 androidRelease = "15",
                 sdkInt = 35,
+                goffySystemApp = true,
+                goffyHomeCandidate = true,
+                goffyDefaultHome = false,
             ),
             source.read(),
         )

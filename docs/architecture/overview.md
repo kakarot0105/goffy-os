@@ -84,7 +84,7 @@ approval state, active work, and execution authority are not revived.
 16. The router sources PHONE permission from the registry, and the gateway rechecks
     compiled name, target, permission, typed arguments, and timeout before source access.
 17. The battery source is read once, requires no permission, and must return a percentage from 0 through 100.
-18. Device info contains four display fields and excludes stable device, network, account, and build identifiers.
+18. Device info contains display/home-shell status fields and excludes stable device, network, account, and build identifiers.
 19. Mutating PHONE tools require an exact-task, exact-tool, exact-arguments,
    expiring, single-use approval.
 20. Terminal-task audit rows are written only after `UNVERIFIED`, `VERIFIED`,

@@ -18,7 +18,8 @@ progress, verification, and error behavior.
   generic Android command or reflection interface.
 - Implement `phone.battery.status` with one on-demand `BatteryManager` read.
 - Implement `phone.device.info` with only manufacturer, user-visible model,
-  Android release, and SDK level from `Build`; collect no stable identifier.
+  Android release, SDK level from `Build`, and GOFFY home/system-app status;
+  collect no stable identifier.
 - Require the plan to declare PHONE, the exact allowlisted tool name, and SAFE
   permission before reading device state.
 - Validate battery percentage before emitting a result, then emit a separate

@@ -49,9 +49,20 @@
         "manufacturer": {"type": "string", "minLength": 1, "maxLength": 128},
         "model": {"type": "string", "minLength": 1, "maxLength": 128},
         "androidRelease": {"type": "string", "minLength": 1, "maxLength": 64},
-        "sdkInt": {"type": "integer", "minimum": 26, "maximum": 10000}
+        "sdkInt": {"type": "integer", "minimum": 26, "maximum": 10000},
+        "goffySystemApp": {"type": "boolean"},
+        "goffyHomeCandidate": {"type": "boolean"},
+        "goffyDefaultHome": {"type": "boolean"}
       },
-      "required": ["manufacturer", "model", "androidRelease", "sdkInt"],
+      "required": [
+        "manufacturer",
+        "model",
+        "androidRelease",
+        "sdkInt",
+        "goffySystemApp",
+        "goffyHomeCandidate",
+        "goffyDefaultHome"
+      ],
       "type": "object"
     },
     "annotations": {

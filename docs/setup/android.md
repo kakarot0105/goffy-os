@@ -51,7 +51,8 @@ review both published checksums during any wrapper upgrade.
 - Battery commands such as `Show my battery status` and `What's my phone battery
   level?` run entirely on PHONE without a Hub link.
 - Device commands such as `Show my phone info` and `What phone is this?` return
-  only manufacturer, model, Android release, and SDK level on PHONE.
+  only manufacturer, model, Android release, SDK level, and GOFFY home/system-app
+  status on PHONE.
 - `Create a note saying Buy milk` creates an app-private note only after a visible
   `Approve once` action. The approval expires after 60 seconds and is bound to the
   exact task, tool, note text, and deadline.
@@ -430,6 +431,10 @@ debug-link artifacts are redacted, fixed `check my Mac status` entry, fresh
 `mac.system_info` task-card verification, screenshot capture, and bounded GOFFY
 process logcat capture.
 
+The Moto G device-info slice is verified with `what phone is this`; the visible
+task card shows `VERIFIED`, the Moto model, Android/API level, and
+`GOFFY home=available / system=no` for the current debug APK install.
+
 For the pairing slice, verify that restart restores `PAIRED`, an expired or
 altered challenge saves nothing, and `Forget link` first shows an explicit
 confirmation. Also verify that old bundles or edited bundles missing
@@ -465,8 +470,9 @@ timeline shows `PHONE / phone.battery.status / SAFE`, the percentage and chargin
 state, and a final `VERIFIED` phase without any permission prompt.
 
 Then submit `Show my phone info` and confirm the timeline shows
-`PHONE / phone.device.info / SAFE`, only the four documented fields, and a final
-`VERIFIED` phase without a Hub connection or permission prompt.
+`PHONE / phone.device.info / SAFE`, only the documented model/Android and GOFFY
+home/system-app status fields, and a final `VERIFIED` phase without a Hub
+connection or permission prompt.
 
 Finally, submit `Create a note saying Buy milk` and confirm the timeline shows
 `PHONE / phone.note.create / CONFIRM` and `AWAITING APPROVAL`. Verify all of these:

@@ -242,7 +242,10 @@ class GoffyTaskReducerTest {
         )
 
         assertEquals(TaskPhase.COMPLETED_UNVERIFIED, state.entries.single().phase)
-        assertEquals("motorola moto g / Android 15 (API 35)", state.entries.single().summary)
+        assertEquals(
+            "motorola moto g / Android 15 (API 35); GOFFY home=not available, system=no",
+            state.entries.single().summary,
+        )
         assertTrue(state.entries.single().result is PhoneDeviceInfo)
     }
 

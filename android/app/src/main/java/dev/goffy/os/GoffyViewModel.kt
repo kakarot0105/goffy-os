@@ -112,7 +112,7 @@ class GoffyViewModel internal constructor(
         ),
         phoneGateway = DefaultPhoneToolGateway(
             batteryStatusSource = AndroidBatteryStatusSource(dependencies.context),
-            deviceInfoSource = AndroidDeviceInfoSource(),
+            deviceInfoSource = AndroidDeviceInfoSource(dependencies.context),
             noteStore = AndroidSqliteNoteStore(dependencies.context),
             timerSource = AndroidSystemTimerSource(dependencies.context),
             flashlightSource = AndroidFlashlightSource(dependencies.context),

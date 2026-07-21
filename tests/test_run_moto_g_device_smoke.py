@@ -67,6 +67,8 @@ PHONE_UI_XML = "\n".join(
         'class="android.widget.TextView" enabled="true" bounds="[60,1260][600,1300]" />',
         '  <node text="42%" class="android.widget.TextView" enabled="true" '
         'bounds="[60,1320][160,1360]" />',
+        '  <node text="Battery status matched the local tool contract." '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1380][620,1420]" />',
         "</hierarchy>",
     ]
 )
@@ -90,6 +92,8 @@ MAC_UI_XML = "\n".join(
         'class="android.widget.TextView" enabled="true" bounds="[60,1260][600,1300]" />',
         '  <node text="Darwin / arm64" class="android.widget.TextView" enabled="true" '
         'bounds="[60,1320][260,1360]" />',
+        '  <node text="System information output matched the registered schema." '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1380][620,1420]" />',
         "</hierarchy>",
     ]
 )
@@ -453,7 +457,7 @@ def test_submit_command_reveals_send_button_with_bounded_scroll(
         timeout_seconds=30,
         wait_timeout_seconds=5,
         command=smoke.DEFAULT_PHONE_COMMAND,
-        expected_markers=("VERIFIED", "PHONE", "phone.battery.status", "%"),
+        expected_markers=("VERIFIED", "%", "Battery status matched the local tool contract."),
         step_name="PHONE command smoke",
         artifact_prefix="phone-command",
         output_directory=output_directory,
@@ -711,12 +715,12 @@ def test_command_window_requires_markers_after_matching_command() -> None:
     assert command_window_contains(
         PHONE_UI_XML,
         "check my battery level",
-        ("VERIFIED", "PHONE", "phone.battery.status", "%"),
+        ("VERIFIED", "%", "Battery status matched the local tool contract."),
     )
     assert not command_window_contains(
         PHONE_UI_XML,
         "check my battery level",
-        ("VERIFIED", "MAC", "mac.system_info", "Darwin"),
+        ("VERIFIED", "Darwin", "System information output matched the registered schema."),
     )
     assert timeline_command_occurrences(PHONE_UI_XML, "check my battery level") == 1
 

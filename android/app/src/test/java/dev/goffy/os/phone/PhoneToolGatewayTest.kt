@@ -91,7 +91,7 @@ class PhoneToolGatewayTest {
         assertEquals(validDeviceInfo(), (events[4] as ExecutionEvent.Result).content)
         val verification = events[5] as ExecutionEvent.Verification
         assertTrue(verification.succeeded)
-        assertTrue(verification.checks.contains("approved display fields only"))
+        assertTrue(verification.checks.contains("approved display/status fields only"))
     }
 
     @Test

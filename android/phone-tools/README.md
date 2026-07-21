@@ -6,7 +6,7 @@ generic Android-command interface.
 The fixed local registry currently exposes:
 
 - `phone.battery.status`, which reads `BatteryManager` once and validates the percentage.
-- `phone.device.info`, which returns manufacturer, model, Android release, and SDK level.
+- `phone.device.info`, which returns manufacturer, model, Android release, SDK level, and GOFFY home/system-app status.
 - `phone.flashlight.set`, which requires approval and callback-verifies a back-facing torch.
 - `phone.note.create`, which requires approval and re-reads app-private SQLite state.
 - `phone.timer.create`, which requires approval and dispatches only to an allowlisted system Clock.
