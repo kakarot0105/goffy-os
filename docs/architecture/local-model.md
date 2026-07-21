@@ -170,9 +170,14 @@ Production acceptance now has a read-only evidence verifier:
 The verifier requires at least three executed `modelDebug` observation reports,
 the fixed unsupported command `open settings`, terminal non-executable `FAILED`
 timeline evidence, bounded memory/logcat artifacts, a consistent model SHA-256,
-each run at or below 15 seconds by default, and separate idle-cleanup JSON proving
-the provider closed after at least 60 seconds. The existing 37.6-second Qwen3
-single-run evidence intentionally fails this gate.
+each run at or below 15 seconds by default, bounded logcat evidence containing
+the fixed observation engine teardown marker `observation_engine_scope_closed`,
+and separate idle-cleanup JSON proving the provider closed after at least 60
+seconds. The teardown marker proves the LiteRT-LM engine/conversation scope
+unwound for that observation; provider idle cleanup remains a separate evidence
+requirement. The marker is non-sensitive lifecycle telemetry only; it must not
+include the prompt, model output, model path, or command text. The existing
+37.6-second Qwen3 single-run evidence intentionally fails this gate.
 
 ## Reuse-First Scan
 

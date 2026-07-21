@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from pathlib import Path
 
 import scripts.run_moto_g_modeldebug_observation_smoke as smoke
 from scripts.run_moto_g_device_smoke import CommandResult
 from scripts.run_moto_g_modeldebug_observation_smoke import StepStatus, build_report
+from scripts.verify_modeldebug_acceptance import (
+    IDLE_EVIDENCE_SCHEMA_VERSION,
+    build_acceptance_report,
+)
 
 SERIAL = "ZY32LBQLMQ"
 ADB_DEVICES = (
@@ -95,6 +100,14 @@ def test_execute_runs_fixed_modeldebug_observation_flow(
 ) -> None:
     monkeypatch.setattr(smoke, "trusted_adb_path", lambda: Path("/opt/android/adb"))
     monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    monotonic_time = 1_000.0
+
+    def monotonic() -> float:
+        nonlocal monotonic_time
+        monotonic_time += 1.0
+        return monotonic_time
+
+    monkeypatch.setattr(smoke.time, "monotonic", monotonic)
     model = tmp_path / "qwen3_0_6b_mixed_int4.litertlm"
     model.write_text("model", encoding="utf-8")
     seen: list[tuple[str, ...]] = []
@@ -148,7 +161,7 @@ def test_execute_runs_fixed_modeldebug_observation_flow(
         if normalized[3:] == ("shell", "pidof", smoke.MODEL_DEBUG_PACKAGE_NAME):
             return CommandResult(0, "4242\n", "")
         if "logcat" in normalized:
-            return CommandResult(0, "GOFFY log line\n", "")
+            return CommandResult(0, "GOFFY log line\nobservation_engine_scope_closed\n", "")
         return CommandResult(1, "", f"unexpected command: {normalized}")
 
     report = build_report(
@@ -180,6 +193,17 @@ def test_execute_runs_fixed_modeldebug_observation_flow(
         step.name == "Unsupported command observation smoke" and step.status is StepStatus.OK
         for step in report.steps
     )
+
+    report_path = smoke.write_report_artifact(report)
+    assert report_path is not None
+    idle_evidence = write_idle_cleanup_evidence(tmp_path, model_sha256=report.model_sha256)
+    acceptance = build_acceptance_report(
+        reports=[report_path],
+        idle_evidence_json=idle_evidence,
+        min_runs=1,
+    )
+
+    assert acceptance.ok
 
 
 def test_seed_stops_after_stage_failure(monkeypatch, tmp_path: Path) -> None:
@@ -401,3 +425,24 @@ def node_xml(index: int, text: str, class_name: str, top: int) -> str:
         f'focused="false" scrollable="false" long-clickable="false" password="false" '
         f'selected="false" bounds="[10,{top}][700,{top + 40}]" drawing-order="{index}" hint="" />'
     )
+
+
+def write_idle_cleanup_evidence(tmp_path: Path, *, model_sha256: str | None) -> Path:
+    path = tmp_path / "idle-cleanup.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": IDLE_EVIDENCE_SCHEMA_VERSION,
+                "ok": True,
+                "waited_seconds": 60,
+                "model_sha256": model_sha256,
+                "provider_closed_after_idle": True,
+                "process_running_after_idle": False,
+                "total_pss_kb": None,
+                "blockers": [],
+                "warnings": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path

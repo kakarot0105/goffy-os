@@ -370,8 +370,12 @@ run evidence and verify it with:
 This verifier is read-only. It blocks if fewer than three successful reports are
 provided, any observation exceeds the 15-second default budget, artifacts are
 missing, crash/OOM markers appear in bounded logcat, model hashes differ, or
-idle-cleanup evidence does not prove the provider closed after at least 60
-seconds.
+bounded logcat does not include the fixed observation engine teardown marker
+`observation_engine_scope_closed`, or idle-cleanup evidence does not prove the
+provider closed after at least 60 seconds. The teardown marker proves the
+LiteRT-LM engine/conversation scope unwound for that observation; provider idle
+cleanup remains separate. The marker is non-sensitive lifecycle telemetry only;
+it must not include prompts, outputs, model paths, or command text.
 
 After the manual phone checks pass, record redacted evidence:
 

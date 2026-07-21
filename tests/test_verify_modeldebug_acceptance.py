@@ -87,6 +87,25 @@ def test_modeldebug_acceptance_blocks_logcat_crash_marker(tmp_path: Path) -> Non
     )
 
 
+def test_modeldebug_acceptance_blocks_missing_engine_scope_marker(
+    tmp_path: Path,
+) -> None:
+    reports = [write_observation_report(tmp_path, index, elapsed=8_000) for index in range(3)]
+    (tmp_path / "run-1" / "modeldebug-logcat.txt").write_text(
+        "GOFFY log line\n",
+        encoding="utf-8",
+    )
+    idle = write_idle_evidence(tmp_path)
+
+    report = build_acceptance_report(reports=reports, idle_evidence_json=idle)
+
+    assert not report.ok
+    assert any(
+        "modeldebug-logcat.txt is missing `observation_engine_scope_closed`" in item
+        for item in report.blockers
+    )
+
+
 def test_modeldebug_acceptance_cli_reports_blocked_json(
     tmp_path: Path,
     capsys,
@@ -113,7 +132,10 @@ def write_observation_report(tmp_path: Path, index: int, *, elapsed: int) -> Pat
         "level: 100\nAC powered: true\n", encoding="utf-8"
     )
     (output_dir / "meminfo-after.txt").write_text("TOTAL PSS: 156192\n", encoding="utf-8")
-    (output_dir / "modeldebug-logcat.txt").write_text("GOFFY log line\n", encoding="utf-8")
+    (output_dir / "modeldebug-logcat.txt").write_text(
+        "GOFFY log line\nobservation_engine_scope_closed\n",
+        encoding="utf-8",
+    )
     report = tmp_path / f"modeldebug-observation-report-{index}.json"
     report.write_text(
         json.dumps(

@@ -51,6 +51,7 @@ LOGCAT_FAILURE_MARKERS = (
     "ApplicationNotResponding",
     "ANR in dev.goffy.os.model",
 )
+REQUIRED_LOGCAT_MARKERS = ("observation_engine_scope_closed",)
 TOTAL_PSS = re.compile(r"TOTAL\s+PSS:\s*(\d+)", re.IGNORECASE)
 BATTERY_LEVEL = re.compile(r"\blevel:\s*(\d+)", re.IGNORECASE)
 
@@ -199,6 +200,9 @@ def validate_observation_report(
     for marker in LOGCAT_FAILURE_MARKERS:
         if marker in logcat:
             raise ValueError(f"modeldebug-logcat.txt contains `{marker}`")
+    for marker in REQUIRED_LOGCAT_MARKERS:
+        if marker not in logcat:
+            raise ValueError(f"modeldebug-logcat.txt is missing `{marker}`")
 
     meminfo = (output_dir / "meminfo-after.txt").read_text(
         encoding="utf-8",

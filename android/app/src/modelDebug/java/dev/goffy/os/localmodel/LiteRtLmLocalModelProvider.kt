@@ -1,6 +1,7 @@
 package dev.goffy.os.localmodel
 
 import android.content.Context
+import android.util.Log
 import com.google.ai.edge.litertlm.Backend
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
@@ -11,6 +12,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private const val LOCAL_MODEL_DIRECTORY = "local-models"
+private const val LOCAL_MODEL_LOG_TAG = "GoffyLocalModel"
+private const val OBSERVATION_ENGINE_SCOPE_CLOSED_MARKER =
+    "observation_engine_scope_closed"
 
 class LiteRtLmLocalModelProviderFactory : LocalModelRuntimeProviderFactory {
     override fun create(
@@ -63,19 +67,27 @@ private class LiteRtLmTextGenerator(
             backend = Backend.CPU(),
             cacheDir = context.cacheDir.absolutePath,
         )
-        Engine(engineConfig).use { engine ->
-            engine.initialize()
-            engine.createConversation().use { conversation ->
-                conversation.sendMessageAsync(prompt).collect { message ->
-                    val text = message.toString()
-                    val remainingOutputBudget = outputBudgetChars - output.length
-                    if (remainingOutputBudget > 0) {
-                        output.append(text.take(remainingOutputBudget))
-                    }
-                    if (output.length >= outputBudgetChars) {
-                        throw LocalModelOutputLimitExceeded()
+        var observationScopeEntered = false
+        try {
+            Engine(engineConfig).use { engine ->
+                engine.initialize()
+                engine.createConversation().use { conversation ->
+                    observationScopeEntered = true
+                    conversation.sendMessageAsync(prompt).collect { message ->
+                        val text = message.toString()
+                        val remainingOutputBudget = outputBudgetChars - output.length
+                        if (remainingOutputBudget > 0) {
+                            output.append(text.take(remainingOutputBudget))
+                        }
+                        if (output.length >= outputBudgetChars) {
+                            throw LocalModelOutputLimitExceeded()
+                        }
                     }
                 }
+            }
+        } finally {
+            if (observationScopeEntered) {
+                Log.i(LOCAL_MODEL_LOG_TAG, OBSERVATION_ENGINE_SCOPE_CLOSED_MARKER)
             }
         }
         output.toString()
