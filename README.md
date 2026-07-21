@@ -1,11 +1,17 @@
 # GOFFY OS
 
-GOFFY OS is an open-source, phone-first agentic operating environment. An older
-Android phone provides the command surface and small local engine; a macOS Hub
-provides controlled access to heavier local capabilities. MCP-compatible typed
-tools are the capability boundary.
+GOFFY OS is an open-source, ROM-first agentic operating system project for
+repurposing an older Android phone into a dedicated Jarvis-like device. The
+short-term Android app remains a bootstrap, validation, and fallback layer; the
+target product is a GOFFY-controlled Android ROM or GSI-derived system image
+when the exact Moto hardware can support it safely. A macOS Hub provides
+controlled access to heavier local capabilities. MCP-compatible typed tools are
+the capability boundary.
 
-> Status: Milestone 3 MCP core in progress. The current repo implements five
+> Status: ROM feasibility plus Milestone 3 MCP core in progress. The current
+> repo now treats ROM/GSI feasibility for the exact Moto G 2025 `kansas` target
+> as the primary product track, with the launcher/app layer kept for safe
+> validation and fallback. The current repo implements five
 > offline PHONE actions, a discovery-gated SAFE Mac action, an official MCP
 > Streamable HTTP boundary, stable Hub paired-device credentials, Keystore-backed
 > Android pairing restore, and a persistent user-visible Android audit trail
@@ -34,7 +40,8 @@ tools are the capability boundary.
 > bounded battery, memory, UI, and logcat artifacts.
 > Default GOFFY LITE still does not ship or load the LiteRT-LM runtime. Automatic
 > rotation scheduling, Android retrieval for Hub audit, certificate-backed Hub
-> identity proof, and trusted LAN operation remain open.
+> identity proof, trusted LAN operation, bootloader unlock eligibility, stock
+> restore image capture, and first GSI/DSU boot remain open.
 
 ## Current vertical slice
 
@@ -98,6 +105,7 @@ tools are the capability boundary.
 The previous browser concept is preserved in [`prototype/web-shell`](prototype/web-shell).
 The local phone model feasibility note is in
 [`docs/architecture/local-model.md`](docs/architecture/local-model.md).
+The ROM-first feasibility track is in [`ROM_FEASIBILITY.md`](ROM_FEASIBILITY.md).
 
 ## Repository map
 
@@ -252,8 +260,10 @@ normal Android `CAMERA` permission from that action, decodes QR codes only, save
 no frame, and only fills the existing pairing-bundle field. The user still has to
 tap `Pair phone` before redemption.
 
-This is an Android application layer, not a flashable replacement ROM. A custom
-ROM remains a later hardware-specific project after the agent runtime is proven.
+GOFFY is now ROM-first. The Android app layer is still useful because it lets us
+validate agent policy, Hub pairing, audit, local tools, and model behavior before
+flashing anything. It is not the final product if the Moto `kansas` hardware can
+be unlocked and boot a recoverable GSI or custom ROM safely.
 
 ## Verify the repository
 

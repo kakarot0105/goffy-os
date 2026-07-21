@@ -1,12 +1,16 @@
 # Architecture Overview
 
-GOFFY OS separates intent, policy, transport, and capability execution so no
-model or UI can directly acquire ambient authority. The current runtime has five
-offline PHONE tools, one authenticated MAC tool, and a redacted Android-local
-audit trail for terminal tasks, not a general command channel.
+GOFFY OS is now ROM-first: the target deployment is a recoverable GOFFY Android
+ROM or GSI-derived system image on the Moto G `kansas` hardware. The current
+Android app/default-launcher layer remains the safe bootstrap and fallback while
+ROM feasibility is proven. Across both forms, GOFFY separates intent, policy,
+transport, and capability execution so no model or UI can directly acquire
+ambient authority. The current runtime has five offline PHONE tools, one
+authenticated MAC tool, and a redacted Android-local audit trail for terminal
+tasks, not a general command channel.
 
 ```text
-Android command surface
+GOFFY ROM or bootstrap Android command surface
         |
         | anchored deterministic route
         v

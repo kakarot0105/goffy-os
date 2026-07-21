@@ -1,5 +1,18 @@
 # GOFFY OS Roadmap
 
+## Milestone ROM-0: Moto G ROM feasibility - in progress
+
+- [x] ROM-first product direction documented
+- [x] Read-only Moto G ROM feasibility probe
+- [x] Exact connected target identified as `kansas_g_sys` / `kansas` / MediaTek `MT6835`
+- [x] Treble and dynamic-partition status captured from the physical phone
+- [x] Current locked bootloader state captured from the physical phone
+- [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
+- [ ] Exact stock firmware/recovery source, checksum, and rollback checklist
+- [ ] First GSI/DSU candidate shortlist with license and Moto/MediaTek risk notes
+- [ ] No-flash dry-run command checklist for first GSI/DSU attempt
+- [ ] User-approved destructive unlock/flash decision point
+
 ## Milestone 0: Foundation - in progress
 
 - [x] Monorepo structure and governance documents
