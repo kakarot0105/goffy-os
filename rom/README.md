@@ -29,7 +29,8 @@ command:
   --apk .goffy-validation/rom-signing/GoffyOS-signed.apk
 .venv/bin/python scripts/create_aosp_product_import.py \
   --aosp-root /path/to/aosp \
-  --apk .goffy-validation/rom-signing/GoffyOS-signed.apk
+  --apk .goffy-validation/rom-signing/GoffyOS-signed.apk \
+  --apk-verification-json .goffy-validation/rom-signing/release-apk-verification.json
 ```
 
 The signing-plan command is dry-run only: it locates Android SDK `apksigner`,

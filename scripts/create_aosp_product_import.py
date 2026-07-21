@@ -5,6 +5,7 @@ import hashlib
 import json
 import struct
 import sys
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -28,6 +29,7 @@ APK_SIGNATURE_SCHEME_IDS = {
     0xF05368C0,  # v3
     0x1B93AD61,  # v3.1
 }
+APK_VERIFICATION_SCHEMA_VERSION = "goffy.rom-release-apk-verification.v1"
 
 
 @dataclass(frozen=True)
@@ -57,6 +59,7 @@ def create_aosp_product_import_report(
     *,
     aosp_root: Path,
     apk_path: Path | None = None,
+    apk_verification_json: Path | None = None,
     repo_root: Path = ROOT,
     mode: str = "plan",
 ) -> AospProductImportReport:
@@ -70,6 +73,13 @@ def create_aosp_product_import_report(
         repo_root=repo_root,
     )
     blockers.extend(apk_blockers(resolved_apk_path))
+    blockers.extend(
+        apk_verification_blockers(
+            verification_json=apk_verification_json,
+            apk_path=resolved_apk_path,
+            repo_root=repo_root,
+        )
+    )
 
     files = tuple(
         planned_files(
@@ -205,6 +215,53 @@ def apk_blockers(path: Path) -> list[str]:
     return blockers
 
 
+def apk_verification_blockers(
+    *,
+    verification_json: Path | None,
+    apk_path: Path,
+    repo_root: Path,
+) -> list[str]:
+    if verification_json is None:
+        return []
+    path = resolve_path(verification_json, repo_root)
+    try:
+        payload = load_json(path)
+    except (OSError, json.JSONDecodeError, AospProductImportError) as exc:
+        return [str(exc)]
+
+    blockers: list[str] = []
+    if payload.get("schema_version") != APK_VERIFICATION_SCHEMA_VERSION:
+        blockers.append("GOFFY APK verification schema_version mismatch")
+    if payload.get("ok") is not True:
+        blockers.extend(
+            string_items(payload.get("blockers")) or ["GOFFY APK verification is not OK"]
+        )
+    if payload.get("status") != "VERIFIED":
+        blockers.append("GOFFY APK verification status is not VERIFIED")
+
+    apk_payload = payload.get("apk")
+    apk = mapping_value(apk_payload)
+    verified_path = apk.get("path", "")
+    if not verified_path:
+        blockers.append("GOFFY APK verification is missing APK path")
+    elif not same_path(verified_path, apk_path):
+        blockers.append("GOFFY APK verification path does not match import APK")
+
+    evidence_sha = apk.get("sha256", "")
+    if apk_path.is_file() and evidence_sha and evidence_sha != sha256_file(apk_path):
+        blockers.append("GOFFY APK verification sha256 does not match import APK")
+
+    evidence_schemes = string_items(
+        apk_payload.get("signature_schemes") if isinstance(apk_payload, Mapping) else None
+    )
+    actual_schemes = detect_apk_signature_schemes(apk_path) if apk_path.is_file() else ()
+    if not any(scheme in {"v2", "v3", "v3.1"} for scheme in evidence_schemes):
+        blockers.append("GOFFY APK verification did not record a v2/v3 signature scheme")
+    elif actual_schemes and evidence_schemes != actual_schemes:
+        blockers.append("GOFFY APK verification signature schemes do not match import APK")
+    return list(dict.fromkeys(blockers))
+
+
 def detect_apk_signature_schemes(path: Path) -> tuple[str, ...]:
     data = path.read_bytes()
     eocd_offset = data.rfind(ZIP_EOCD_MAGIC)
@@ -291,6 +348,25 @@ def load_json(path: Path) -> dict[str, Any]:
     return payload
 
 
+def mapping_value(value: object) -> dict[str, str]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {str(key): str(item) for key, item in value.items()}
+
+
+def string_items(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(str(item) for item in value)
+
+
+def same_path(left: str, right: Path) -> bool:
+    try:
+        return Path(left).expanduser().resolve() == right.expanduser().resolve()
+    except OSError:
+        return Path(left).expanduser().absolute() == right.expanduser().absolute()
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -331,6 +407,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--aosp-root", type=Path, required=True)
     parser.add_argument("--apk", type=Path, default=None, help="Externally signed GOFFY APK.")
+    parser.add_argument("--apk-verification-json", type=Path)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--confirm-aosp-tree-mutation", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -344,6 +421,7 @@ def main(argv: list[str] | None = None) -> int:
         report = create_aosp_product_import_report(
             aosp_root=args.aosp_root,
             apk_path=args.apk,
+            apk_verification_json=args.apk_verification_json,
             mode=mode,
         )
         if args.execute:

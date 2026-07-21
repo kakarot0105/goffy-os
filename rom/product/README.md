@@ -22,7 +22,8 @@ Validation after a human signs the APK with the generated signing-plan command:
   --apk .goffy-validation/rom-signing/GoffyOS-signed.apk
 .venv/bin/python scripts/create_aosp_product_import.py \
   --aosp-root /path/to/aosp \
-  --apk .goffy-validation/rom-signing/GoffyOS-signed.apk
+  --apk .goffy-validation/rom-signing/GoffyOS-signed.apk \
+  --apk-verification-json .goffy-validation/rom-signing/release-apk-verification.json
 ```
 
 The import command is a plan by default. Execute mode requires

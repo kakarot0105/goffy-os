@@ -162,7 +162,8 @@ The descriptor is validated by:
 .venv/bin/python scripts/validate_rom_system_app.py
 .venv/bin/python scripts/create_aosp_product_import.py \
   --aosp-root /path/to/aosp \
-  --apk .goffy-validation/rom-signing/GoffyOS-signed.apk
+  --apk .goffy-validation/rom-signing/GoffyOS-signed.apk \
+  --apk-verification-json .goffy-validation/rom-signing/release-apk-verification.json
 ```
 
 This prepares GOFFY for inclusion in a future AOSP/GSI build tree without

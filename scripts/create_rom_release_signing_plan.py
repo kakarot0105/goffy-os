@@ -265,6 +265,8 @@ def signing_commands(
             "<aosp-root>",
             "--apk",
             str(signed_apk),
+            "--apk-verification-json",
+            ".goffy-validation/rom-signing/release-apk-verification.json",
         ),
         mutates_filesystem=False,
     )
