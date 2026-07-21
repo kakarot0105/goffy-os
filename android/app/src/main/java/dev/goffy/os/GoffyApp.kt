@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -101,6 +102,7 @@ private val Mist = Color(0xFF94A5AC)
 private val Acid = Color(0xFFB6F23A)
 private val Signal = Color(0xFF41D7C7)
 private val Warning = Color(0xFFFF7A59)
+private val Error = Color(0xFFFF4E64)
 private val AuditTimestampFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
 
 private val GoffyColors = darkColorScheme(
@@ -684,7 +686,7 @@ private fun GoffyHomeScreen(
     ) {
         Header()
         Spacer(Modifier.height(20.dp))
-        GoffyOrb()
+        GoffyOrb(state.toGoffyOrbUiModel(voiceInputState))
         Spacer(Modifier.height(20.dp))
         StatusRail(state)
         if (state.localModelControlsAvailable) {
@@ -849,34 +851,218 @@ private fun Header() {
 }
 
 @Composable
-private fun GoffyOrb() {
-    val description = stringResource(R.string.orb_description)
+private fun GoffyOrb(model: GoffyOrbUiModel) {
+    val modeLabel = model.mode.label()
+    val targetLabel = model.target.label()
+    val phaseLabel = model.phase?.displayLabel() ?: stringResource(R.string.orb_phase_none)
+    val description = stringResource(R.string.orb_description, modeLabel, targetLabel, phaseLabel)
+    val accent = model.mode.accentColor()
     Box(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(
-            modifier = Modifier
-                .size(142.dp)
-                .semantics { contentDescription = description },
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            val center = Offset(size.width / 2f, size.height / 2f)
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Bone, Signal, Color(0xFF12383A), Color.Transparent),
+            Canvas(
+                modifier = Modifier
+                    .size(166.dp)
+                    .semantics { contentDescription = description },
+            ) {
+                val center = Offset(size.width / 2f, size.height / 2f)
+                val radius = size.minDimension / 2f
+                val strokeWidth = 2.dp.toPx()
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Bone.copy(alpha = 0.98f),
+                            accent.copy(alpha = 0.48f),
+                            Color(0xFF10272B),
+                            Color.Transparent,
+                        ),
+                        center = center,
+                        radius = radius,
+                    ),
+                    radius = radius,
+                )
+                drawCircle(
+                    color = Line.copy(alpha = 0.7f),
+                    radius = radius * 0.78f,
+                    style = Stroke(width = 1.dp.toPx(), cap = StrokeCap.Round),
+                )
+                drawCircle(
+                    color = accent.copy(alpha = 0.86f),
+                    radius = radius * 0.48f,
+                    style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+                )
+                drawOrbStateMark(
+                    mode = model.mode,
+                    accent = accent,
                     center = center,
-                    radius = size.minDimension / 2f,
-                ),
-                radius = size.minDimension / 2f,
-            )
-            drawCircle(
-                color = Acid.copy(alpha = 0.72f),
-                radius = size.minDimension * 0.42f,
-                style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
-            )
+                    radius = radius,
+                    strokeWidth = strokeWidth,
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OrbStatusPill(stringResource(R.string.orb_loop_label, modeLabel), accent)
+                OrbStatusPill(targetLabel, Signal)
+            }
+            if (model.phase != null) {
+                Spacer(Modifier.height(6.dp))
+                OrbStatusPill(stringResource(R.string.orb_phase_label, phaseLabel), Mist)
+            }
         }
     }
 }
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawOrbStateMark(
+    mode: GoffyOrbMode,
+    accent: Color,
+    center: Offset,
+    radius: Float,
+    strokeWidth: Float,
+) {
+    when (mode) {
+        GoffyOrbMode.IDLE -> drawCircle(
+            color = accent.copy(alpha = 0.28f),
+            radius = radius * 0.22f,
+        )
+        GoffyOrbMode.LISTENING -> drawCircle(
+            color = accent.copy(alpha = 0.92f),
+            radius = radius * 0.68f,
+            style = Stroke(width = strokeWidth, cap = StrokeCap.Round),
+        )
+        GoffyOrbMode.PHONE_ROUTE -> {
+            drawCircle(
+                color = accent.copy(alpha = 0.9f),
+                radius = radius * 0.3f,
+                style = Stroke(width = strokeWidth * 1.35f, cap = StrokeCap.Round),
+            )
+            drawCircle(
+                color = accent.copy(alpha = 0.42f),
+                radius = radius * 0.18f,
+            )
+        }
+        GoffyOrbMode.MAC_ROUTE -> {
+            val y = center.y
+            drawLine(
+                color = accent.copy(alpha = 0.9f),
+                start = Offset(center.x - radius * 0.52f, y),
+                end = Offset(center.x + radius * 0.52f, y),
+                strokeWidth = strokeWidth * 1.55f,
+                cap = StrokeCap.Round,
+            )
+            drawCircle(color = accent, radius = radius * 0.08f, center = center)
+        }
+        GoffyOrbMode.CLOUD_ROUTE -> drawArc(
+            color = accent.copy(alpha = 0.9f),
+            startAngle = 210f,
+            sweepAngle = 120f,
+            useCenter = false,
+            topLeft = Offset(center.x - radius * 0.5f, center.y - radius * 0.62f),
+            size = Size(radius, radius * 0.72f),
+            style = Stroke(width = strokeWidth * 1.4f, cap = StrokeCap.Round),
+        )
+        GoffyOrbMode.APPROVAL -> {
+            drawCircle(
+                color = Warning.copy(alpha = 0.95f),
+                radius = radius * 0.62f,
+                style = Stroke(width = strokeWidth * 1.35f, cap = StrokeCap.Round),
+            )
+            drawLine(
+                color = Warning,
+                start = Offset(center.x - radius * 0.16f, center.y + radius * 0.04f),
+                end = Offset(center.x + radius * 0.16f, center.y + radius * 0.04f),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color = Warning,
+                start = Offset(center.x, center.y - radius * 0.17f),
+                end = Offset(center.x, center.y + radius * 0.22f),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round,
+            )
+        }
+        GoffyOrbMode.VERIFIED -> {
+            drawLine(
+                color = accent,
+                start = Offset(center.x - radius * 0.28f, center.y + radius * 0.02f),
+                end = Offset(center.x - radius * 0.08f, center.y + radius * 0.22f),
+                strokeWidth = strokeWidth * 1.8f,
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color = accent,
+                start = Offset(center.x - radius * 0.08f, center.y + radius * 0.22f),
+                end = Offset(center.x + radius * 0.34f, center.y - radius * 0.26f),
+                strokeWidth = strokeWidth * 1.8f,
+                cap = StrokeCap.Round,
+            )
+        }
+        GoffyOrbMode.ATTENTION -> drawCircle(
+            color = accent.copy(alpha = 0.96f),
+            radius = radius * 0.64f,
+            style = Stroke(width = strokeWidth * 1.5f, cap = StrokeCap.Round),
+        )
+    }
+}
+
+@Composable
+private fun OrbStatusPill(label: String, accent: Color) {
+    Text(
+        text = label,
+        color = accent,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 10.sp,
+        maxLines = 1,
+        modifier = Modifier
+            .border(1.dp, accent.copy(alpha = 0.42f), RoundedCornerShape(99.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+    )
+}
+
+@Composable
+private fun GoffyOrbMode.label(): String = stringResource(
+    when (this) {
+        GoffyOrbMode.IDLE -> R.string.orb_state_idle
+        GoffyOrbMode.LISTENING -> R.string.orb_state_listening
+        GoffyOrbMode.PHONE_ROUTE -> R.string.orb_state_phone_route
+        GoffyOrbMode.MAC_ROUTE -> R.string.orb_state_mac_route
+        GoffyOrbMode.CLOUD_ROUTE -> R.string.orb_state_cloud_route
+        GoffyOrbMode.APPROVAL -> R.string.orb_state_approval
+        GoffyOrbMode.VERIFIED -> R.string.orb_state_verified
+        GoffyOrbMode.ATTENTION -> R.string.orb_state_attention
+    },
+)
+
+@Composable
+private fun ExecutionTarget.label(): String = stringResource(
+    when (this) {
+        ExecutionTarget.PHONE -> R.string.target_phone
+        ExecutionTarget.MAC -> R.string.target_mac
+        ExecutionTarget.CLOUD -> R.string.target_cloud
+    },
+)
+
+private fun GoffyOrbMode.accentColor(): Color = when (this) {
+    GoffyOrbMode.APPROVAL -> Warning
+    GoffyOrbMode.ATTENTION -> Error
+    GoffyOrbMode.VERIFIED,
+    GoffyOrbMode.MAC_ROUTE,
+    -> Signal
+    GoffyOrbMode.PHONE_ROUTE,
+    GoffyOrbMode.LISTENING,
+    GoffyOrbMode.CLOUD_ROUTE,
+    GoffyOrbMode.IDLE,
+    -> Acid
+}
+
+private fun TaskPhase.displayLabel(): String = name.replace('_', ' ')
 
 @Composable
 private fun StatusRail(state: GoffyUiState) {
@@ -1550,8 +1736,9 @@ private fun TaskCard(
     val phaseColor = when (entry.phase) {
         TaskPhase.VERIFIED -> Signal
         TaskPhase.UNVERIFIED,
-        TaskPhase.AWAITING_APPROVAL,
         TaskPhase.FAILED,
+        -> Error
+        TaskPhase.AWAITING_APPROVAL,
         TaskPhase.CANCELLED,
         -> Warning
         else -> Acid
