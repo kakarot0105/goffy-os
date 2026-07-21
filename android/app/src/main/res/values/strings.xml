@@ -45,6 +45,15 @@
     <string name="forget_hub_cancel">Keep link</string>
     <string name="edit_link_setup">Edit</string>
     <string name="hide_link_setup">Hide</string>
+    <string name="hub_audit_title">HUB AUDIT</string>
+    <string name="hub_audit_description">Manual foreground read of this phone credential\'s Hub/MCP operator events. No admin events, other phones, tool arguments, or tool outputs are displayed.</string>
+    <string name="hub_audit_requires_pairing">Pair this phone before reading Hub audit events.</string>
+    <string name="hub_audit_idle">Ready for foreground audit refresh.</string>
+    <string name="hub_audit_loading">Reading self-audit events from Hub.</string>
+    <string name="hub_audit_ready">AUDIT / %1$d EVENTS / %2$s / %3$s</string>
+    <string name="hub_audit_degraded">AUDIT READ FAILED</string>
+    <string name="hub_audit_empty">No credential-scoped Hub audit events returned yet.</string>
+    <string name="refresh_hub_audit">Refresh</string>
     <string name="target_label">EXECUTION TARGET</string>
     <string name="target_phone">PHONE</string>
     <string name="target_mac">MAC</string>

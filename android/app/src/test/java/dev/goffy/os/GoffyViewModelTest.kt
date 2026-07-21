@@ -15,12 +15,17 @@ import dev.goffy.os.hub.HubCredentialStore
 import dev.goffy.os.hub.HubEndpoint
 import dev.goffy.os.hub.HubGateway
 import dev.goffy.os.hub.HubIdentityPin
+import dev.goffy.os.hub.HubOperatorAuditEvent
+import dev.goffy.os.hub.HubOperatorAuditException
+import dev.goffy.os.hub.HubOperatorAuditGateway
+import dev.goffy.os.hub.HubOperatorAuditSnapshot
 import dev.goffy.os.hub.HubPairingException
 import dev.goffy.os.hub.HubPairingGateway
 import dev.goffy.os.hub.IssuedHubCredential
 import dev.goffy.os.hub.RotatedHubCredential
 import dev.goffy.os.hub.SelfRevocationResult
 import dev.goffy.os.hub.StoredHubCredential
+import dev.goffy.os.hub.DEFAULT_HUB_OPERATOR_AUDIT_LIMIT
 import dev.goffy.os.localmodel.LocalModelIntentCandidate
 import dev.goffy.os.localmodel.LocalModelIntentFallback
 import dev.goffy.os.localmodel.LocalModelIntentObservation
@@ -132,6 +137,78 @@ class GoffyViewModelTest {
         assertEquals(hubFingerprint, viewModel.uiState.value.hubIdentityFingerprint)
         assertEquals(TaskPhase.VERIFIED, viewModel.uiState.value.timeline.entries.single().phase)
         assertEquals(1, gateway.requests.size)
+        assertFalse(viewModel.uiState.value.toString().contains(token))
+    }
+
+    @Test
+    fun pairedHubAuditRefreshShowsOnlyBoundedSelfAuditState() = runTest(dispatcher) {
+        val auditGateway = RecordingHubOperatorAuditGateway()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            credentialStore = RecordingCredentialStore(HubCredentialLoadResult.Loaded(storedCredential())),
+            operatorAuditGateway = auditGateway,
+            nowMillis = { 1_720_000_000_000 },
+        )
+        advanceUntilIdle()
+
+        viewModel.refreshHubOperatorAudit()
+        advanceUntilIdle()
+
+        val audit = viewModel.uiState.value.hubOperatorAudit
+        assertEquals(HubOperatorAuditState.READY, audit.state)
+        assertEquals("sqlite", audit.storageKind)
+        assertEquals("verified", audit.integrity)
+        assertEquals(1_720_000_000_000, audit.refreshedAtEpochMillis)
+        assertEquals(1, audit.events.size)
+        assertEquals("mcp", audit.events.single().source)
+        assertEquals("http.get", audit.events.single().action)
+        assertEquals(1, auditGateway.calls)
+        assertEquals(DEFAULT_HUB_OPERATOR_AUDIT_LIMIT, auditGateway.limits.single())
+        assertEquals(endpoint, auditGateway.configs.single().endpoint)
+        assertFalse(viewModel.uiState.value.toString().contains(token))
+    }
+
+    @Test
+    fun hubAuditRefreshRequiresAPairedCredential() = runTest(dispatcher) {
+        val auditGateway = RecordingHubOperatorAuditGateway()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            operatorAuditGateway = auditGateway,
+        )
+        advanceUntilIdle()
+
+        assertTrue(viewModel.configureHub(endpoint, token))
+        viewModel.refreshHubOperatorAudit()
+        advanceUntilIdle()
+
+        assertEquals(0, auditGateway.calls)
+        assertEquals(HubOperatorAuditState.DEGRADED, viewModel.uiState.value.hubOperatorAudit.state)
+        assertTrue(viewModel.uiState.value.hubOperatorAudit.message.orEmpty().contains("paired"))
+        assertFalse(viewModel.uiState.value.toString().contains(token))
+    }
+
+    @Test
+    fun hubAuditRefreshFailureIsVisibleWithoutChangingMacLinkState() = runTest(dispatcher) {
+        val auditGateway = RecordingHubOperatorAuditGateway(
+            failure = HubOperatorAuditException(
+                "audit_forbidden",
+                "The Hub refused paired audit retrieval.",
+            ),
+        )
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            credentialStore = RecordingCredentialStore(HubCredentialLoadResult.Loaded(storedCredential())),
+            operatorAuditGateway = auditGateway,
+        )
+        advanceUntilIdle()
+
+        viewModel.refreshHubOperatorAudit()
+        advanceUntilIdle()
+
+        assertEquals(1, auditGateway.calls)
+        assertEquals(HubLinkState.PAIRED, viewModel.uiState.value.hubLinkState)
+        assertEquals(HubOperatorAuditState.DEGRADED, viewModel.uiState.value.hubOperatorAudit.state)
+        assertTrue(viewModel.uiState.value.hubOperatorAudit.message.orEmpty().contains("refused"))
         assertFalse(viewModel.uiState.value.toString().contains(token))
     }
 
@@ -1215,6 +1292,7 @@ class GoffyViewModelTest {
             readDispatcher = dispatcher,
         ),
         pairingGateway: HubPairingGateway = RecordingPairingGateway(),
+        operatorAuditGateway: HubOperatorAuditGateway = RecordingHubOperatorAuditGateway(),
         credentialStore: HubCredentialStore = RecordingCredentialStore(),
         approvalTtlMillis: Long = 60_000,
         allowDevelopmentTokenConfiguration: Boolean = true,
@@ -1244,6 +1322,7 @@ class GoffyViewModelTest {
         return GoffyViewModel(
             gateway = gateway,
             pairingGateway = pairingGateway,
+            operatorAuditGateway = operatorAuditGateway,
             credentialStore = credentialStore,
             phoneGateway = phoneGateway,
             codec = GoffyProtocolCodec(
@@ -1478,6 +1557,44 @@ class GoffyViewModelTest {
         override fun invoke(config: HubConfig, request: ToolInvocationRequest): Flow<ExecutionEvent> {
             requests += request
             return events(request)
+        }
+
+        override fun close() = Unit
+    }
+
+    private inner class RecordingHubOperatorAuditGateway(
+        private val failure: HubOperatorAuditException? = null,
+    ) : HubOperatorAuditGateway {
+        var calls = 0
+        val configs = mutableListOf<HubConfig>()
+        val limits = mutableListOf<Int>()
+
+        override suspend fun listSelfEvents(
+            config: HubConfig,
+            limit: Int,
+        ): HubOperatorAuditSnapshot {
+            calls += 1
+            configs += config
+            limits += limit
+            failure?.let { throw it }
+            return HubOperatorAuditSnapshot(
+                storageKind = "sqlite",
+                integrity = "verified",
+                events = listOf(
+                    HubOperatorAuditEvent(
+                        sequence = 7,
+                        recordedAt = Instant.parse("2026-07-13T16:01:00Z"),
+                        source = "mcp",
+                        action = "http.get",
+                        outcome = "succeeded",
+                        principalKind = "paired",
+                        credentialId = storedCredential().credentialId,
+                        detailCode = null,
+                        previousHash = null,
+                        eventHash = null,
+                    ),
+                ),
+            )
         }
 
         override fun close() = Unit

@@ -3,6 +3,8 @@ package dev.goffy.os
 import dev.goffy.os.agent.GoffyExecutionPlan
 import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.agent.TaskTimelineState
+import dev.goffy.os.hub.HubOperatorAuditEvent
+import dev.goffy.os.hub.HubOperatorAuditSnapshot
 import dev.goffy.os.localmodel.LocalModelRuntimeGate
 import dev.goffy.os.localmodel.LocalModelRuntimeStatus
 import dev.goffy.os.protocol.ExecutionEvent
@@ -32,6 +34,22 @@ enum class HubLinkState {
     DEGRADED,
 }
 
+enum class HubOperatorAuditState {
+    IDLE,
+    LOADING,
+    READY,
+    DEGRADED,
+}
+
+data class HubOperatorAuditUiState(
+    val state: HubOperatorAuditState = HubOperatorAuditState.IDLE,
+    val storageKind: String? = null,
+    val integrity: String? = null,
+    val events: List<HubOperatorAuditEvent> = emptyList(),
+    val message: String? = null,
+    val refreshedAtEpochMillis: Long? = null,
+)
+
 data class LocalModelNotice(
     val message: String,
     val warning: Boolean,
@@ -57,6 +75,7 @@ data class GoffyUiState(
     val localModelNotice: LocalModelNotice? = null,
     val charging: Boolean = false,
     val keepAwakeWhenCharging: Boolean = true,
+    val hubOperatorAudit: HubOperatorAuditUiState = HubOperatorAuditUiState(),
 ) {
     val hubConfigured: Boolean
         get() = hubLinkState == HubLinkState.PAIRED || hubLinkState == HubLinkState.DEVELOPMENT
@@ -96,6 +115,7 @@ data class GoffyUiState(
         },
         linkError = null,
         linkNotice = null,
+        hubOperatorAudit = HubOperatorAuditUiState(),
     )
 
     fun hubConfigurationRejected(message: String): GoffyUiState = copy(
@@ -142,6 +162,7 @@ data class GoffyUiState(
         hubIdentityFingerprint = null,
         linkError = null,
         linkNotice = null,
+        hubOperatorAudit = HubOperatorAuditUiState(),
     )
 
     fun hubRestoreFailed(message: String): GoffyUiState = copy(
@@ -149,6 +170,7 @@ data class GoffyUiState(
         hubIdentityFingerprint = null,
         linkError = message.take(MAX_ERROR_LENGTH),
         linkNotice = null,
+        hubOperatorAudit = HubOperatorAuditUiState(),
     )
 
     fun hubPairingStarted(endpoint: String): GoffyUiState = copy(
@@ -157,6 +179,7 @@ data class GoffyUiState(
         hubIdentityFingerprint = null,
         linkError = null,
         linkNotice = null,
+        hubOperatorAudit = HubOperatorAuditUiState(),
     )
 
     fun hubPairingRejected(message: String): GoffyUiState = copy(
@@ -164,6 +187,7 @@ data class GoffyUiState(
         hubIdentityFingerprint = null,
         linkError = message.take(MAX_ERROR_LENGTH),
         linkNotice = null,
+        hubOperatorAudit = HubOperatorAuditUiState(),
     )
 
     fun hubForgetStarted(
@@ -176,6 +200,7 @@ data class GoffyUiState(
         linkNotice = null,
         timeline = timeline.cancelActive(terminalAtEpochMillis),
         pendingApproval = null,
+        hubOperatorAudit = HubOperatorAuditUiState(),
     )
 
     fun hubRotationStarted(
@@ -187,6 +212,7 @@ data class GoffyUiState(
         linkNotice = null,
         timeline = timeline.cancelActive(terminalAtEpochMillis),
         pendingApproval = null,
+        hubOperatorAudit = HubOperatorAuditUiState(),
     )
 
     fun hubRotationSucceeded(notice: HubLinkNotice): GoffyUiState = copy(
@@ -195,6 +221,7 @@ data class GoffyUiState(
         linkError = null,
         linkNotice = notice.bounded(),
         pendingApproval = null,
+        hubOperatorAudit = HubOperatorAuditUiState(),
     )
 
     fun hubRotationFailed(message: String): GoffyUiState = copy(
@@ -204,6 +231,7 @@ data class GoffyUiState(
         linkError = message.take(MAX_ERROR_LENGTH),
         linkNotice = null,
         pendingApproval = null,
+        hubOperatorAudit = HubOperatorAuditUiState(),
     )
 
     fun forgetHub(
@@ -219,6 +247,7 @@ data class GoffyUiState(
         linkNotice = notice.bounded(),
         timeline = timeline.cancelActive(terminalAtEpochMillis),
         pendingApproval = null,
+        hubOperatorAudit = HubOperatorAuditUiState(),
     )
 
     fun hubForgetVerificationFailed(
@@ -234,6 +263,7 @@ data class GoffyUiState(
         linkNotice = null,
         timeline = timeline.cancelActive(terminalAtEpochMillis),
         pendingApproval = null,
+        hubOperatorAudit = HubOperatorAuditUiState(),
     )
 
     fun startTask(taskId: UUID, plan: GoffyExecutionPlan): GoffyUiState = copy(
@@ -367,6 +397,34 @@ data class GoffyUiState(
         timeline = timeline.markAuditRecorded(taskId, recordedAtEpochMillis),
     )
 
+    fun hubOperatorAuditLoading(): GoffyUiState = copy(
+        hubOperatorAudit = hubOperatorAudit.copy(
+            state = HubOperatorAuditState.LOADING,
+            message = null,
+        ),
+    )
+
+    fun hubOperatorAuditLoaded(
+        snapshot: HubOperatorAuditSnapshot,
+        refreshedAtEpochMillis: Long,
+    ): GoffyUiState = copy(
+        hubOperatorAudit = HubOperatorAuditUiState(
+            state = HubOperatorAuditState.READY,
+            storageKind = snapshot.storageKind.take(MAX_HUB_AUDIT_LABEL_LENGTH),
+            integrity = snapshot.integrity.take(MAX_HUB_AUDIT_LABEL_LENGTH),
+            events = snapshot.events.take(MAX_HUB_OPERATOR_AUDIT_EVENTS),
+            message = null,
+            refreshedAtEpochMillis = refreshedAtEpochMillis,
+        ),
+    )
+
+    fun hubOperatorAuditFailed(message: String): GoffyUiState = copy(
+        hubOperatorAudit = hubOperatorAudit.copy(
+            state = HubOperatorAuditState.DEGRADED,
+            message = message.take(MAX_ERROR_LENGTH),
+        ),
+    )
+
     fun cancelActiveTask(
         terminalAtEpochMillis: Long = System.currentTimeMillis(),
     ): GoffyUiState {
@@ -384,6 +442,8 @@ data class GoffyUiState(
         const val MAX_NOTICE_LENGTH = 256
         const val MAX_FINGERPRINT_LENGTH = 80
         const val MAX_LOCAL_MODEL_NOTICE_LENGTH = 180
+        const val MAX_HUB_AUDIT_LABEL_LENGTH = 32
+        const val MAX_HUB_OPERATOR_AUDIT_EVENTS = 20
     }
 
     private fun HubLinkNotice.bounded(): HubLinkNotice = copy(

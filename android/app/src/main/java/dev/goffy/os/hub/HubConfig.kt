@@ -32,6 +32,9 @@ class HubConfig private constructor(
     internal val tokenRotationUrl: String
         get() = hubEndpoint.tokenRotationUrl
 
+    internal val operatorAuditEventsUrl: String
+        get() = hubEndpoint.operatorAuditEventsUrl
+
     internal val isLoopback: Boolean
         get() = hubEndpoint.isLoopback
 

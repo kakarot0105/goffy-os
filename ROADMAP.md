@@ -119,7 +119,7 @@
 - [x] Persistent hash-chained Hub/MCP operator audit storage foundation
 - [ ] Certificate/public-key trusted Hub identity onboarding
 - [ ] Automatic token rotation reminders or schedules after physical validation
-- [ ] Android retrieval and user controls for Hub/MCP operator audit
+- [x] Android retrieval and user controls for Hub/MCP operator audit
 
 ## Milestones 4-8
 

@@ -9,6 +9,7 @@ class HubEndpoint private constructor(
     internal val pairingRedemptionUrl: String,
     internal val selfRevocationUrl: String,
     internal val tokenRotationUrl: String,
+    internal val operatorAuditEventsUrl: String,
     internal val isLoopback: Boolean,
 ) {
     companion object {
@@ -17,6 +18,7 @@ class HubEndpoint private constructor(
         private const val PAIRING_PATH = "/pairing/v1/redeem"
         private const val SELF_REVOCATION_PATH = "/pairing/v1/self"
         private const val TOKEN_ROTATION_PATH = "/pairing/v1/rotate"
+        private const val OPERATOR_AUDIT_EVENTS_PATH = "/paired/v1/audit/events"
 
         fun create(endpoint: String, allowInsecureLoopback: Boolean): HubEndpoint {
             if (endpoint.isEmpty() || endpoint.length > MAX_ENDPOINT_LENGTH) {
@@ -83,11 +85,21 @@ class HubEndpoint private constructor(
                 null,
                 null,
             ).toASCIIString()
+            val operatorAuditEventsUrl = URI(
+                httpScheme,
+                null,
+                uri.host,
+                uri.port,
+                OPERATOR_AUDIT_EVENTS_PATH,
+                null,
+                null,
+            ).toASCIIString()
             return HubEndpoint(
                 endpoint,
                 pairingUrl,
                 selfRevocationUrl,
                 tokenRotationUrl,
+                operatorAuditEventsUrl,
                 isLoopbackHost,
             )
         }

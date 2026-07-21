@@ -19,12 +19,16 @@ import dev.goffy.os.hub.HubCredentialStore
 import dev.goffy.os.hub.HubEndpoint
 import dev.goffy.os.hub.HubGateway
 import dev.goffy.os.hub.HubIdentityPin
+import dev.goffy.os.hub.HubOperatorAuditException
+import dev.goffy.os.hub.HubOperatorAuditGateway
 import dev.goffy.os.hub.HubPairingException
 import dev.goffy.os.hub.HubPairingGateway
 import dev.goffy.os.hub.AndroidHubCredentialStore
 import dev.goffy.os.hub.OkHttpHubGateway
+import dev.goffy.os.hub.OkHttpHubOperatorAuditGateway
 import dev.goffy.os.hub.OkHttpHubPairingGateway
 import dev.goffy.os.hub.StoredHubCredential
+import dev.goffy.os.hub.DEFAULT_HUB_OPERATOR_AUDIT_LIMIT
 import dev.goffy.os.localmodel.LocalModelIntentFallback
 import dev.goffy.os.localmodel.LocalModelIntentObservation
 import dev.goffy.os.localmodel.AndroidLocalModelRuntimeSettingsStore
@@ -73,6 +77,7 @@ import kotlinx.coroutines.withContext
 class GoffyViewModel internal constructor(
     private val gateway: HubGateway,
     private val pairingGateway: HubPairingGateway,
+    private val operatorAuditGateway: HubOperatorAuditGateway,
     private val credentialStore: HubCredentialStore,
     private val phoneGateway: PhoneToolGateway,
     private val codec: GoffyProtocolCodec,
@@ -106,6 +111,7 @@ class GoffyViewModel internal constructor(
     private constructor(dependencies: AndroidGoffyDependencies) : this(
         gateway = OkHttpHubGateway(),
         pairingGateway = OkHttpHubPairingGateway(),
+        operatorAuditGateway = OkHttpHubOperatorAuditGateway(),
         credentialStore = AndroidHubCredentialStore(
             dependencies.context,
             allowInsecureLoopback = BuildConfig.DEBUG,
@@ -153,6 +159,7 @@ class GoffyViewModel internal constructor(
     private var deviceId: String = deviceId
     private var activeJob: Job? = null
     private var linkJob: Job? = null
+    private var operatorAuditJob: Job? = null
     private var localModelSettingsJob: Job? = null
     private var linkRevision = 0L
     private var pendingExecution: PendingPhoneExecution? = null
@@ -372,6 +379,7 @@ class GoffyViewModel internal constructor(
         }
         ++linkRevision
         linkJob?.cancel()
+        operatorAuditJob?.cancel()
         val config = try {
             HubConfig.create(endpoint, bearerToken, allowInsecureLoopback)
         } catch (error: HubConfigurationException) {
@@ -409,6 +417,7 @@ class GoffyViewModel internal constructor(
         }
 
         val revision = ++linkRevision
+        operatorAuditJob?.cancel()
         mutableUiState.value = mutableUiState.value.hubPairingStarted(parsedEndpoint.webSocketUrl)
         linkJob = viewModelScope.launch {
             try {
@@ -473,6 +482,7 @@ class GoffyViewModel internal constructor(
         ++linkRevision
         val previousLinkJob = linkJob
         previousLinkJob?.cancel()
+        operatorAuditJob?.cancel()
         cancelActiveTask()
         hubConfig = null
         pairedCredentialId = null
@@ -568,6 +578,7 @@ class GoffyViewModel internal constructor(
         val revision = ++linkRevision
         val previousLinkJob = linkJob
         previousLinkJob?.cancel()
+        operatorAuditJob?.cancel()
         cancelActiveTask()
         mutableUiState.value = mutableUiState.value.hubRotationStarted(nowMillis())
         linkJob = viewModelScope.launch {
@@ -622,6 +633,7 @@ class GoffyViewModel internal constructor(
         ++linkRevision
         val enrollmentJob = linkJob
         enrollmentJob?.cancel()
+        operatorAuditJob?.cancel()
         hubConfig = null
         pairedCredentialId = null
         pairedCredentialCreatedAt = null
@@ -748,6 +760,51 @@ class GoffyViewModel internal constructor(
         activeJob = job
         job.start()
         return LocalModelObservationStart.Started
+    }
+
+    fun refreshHubOperatorAudit() {
+        if (mutableUiState.value.hubOperatorAudit.state == HubOperatorAuditState.LOADING) return
+        val config = hubConfig
+        if (mutableUiState.value.hubLinkState != HubLinkState.PAIRED || config == null) {
+            mutableUiState.value = mutableUiState.value.hubOperatorAuditFailed(
+                "Hub audit retrieval requires a paired Hub link.",
+            )
+            return
+        }
+        val revision = linkRevision
+        operatorAuditJob?.cancel()
+        mutableUiState.value = mutableUiState.value.hubOperatorAuditLoading()
+        operatorAuditJob = viewModelScope.launch {
+            try {
+                val snapshot = operatorAuditGateway.listSelfEvents(
+                    config,
+                    DEFAULT_HUB_OPERATOR_AUDIT_LIMIT,
+                )
+                if (revision != linkRevision) return@launch
+                mutableUiState.value = mutableUiState.value.hubOperatorAuditLoaded(
+                    snapshot,
+                    nowMillis(),
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: HubOperatorAuditException) {
+                if (revision == linkRevision) {
+                    mutableUiState.value = mutableUiState.value.hubOperatorAuditFailed(
+                        error.message ?: "Hub audit retrieval failed safely.",
+                    )
+                }
+            } catch (_: Exception) {
+                if (revision == linkRevision) {
+                    mutableUiState.value = mutableUiState.value.hubOperatorAuditFailed(
+                        "Hub audit retrieval failed safely.",
+                    )
+                }
+            } finally {
+                if (operatorAuditJob === coroutineContext[Job]) {
+                    operatorAuditJob = null
+                }
+            }
+        }
     }
 
     private fun submitPhonePlan(plan: GoffyExecutionPlan) {
@@ -974,11 +1031,13 @@ class GoffyViewModel internal constructor(
 
     override fun onCleared() {
         linkJob?.cancel()
+        operatorAuditJob?.cancel()
         localModelSettingsJob?.cancel()
         approvalExpiryJob?.cancel()
         auditStore.close()
         phoneGateway.close()
         pairingGateway.close()
+        operatorAuditGateway.close()
         gateway.close()
         super.onCleared()
     }

@@ -67,6 +67,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.goffy.os.agent.TaskEventKind
 import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
+import dev.goffy.os.hub.HubOperatorAuditEvent
 import dev.goffy.os.localmodel.LocalModelRuntimeState
 import dev.goffy.os.qr.PairingQrScanner
 import dev.goffy.os.protocol.ExecutionTarget
@@ -227,6 +228,7 @@ fun GoffyApp(
                 },
                 onRotateHub = { showRotateConfirmation = true },
                 onForgetHub = { showForgetConfirmation = true },
+                onRefreshHubAudit = viewModel::refreshHubOperatorAudit,
                 onSpeakLatest = onSpeakLatest,
                 onSubmit = {
                     viewModel.submitCommand(command)
@@ -399,6 +401,7 @@ private fun GoffyHomeScreen(
     onPairHub: () -> Unit,
     onRotateHub: () -> Unit,
     onForgetHub: () -> Unit,
+    onRefreshHubAudit: () -> Unit,
     onSpeakLatest: (String) -> Unit,
     onSubmit: () -> Unit,
     onSetLocalModelEnabled: (Boolean) -> Unit,
@@ -447,6 +450,11 @@ private fun GoffyHomeScreen(
             onPair = onPairHub,
             onRotate = onRotateHub,
             onForget = onForgetHub,
+        )
+        Spacer(Modifier.height(12.dp))
+        HubOperatorAuditSection(
+            state = state,
+            onRefresh = onRefreshHubAudit,
         )
         Spacer(Modifier.height(16.dp))
         CommandSurface(
@@ -913,6 +921,122 @@ private fun HubLinkSection(
 }
 
 @Composable
+private fun HubOperatorAuditSection(
+    state: GoffyUiState,
+    onRefresh: () -> Unit,
+) {
+    val audit = state.hubOperatorAudit
+    val paired = state.hubLinkState == HubLinkState.PAIRED
+    val loading = audit.state == HubOperatorAuditState.LOADING
+    val status = when (audit.state) {
+        HubOperatorAuditState.IDLE -> stringResource(
+            if (paired) R.string.hub_audit_idle else R.string.hub_audit_requires_pairing,
+        )
+        HubOperatorAuditState.LOADING -> stringResource(R.string.hub_audit_loading)
+        HubOperatorAuditState.READY -> stringResource(
+            R.string.hub_audit_ready,
+            audit.events.size,
+            audit.storageKind ?: "unknown",
+            audit.integrity ?: "unknown",
+        )
+        HubOperatorAuditState.DEGRADED -> stringResource(R.string.hub_audit_degraded)
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF071115))
+            .border(1.dp, Line, RoundedCornerShape(18.dp))
+            .padding(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Label(stringResource(R.string.hub_audit_title))
+                Text(
+                    text = status,
+                    color = if (audit.state == HubOperatorAuditState.DEGRADED) Warning else Mist,
+                    fontSize = 12.sp,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            OutlinedButton(
+                onClick = onRefresh,
+                enabled = paired && !state.linkOperationInProgress && !loading,
+            ) {
+                Text(stringResource(R.string.refresh_hub_audit), color = Signal)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = stringResource(R.string.hub_audit_description),
+            color = Mist,
+            fontSize = 11.sp,
+        )
+        audit.message?.let { message ->
+            Spacer(Modifier.height(8.dp))
+            Text(message, color = Warning, fontSize = 12.sp)
+        }
+        if (audit.state == HubOperatorAuditState.READY) {
+            Spacer(Modifier.height(10.dp))
+            if (audit.events.isEmpty()) {
+                Text(stringResource(R.string.hub_audit_empty), color = Mist, fontSize = 12.sp)
+            } else {
+                audit.events.take(MAX_HUB_AUDIT_UI_EVENTS).forEach { event ->
+                    HubOperatorAuditRow(event)
+                    Spacer(Modifier.height(7.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HubOperatorAuditRow(event: HubOperatorAuditEvent) {
+    val recordedAt = AuditTimestampFormatter.format(
+        event.recordedAt.atZone(ZoneId.systemDefault()),
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(Panel.copy(alpha = 0.66f))
+            .border(1.dp, Line.copy(alpha = 0.75f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text = "#${event.sequence}  ${event.source}/${event.action}",
+            color = Bone,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 10.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = "${event.outcome.uppercase()} / ${event.principalKind} / $recordedAt",
+            color = if (event.outcome == "failed") Warning else Signal,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 9.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        event.detailCode?.let { detail ->
+            Text(
+                text = detail,
+                color = Mist,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
 private fun CommandSurface(
     command: String,
     busy: Boolean,
@@ -1347,3 +1471,4 @@ private const val MAX_ENDPOINT_LENGTH = 2_048
 private const val MAX_TOKEN_LENGTH = 4_096
 private const val MAX_PAIRING_CHALLENGE_LENGTH = 2_048
 private const val MAX_NOTE_PREVIEW_LENGTH = 256
+private const val MAX_HUB_AUDIT_UI_EVENTS = 5
