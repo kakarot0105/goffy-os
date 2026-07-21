@@ -60,6 +60,10 @@
     <string name="local_model_disable_runtime">Disable setting</string>
     <string name="local_model_loading">Loading</string>
     <string name="local_model_saving">Saving</string>
+    <string name="dock_label">DOCK MODE</string>
+    <string name="dock_awake">AWAKE</string>
+    <string name="dock_waiting">POWER WAIT</string>
+    <string name="dock_disabled">OFF</string>
     <string name="performance_lite">GOFFY LITE</string>
     <string name="command_hint">Ask GOFFY to do something</string>
     <string name="send_command">Send</string>

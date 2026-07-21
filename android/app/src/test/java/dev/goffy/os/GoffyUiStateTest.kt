@@ -34,6 +34,22 @@ class GoffyUiStateTest {
         assertTrue(state.timeline.entries.isEmpty())
         assertFalse(state.hubConfigured)
         assertEquals(AuditPersistenceState.LOADING, state.auditPersistence)
+        assertEquals(DockAwakeStatus.WAITING_FOR_POWER, state.dockAwakeStatus)
+        assertFalse(state.keepScreenAwake)
+    }
+
+    @Test
+    fun chargingStateEnablesForegroundDockAwakeMode() {
+        val unplugged = GoffyUiState(hubEndpoint = endpoint, charging = false)
+        val charging = unplugged.copy(charging = true)
+        val disabled = charging.copy(keepAwakeWhenCharging = false)
+
+        assertEquals(DockAwakeStatus.WAITING_FOR_POWER, unplugged.dockAwakeStatus)
+        assertFalse(unplugged.keepScreenAwake)
+        assertEquals(DockAwakeStatus.AWAKE, charging.dockAwakeStatus)
+        assertTrue(charging.keepScreenAwake)
+        assertEquals(DockAwakeStatus.DISABLED, disabled.dockAwakeStatus)
+        assertFalse(disabled.keepScreenAwake)
     }
 
     @Test

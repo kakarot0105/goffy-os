@@ -55,6 +55,8 @@ data class GoffyUiState(
     val localModelSettingsLoaded: Boolean = false,
     val localModelOperationInProgress: Boolean = false,
     val localModelNotice: LocalModelNotice? = null,
+    val charging: Boolean = false,
+    val keepAwakeWhenCharging: Boolean = true,
 ) {
     val hubConfigured: Boolean
         get() = hubLinkState == HubLinkState.PAIRED || hubLinkState == HubLinkState.DEVELOPMENT
@@ -67,6 +69,18 @@ data class GoffyUiState(
 
     val isBusy: Boolean
         get() = timeline.activeTaskId != null
+
+    val dockAwakeStatus: DockAwakeStatus
+        get() = GoffyDockAwakePolicy.status(
+            enabled = keepAwakeWhenCharging,
+            charging = charging,
+        )
+
+    val keepScreenAwake: Boolean
+        get() = GoffyDockAwakePolicy.shouldKeepScreenAwake(
+            enabled = keepAwakeWhenCharging,
+            charging = charging,
+        )
 
     fun hubConfigured(
         endpoint: String,

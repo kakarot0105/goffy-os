@@ -621,6 +621,16 @@ private fun StatusRail(state: GoffyUiState) {
         LocalModelRuntimeState.UNAVAILABLE,
         -> Mist
     }
+    val dockValue = when (state.dockAwakeStatus) {
+        DockAwakeStatus.AWAKE -> stringResource(R.string.dock_awake)
+        DockAwakeStatus.WAITING_FOR_POWER -> stringResource(R.string.dock_waiting)
+        DockAwakeStatus.DISABLED -> stringResource(R.string.dock_disabled)
+    }
+    val dockAccent = when (state.dockAwakeStatus) {
+        DockAwakeStatus.AWAKE -> Signal
+        DockAwakeStatus.WAITING_FOR_POWER -> Mist
+        DockAwakeStatus.DISABLED -> Warning
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -642,6 +652,12 @@ private fun StatusRail(state: GoffyUiState) {
             label = stringResource(R.string.local_model_label),
             value = localModelValue,
             accent = localModelAccent,
+            modifier = Modifier.weight(1f),
+        )
+        StatusCard(
+            label = stringResource(R.string.dock_label),
+            value = dockValue,
+            accent = dockAccent,
             modifier = Modifier.weight(1f),
         )
     }

@@ -165,6 +165,11 @@ class GoffyViewModel internal constructor(
         observeTerminalAudit()
     }
 
+    fun updateChargingState(charging: Boolean) {
+        if (mutableUiState.value.charging == charging) return
+        mutableUiState.value = mutableUiState.value.copy(charging = charging)
+    }
+
     private fun restoreHubCredential() {
         val revision = linkRevision
         linkJob = viewModelScope.launch {

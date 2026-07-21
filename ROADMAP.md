@@ -49,6 +49,7 @@
 - [x] Bounded fixed-command Moto G device smoke automation
 - [x] GOFFY home shell verified on the Moto G physical device
 - [x] `phone.device.info` reports GOFFY home/system-app status on the Moto G
+- [x] Foreground charging dock mode keeps GOFFY awake without global display changes
 
 ## Milestone 1: First end-to-end action - in progress
 
