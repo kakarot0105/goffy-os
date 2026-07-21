@@ -54,8 +54,9 @@ async def demo() -> None:
 
     if initialization.protocolVersion != MCP_PROTOCOL_VERSION:
         raise RuntimeError("Hub negotiated an unsupported MCP protocol version")
-    if [tool.name for tool in tools.tools] != ["mac.system_info"]:
-        raise RuntimeError("Hub returned an unexpected MCP tool registry")
+    tool_names = sorted(tool.name for tool in tools.tools)
+    if "mac.system_info" not in tool_names:
+        raise RuntimeError("Hub did not expose the required mac.system_info tool")
     if result.isError or result.structuredContent is None:
         raise RuntimeError("mac.system_info returned an MCP tool error")
 
@@ -64,7 +65,7 @@ async def demo() -> None:
         json.dumps(
             {
                 "protocolVersion": initialization.protocolVersion,
-                "tools": [tool.name for tool in tools.tools],
+                "tools": tool_names,
                 "result": output.model_dump(mode="json", by_alias=True),
                 "sessionTerminated": True,
                 "verified": output.status == "available",

@@ -5,9 +5,10 @@ ROM or GSI-derived system image on the Moto G `kansas` hardware. The current
 Android app/default-launcher layer remains the safe bootstrap and fallback while
 ROM feasibility is proven. Across both forms, GOFFY separates intent, policy,
 transport, and capability execution so no model or UI can directly acquire
-ambient authority. The current runtime has five offline PHONE tools, one
-authenticated MAC tool, and a redacted Android-local audit trail for terminal
-tasks, not a general command channel.
+ambient authority. The current runtime has five offline PHONE tools, one default
+authenticated MAC tool, one optional approved-root MAC listing tool, and a
+redacted Android-local audit trail for terminal tasks, not a general command
+channel.
 
 ```text
 GOFFY ROM or bootstrap Android command surface
@@ -25,6 +26,7 @@ deterministic router
                          |            |-> discover locally allowlisted tool
                          |            `-> invoke only after compatibility gate
                          `--------------> FastAPI Hub -> SAFE mac.system_info
+                                                      -> optional SAFE mac.files.list
 
 Official MCP client -> authenticated POST /mcp -> MCP SDK -> same ToolRegistry
                                                         ^
@@ -110,6 +112,10 @@ approval state, active work, and execution authority are not revived.
 30. Health never grants authority: clients see only compiled definitions that pass
     their current bounded probe. Admission validates availability and arguments
     before `accepted`; later health changes block new calls, not admitted work.
+31. `mac.files.list` exists only when explicit approved roots are configured.
+    It returns bounded directory metadata by root index and relative path,
+    hides dotfiles by default, rejects traversal outside the resolved root, and
+    reports symlinks without following target paths.
 
 ## Performance posture
 
@@ -126,7 +132,7 @@ body capture, polling, or background upload.
 
 Hub health checks are Mac-side only: one startup pass, then a 30-second default
 sleep between passes, at most four concurrent probes, and a five-second maximum
-per probe. The current probe uses local platform APIs and performs no network I/O.
+per probe. Current probes use local platform/path APIs and perform no network I/O.
 Android re-discovers before every Mac invocation. MCP clients re-run `tools/list`;
 the Hub signals changed availability over authenticated MCP GET/SSE without
 introducing Android polling.

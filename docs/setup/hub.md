@@ -210,6 +210,25 @@ restart. Unknown, foreign, and evicted cursors replay no retained history; they
 receive a fresh re-list signal and attach to the current session's live tail. No
 network health probe or busy polling is used by the current `mac.system_info` tool.
 
+## Approved Mac File Roots
+
+`mac.files.list` is disabled by default. Enable it only for directories the
+operator is comfortable exposing through SAFE, read-only listing:
+
+```bash
+export GOFFY_MAC_FILES_ROOTS="$HOME/Documents/GitHub,$HOME/Desktop/goffy-lab"
+```
+
+Each entry must be an existing absolute directory. The Hub resolves and dedupes
+the roots at startup, registers the tool only when at least one root is
+configured, and marks the tool unavailable if a configured root later disappears.
+Tool input uses `rootIndex`, `relativePath`, `maxEntries`, and `includeHidden`.
+Output contains root indices/names, bounded entry metadata, and no absolute root
+paths. Dotfiles are hidden by default, symlinks are reported as `symlink`
+without following their targets, and traversal outside the approved root is
+rejected. This tool does not read file contents, create files, move files, delete
+files, or execute shell commands.
+
 Non-local binding requires `GOFFY_HUB_ALLOW_LAN=true` plus existing
 `GOFFY_HUB_TLS_CERT_FILE` and `GOFFY_HUB_TLS_KEY_FILE` paths. This is a transport
 guard, not trusted pairing transport. Configuring paired mode with a non-local

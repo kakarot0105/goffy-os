@@ -108,6 +108,41 @@ def test_mcp_environment_allowlists_are_parsed(monkeypatch: pytest.MonkeyPatch) 
     assert settings.pairing_challenge_ttl_seconds == 90
 
 
+def test_mac_files_roots_are_explicit_existing_directories(tmp_path: Path) -> None:
+    root = tmp_path / "approved"
+    root.mkdir()
+
+    settings = HubSettings(mac_files_roots=(root,))
+
+    assert settings.mac_files_roots == (root.resolve(),)
+
+
+def test_mac_files_roots_environment_is_parsed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    monkeypatch.setenv("GOFFY_MAC_FILES_ROOTS", f"{first}, {second}")
+
+    settings = HubSettings.from_environment()
+
+    assert settings.mac_files_roots == (first.resolve(), second.resolve())
+
+
+@pytest.mark.parametrize("value", [Path("relative"), Path("/definitely/not/goffy-os")])
+def test_mac_files_roots_reject_unsafe_entries(value: Path) -> None:
+    with pytest.raises(ValidationError, match="GOFFY_MAC_FILES_ROOTS"):
+        HubSettings(mac_files_roots=(value,))
+
+
+def test_mac_files_roots_reject_duplicates(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match="unique"):
+        HubSettings(mac_files_roots=(tmp_path, tmp_path))
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

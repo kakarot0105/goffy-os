@@ -26,6 +26,23 @@ def test_health_is_typed_and_minimal(client: TestClient) -> None:
     assert cast(FastAPI, client.app).version == "0.2.0"
 
 
+def test_health_counts_optional_mac_file_tool_when_roots_are_configured(tmp_path) -> None:
+    app = create_app(
+        HubSettings(
+            auth_token=SecretStr("test-token-that-is-long-enough"),
+            mac_files_roots=(tmp_path,),
+        )
+    )
+
+    with TestClient(app, base_url="http://127.0.0.1:8787") as configured_client:
+        response = configured_client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert response.json()["healthyToolCount"] == 2
+    assert response.json()["unavailableToolCount"] == 0
+
+
 def test_unhealthy_tool_is_removed_before_app_starts_serving(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

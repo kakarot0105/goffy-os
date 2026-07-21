@@ -126,6 +126,7 @@
 4. Foreground-only voice, camera, QR, and OCR
    - [x] Foreground push-to-talk command capture with immediate lifecycle cleanup
 5. Narrow, approval-gated Mac automation
+   - [x] Optional approved-root `mac.files.list` Hub/MCP tool
 6. Inspectable and deletable user-approved memory
 7. Polished, accessible, battery-aware GOFFY UI
 8. Signed beta, packaged Hub, diagnostics, upgrade, and rollback

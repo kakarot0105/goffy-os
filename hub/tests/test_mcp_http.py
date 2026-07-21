@@ -154,6 +154,45 @@ async def test_official_client_initializes_lists_and_calls_registry_tool() -> No
 
 
 @pytest.mark.asyncio
+async def test_official_client_lists_approved_mac_file_root(tmp_path) -> None:
+    (tmp_path / "visible.txt").write_text("hello", encoding="utf-8")
+    (tmp_path / ".hidden").write_text("hidden", encoding="utf-8")
+    settings = HubSettings(
+        auth_token=SecretStr("test-token-that-is-long-enough"),
+        mac_files_roots=(tmp_path,),
+    )
+    app = create_app(settings)
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with (
+            httpx.AsyncClient(
+                transport=transport,
+                base_url="http://127.0.0.1:8787",
+                headers={"Authorization": AUTHORIZATION},
+                timeout=5,
+            ) as http_client,
+            streamable_http_client(
+                "http://127.0.0.1:8787/mcp",
+                http_client=http_client,
+            ) as (read_stream, write_stream, _get_session_id),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            initialization = await session.initialize()
+            listed = await session.list_tools()
+            result = await session.call_tool("mac.files.list", {"rootIndex": 0})
+
+    assert initialization.protocolVersion == MCP_PROTOCOL_VERSION
+    assert sorted(tool.name for tool in listed.tools) == ["mac.files.list", "mac.system_info"]
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent["rootIndex"] == 0
+    assert result.structuredContent["approvedRoots"] == [{"rootIndex": 0, "name": tmp_path.name}]
+    assert [entry["name"] for entry in result.structuredContent["entries"]] == ["visible.txt"]
+    assert str(tmp_path) not in json.dumps(result.structuredContent)
+
+
+@pytest.mark.asyncio
 async def test_official_client_relists_after_tool_health_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

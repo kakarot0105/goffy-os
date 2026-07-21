@@ -31,6 +31,7 @@ class HubSettings(BaseModel):
     mcp_max_concurrent_calls: int = Field(default=2, ge=1, le=8)
     mcp_max_active_sessions: int = Field(default=8, ge=1, le=64)
     operator_audit_max_events: int = Field(default=256, ge=16, le=2048)
+    mac_files_roots: tuple[Path, ...] = Field(default=(), max_length=8)
 
     @model_validator(mode="after")
     def guard_network_binding(self) -> HubSettings:
@@ -61,6 +62,22 @@ class HubSettings(BaseModel):
             _validate_allowed_host(allowed_host)
         for allowed_origin in self.mcp_allowed_origins:
             _validate_allowed_origin(allowed_origin)
+        resolved_mac_roots: list[Path] = []
+        for root in self.mac_files_roots:
+            if not root.is_absolute():
+                raise ValueError("GOFFY_MAC_FILES_ROOTS entries must be absolute directories")
+            try:
+                resolved = root.expanduser().resolve(strict=True)
+            except OSError as exc:
+                raise ValueError(
+                    "GOFFY_MAC_FILES_ROOTS entries must be existing directories"
+                ) from exc
+            if not resolved.is_dir():
+                raise ValueError("GOFFY_MAC_FILES_ROOTS entries must be existing directories")
+            resolved_mac_roots.append(resolved)
+        if len(set(resolved_mac_roots)) != len(resolved_mac_roots):
+            raise ValueError("GOFFY_MAC_FILES_ROOTS entries must be unique")
+        self.mac_files_roots = tuple(resolved_mac_roots)
         return self
 
     @property
@@ -123,6 +140,7 @@ class HubSettings(BaseModel):
             mcp_max_concurrent_calls=int(os.getenv("GOFFY_MCP_MAX_CONCURRENT_CALLS", "2")),
             mcp_max_active_sessions=int(os.getenv("GOFFY_MCP_MAX_ACTIVE_SESSIONS", "8")),
             operator_audit_max_events=int(os.getenv("GOFFY_OPERATOR_AUDIT_MAX_EVENTS", "256")),
+            mac_files_roots=_path_tuple("GOFFY_MAC_FILES_ROOTS"),
         )
 
 
@@ -139,6 +157,10 @@ def _comma_separated(environment_name: str) -> tuple[str, ...]:
     if any(not entry for entry in entries):
         raise ValueError(f"{environment_name} contains an empty entry")
     return entries
+
+
+def _path_tuple(environment_name: str) -> tuple[Path, ...]:
+    return tuple(Path(value).expanduser() for value in _comma_separated(environment_name))
 
 
 def _validate_allowed_host(value: str) -> None:

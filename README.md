@@ -96,6 +96,7 @@ the capability boundary.
 - Persistent, hash-chained paired-mode Hub operator audit storage with integrity
   reporting
 - Allowlisted, read-only `SAFE mac.system_info` tool
+- Optional `SAFE mac.files.list` tool for explicitly configured Mac file roots
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
 - Shared fixture `protocol/fixtures/mac-system-info-flow.jsonl`
@@ -165,6 +166,17 @@ GOFFY_HUB_TOKEN='replace-with-the-same-development-token' .venv/bin/python scrip
 `/mcp` is the separate session-aware MCP `2025-11-25` JSON-RPC endpoint. Both are
 backed by the same fail-closed typed tool registry; neither provides arbitrary
 shell execution.
+
+Optional file listing is disabled until approved roots are configured:
+
+```bash
+export GOFFY_MAC_FILES_ROOTS="$HOME/Documents/GitHub"
+```
+
+When set, the Hub exposes `SAFE mac.files.list`. It lists bounded entries by
+root index and relative path only, hides dotfiles by default, never follows
+symlink targets in listed entries, and never exposes absolute root paths in tool
+output.
 
 The Hub seals its registry before serving, checks registered tools locally at
 startup and every 30 seconds by default, and removes an unhealthy tool from both
