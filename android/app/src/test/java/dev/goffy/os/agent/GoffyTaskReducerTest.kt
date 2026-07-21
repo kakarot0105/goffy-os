@@ -5,6 +5,9 @@ import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ANDROID_SET_TIMER_ACTION
 import dev.goffy.os.protocol.MacFilesApprovedRoot
+import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.GitStatusApprovedRepo
+import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacFilesListEntry
 import dev.goffy.os.protocol.MacSystemInfo
@@ -29,6 +32,7 @@ class GoffyTaskReducerTest {
     private val phoneTaskId = UUID.fromString("22222222-2222-4222-8222-222222222222")
     private val plan = (GoffyIntentRouter.route("Show my Mac status") as RoutingDecision.Routed).plan
     private val macFilesPlan = (GoffyIntentRouter.route("List my Mac files") as RoutingDecision.Routed).plan
+    private val gitStatusPlan = (GoffyIntentRouter.route("Show my git status") as RoutingDecision.Routed).plan
     private val phonePlan = GoffyExecutionPlan(
         command = "What's my phone battery level?",
         executionTarget = ExecutionTarget.PHONE,
@@ -107,6 +111,58 @@ class GoffyTaskReducerTest {
 
         assertEquals(TaskPhase.VERIFIED, state.entries.single().phase)
         assertTrue(state.entries.single().result is MacFilesList)
+    }
+
+    @Test
+    fun gitStatusRequiresTypedResultAndVerification() {
+        var state = TaskTimelineState().start(taskId, gitStatusPlan)
+        state = state.apply(taskId, ExecutionEvent.Starting(1))
+        state = state.apply(taskId, ExecutionEvent.Ready)
+        state = state.apply(taskId, progress(gitStatusPlan.toolName, ExecutionTarget.MAC, "accepted", 0))
+        state = state.apply(taskId, progress(gitStatusPlan.toolName, ExecutionTarget.MAC, "completed", 1))
+        state = state.apply(
+            taskId,
+            ExecutionEvent.Result(
+                gitStatusPlan.toolName,
+                ExecutionTarget.MAC,
+                validGitStatus(),
+            ),
+        )
+
+        assertEquals(TaskPhase.COMPLETED_UNVERIFIED, state.entries.single().phase)
+        assertEquals("Git repo goffy on main has 2 status changes", state.entries.single().summary)
+
+        state = state.apply(
+            taskId,
+            ExecutionEvent.Verification(true, "Schema verified", listOf("output schema")),
+        )
+
+        assertEquals(TaskPhase.VERIFIED, state.entries.single().phase)
+        assertTrue(state.entries.single().result is GitStatus)
+    }
+
+    @Test
+    fun contradictoryGitStatusFailsClosedBeforeVerification() {
+        var state = TaskTimelineState().start(taskId, gitStatusPlan)
+        state = state.apply(taskId, ExecutionEvent.Starting(1))
+        state = state.apply(taskId, ExecutionEvent.Ready)
+        state = state.apply(taskId, progress(gitStatusPlan.toolName, ExecutionTarget.MAC, "accepted", 0))
+        state = state.apply(taskId, progress(gitStatusPlan.toolName, ExecutionTarget.MAC, "completed", 1))
+        state = state.apply(
+            taskId,
+            ExecutionEvent.Result(
+                gitStatusPlan.toolName,
+                ExecutionTarget.MAC,
+                validGitStatus().copy(
+                    clean = true,
+                    stagedCount = 0,
+                    untrackedCount = 0,
+                ),
+            ),
+        )
+
+        assertEquals(TaskPhase.FAILED, state.entries.single().phase)
+        assertNull(state.activeTaskId)
     }
 
     @Test
@@ -578,6 +634,28 @@ class GoffyTaskReducerTest {
         entries = listOf(
             MacFilesListEntry("README.md", false, "file", 1024, 1784610000),
             MacFilesListEntry("docs", false, "directory", null, 1784610001),
+        ),
+    )
+
+    private fun validGitStatus(): GitStatus = GitStatus(
+        status = "available",
+        repoIndex = 0,
+        repoName = "goffy",
+        branch = "main",
+        headOidShort = "0123456789abcdef",
+        upstream = null,
+        ahead = null,
+        behind = null,
+        clean = false,
+        stagedCount = 1,
+        unstagedCount = 0,
+        untrackedCount = 1,
+        conflictCount = 0,
+        truncated = false,
+        approvedRepos = listOf(GitStatusApprovedRepo(0, "goffy")),
+        changes = listOf(
+            GitStatusChange("README.md", false, "M", ".", "tracked"),
+            GitStatusChange("TODO.md", false, "?", "?", "untracked"),
         ),
     )
 }

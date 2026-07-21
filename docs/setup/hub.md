@@ -248,7 +248,9 @@ later disappears. Tool input uses `repoIndex`, `maxChanges`, and
 status counts, bounded change paths, and no absolute repo roots. This tool uses
 fixed `git status --porcelain=v2` arguments with `shell=False`; it does not read
 file contents, produce diffs, fetch, commit, push, run tests, or execute
-client-provided commands.
+client-provided commands. Android currently invokes only the default approved
+repo through `Show my git status` or `Check my git status`; repo selection needs
+a separate UX and policy review.
 
 Non-local binding requires `GOFFY_HUB_ALLOW_LAN=true` plus existing
 `GOFFY_HUB_TLS_CERT_FILE` and `GOFFY_HUB_TLS_KEY_FILE` paths. This is a transport

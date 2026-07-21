@@ -2,6 +2,8 @@ package dev.goffy.os.agent
 
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.GIT_STATUS_TOOL
+import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
@@ -489,6 +491,9 @@ data class TaskTimelineState(
     }
 
     private fun TaskTimelineEntry.acceptsContent(content: ToolResultContent): Boolean = when (toolName) {
+        GIT_STATUS_TOOL -> executionTarget == ExecutionTarget.MAC &&
+            content is GitStatus &&
+            content.matchesToolContract()
         MAC_FILES_LIST_TOOL -> executionTarget == ExecutionTarget.MAC &&
             content is MacFilesList &&
             content.matchesToolContract()
@@ -598,6 +603,7 @@ private fun LocalModelIntentObservation.nonExecutableSummary(): String = when (t
 private fun Float.displayConfidence(): String = String.format(Locale.US, "%.2f", this)
 
 private fun ToolResultContent.summaryText(): String = when (this) {
+    is GitStatus -> gitStatusSummary()
     is MacFilesList -> macFilesSummary()
     is MacSystemInfo -> "$operatingSystem $architecture: $status"
     is PhoneBatteryStatus -> "Battery $levelPercent%: ${if (charging) "charging" else "not charging"}"
@@ -607,6 +613,17 @@ private fun ToolResultContent.summaryText(): String = when (this) {
             if (stateChanged) " after state change" else " (already requested state)"
     is PhoneNoteCreated -> "Note #$noteId stored: $text"
     is PhoneTimerDispatched -> "Timer intent for $durationSeconds seconds dispatched to $clockPackage"
+}
+
+private fun GitStatus.gitStatusSummary(): String {
+    val changeCount = stagedCount + unstagedCount + untrackedCount + conflictCount
+    val branchLabel = branch?.let { " on $it" } ?: ""
+    val truncatedLabel = if (truncated) " (truncated)" else ""
+    return if (clean) {
+        "Git repo $repoName$branchLabel is clean"
+    } else {
+        "Git repo $repoName$branchLabel has $changeCount status changes$truncatedLabel"
+    }
 }
 
 private fun MacFilesList.macFilesSummary(): String {

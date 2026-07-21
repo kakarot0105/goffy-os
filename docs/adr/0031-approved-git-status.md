@@ -55,7 +55,7 @@ remote configuration, secrets, or command text.
   state.
 - The security scanner keeps `subprocess` blocked everywhere except the audited
   fixed-argument Git status module; `shell=True` remains blocked there too.
-- Android routing and UI for `git.status` is a separate follow-up so the Hub/MCP
-  authority can be reviewed first.
+- Android routing is intentionally limited to default-repo status commands;
+  richer repo selection still needs separate UX and policy review.
 - Future `git.diff`, `git.test`, `git.commit`, or GitHub tools need separate
   schemas, permission levels, approvals, and verification.

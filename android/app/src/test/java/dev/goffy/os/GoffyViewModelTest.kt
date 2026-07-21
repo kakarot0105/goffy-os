@@ -47,6 +47,9 @@ import dev.goffy.os.phone.NoteStore
 import dev.goffy.os.phone.TimerSource
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.GitStatusApprovedRepo
+import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.MacFilesApprovedRoot
 import dev.goffy.os.protocol.MacFilesList
@@ -141,6 +144,25 @@ class GoffyViewModelTest {
         assertTrue(gateway.requests.single().encodedMessage.contains("\"toolName\":\"mac.files.list\""))
         assertTrue(gateway.requests.single().encodedMessage.contains("\"rootIndex\":0"))
         assertTrue(gateway.requests.single().encodedMessage.contains("\"maxEntries\":25"))
+        assertFalse(gateway.requests.single().encodedMessage.contains("private-plan"))
+    }
+
+    @Test
+    fun gitStatusCommandSendsTypedDefaultRepoArguments() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf(*successfulGitStatusEvents().toTypedArray()) }
+        val viewModel = createViewModel(gateway)
+
+        assertTrue(viewModel.configureHub(endpoint, token))
+        viewModel.submitCommand("Show my git status")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals("goffy", (entry.result as GitStatus).repoName)
+        assertEquals(1, gateway.requests.size)
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"toolName\":\"git.status\""))
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"repoIndex\":0"))
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"maxChanges\":25"))
         assertFalse(gateway.requests.single().encodedMessage.contains("private-plan"))
     }
 
@@ -1476,6 +1498,47 @@ class GoffyViewModelTest {
                 approvedRoots = listOf(MacFilesApprovedRoot(0, "goffy")),
                 entries = listOf(
                     MacFilesListEntry("README.md", false, "file", 1024, 1784610000),
+                ),
+            ),
+        ),
+        ExecutionEvent.Verification(
+            succeeded = true,
+            summary = "Verified",
+            checks = listOf("output schema"),
+        ),
+    )
+
+    private fun successfulGitStatusEvents(): List<ExecutionEvent> = listOf(
+        ExecutionEvent.Starting(1),
+        ExecutionEvent.Ready,
+        ExecutionEvent.Progress(
+            ToolProgress("git.status", ExecutionTarget.MAC, "accepted", 0, "Accepted"),
+        ),
+        ExecutionEvent.Progress(
+            ToolProgress("git.status", ExecutionTarget.MAC, "completed", 1, "Completed"),
+        ),
+        ExecutionEvent.Result(
+            toolName = "git.status",
+            executionTarget = ExecutionTarget.MAC,
+            content = GitStatus(
+                status = "available",
+                repoIndex = 0,
+                repoName = "goffy",
+                branch = "main",
+                headOidShort = "0123456789abcdef",
+                upstream = null,
+                ahead = null,
+                behind = null,
+                clean = false,
+                stagedCount = 1,
+                unstagedCount = 0,
+                untrackedCount = 1,
+                conflictCount = 0,
+                truncated = false,
+                approvedRepos = listOf(GitStatusApprovedRepo(0, "goffy")),
+                changes = listOf(
+                    GitStatusChange("README.md", false, "M", ".", "tracked"),
+                    GitStatusChange("TODO.md", false, "?", "?", "untracked"),
                 ),
             ),
         ),

@@ -2,6 +2,7 @@ package dev.goffy.os
 
 import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
+import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
@@ -29,6 +30,13 @@ private fun TaskTimelineEntry.speakableText(): String? {
 
 private fun ToolResultContent.speakableText(verified: Boolean): String =
     when (this) {
+        is GitStatus ->
+            if (clean) {
+                "Git status for $repoName is clean."
+            } else {
+                "Git status for $repoName has " +
+                    "${stagedCount + unstagedCount + untrackedCount + conflictCount} changes."
+            }
         is MacFilesList ->
             "Mac file listing returned ${entries.size} entries from approved root $rootName. " +
                 if (truncated) "The listing was truncated." else "The listing was not truncated."

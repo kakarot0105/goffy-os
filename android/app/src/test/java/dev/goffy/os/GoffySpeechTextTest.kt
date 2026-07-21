@@ -4,6 +4,10 @@ import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.agent.TaskTimelineState
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.GIT_STATUS_TOOL
+import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.GitStatusApprovedRepo
+import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.MacFilesApprovedRoot
@@ -108,6 +112,46 @@ class GoffySpeechTextTest {
         val speechText = requireNotNull(state.latestSpeakableText())
 
         assertTrue(speechText.contains("1 entries"))
+        assertFalse(speechText.contains("private-plan.txt"))
+    }
+
+    @Test
+    fun gitStatusPathsAreNotReadAloud() {
+        val state = GoffyUiState(
+            hubEndpoint = endpoint,
+            timeline = TaskTimelineState(
+                entries = listOf(
+                    entry(
+                        toolName = GIT_STATUS_TOOL,
+                        target = ExecutionTarget.MAC,
+                        result = GitStatus(
+                            status = "available",
+                            repoIndex = 0,
+                            repoName = "goffy",
+                            branch = "main",
+                            headOidShort = "0123456789abcdef",
+                            upstream = null,
+                            ahead = null,
+                            behind = null,
+                            clean = false,
+                            stagedCount = 1,
+                            unstagedCount = 0,
+                            untrackedCount = 1,
+                            conflictCount = 0,
+                            truncated = false,
+                            approvedRepos = listOf(GitStatusApprovedRepo(0, "goffy")),
+                            changes = listOf(
+                                GitStatusChange("private-plan.txt", false, "?", "?", "untracked"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val speechText = requireNotNull(state.latestSpeakableText())
+
+        assertTrue(speechText.contains("2 changes"))
         assertFalse(speechText.contains("private-plan.txt"))
     }
 

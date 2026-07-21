@@ -5,6 +5,10 @@ import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.agent.TaskTimelineEvent
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.GIT_STATUS_TOOL
+import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.GitStatusApprovedRepo
+import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PermissionLevel
@@ -119,6 +123,61 @@ class ClosedTerminalAuditTest {
         assertEquals(null, restored.permission)
         assertEquals(null, restored.result)
         assertFalse(restored.approvalGranted)
+    }
+
+    @Test
+    fun gitStatusAuditRoundTripsAsDisplayOnlySafeMacTask() {
+        val secretPath = "private-plan.txt"
+        val entry = TaskTimelineEntry(
+            id = UUID.fromString("33333333-3333-4333-8333-333333333333"),
+            command = "Show my git status",
+            executionTarget = ExecutionTarget.MAC,
+            toolName = GIT_STATUS_TOOL,
+            phase = TaskPhase.VERIFIED,
+            summary = "Git repo goffy has private path $secretPath",
+            events = listOf(
+                TaskTimelineEvent(TaskEventKind.OBSERVE, "Observed $secretPath"),
+                TaskTimelineEvent(TaskEventKind.RESULT, "Returned $secretPath"),
+                TaskTimelineEvent(TaskEventKind.VERIFY, "Verified $secretPath"),
+            ),
+            result = GitStatus(
+                status = "available",
+                repoIndex = 0,
+                repoName = "goffy",
+                branch = "main",
+                headOidShort = "0123456789abcdef",
+                upstream = null,
+                ahead = null,
+                behind = null,
+                clean = false,
+                stagedCount = 0,
+                unstagedCount = 0,
+                untrackedCount = 1,
+                conflictCount = 0,
+                truncated = false,
+                approvedRepos = listOf(GitStatusApprovedRepo(0, "goffy")),
+                changes = listOf(GitStatusChange(secretPath, false, "?", "?", "untracked")),
+            ),
+            permission = PermissionLevel.SAFE,
+            approvalGranted = false,
+        )
+
+        val record = entry.toClosedTerminalAuditRecord(recordedAtEpochMillis = 1_720_000_000_000)
+
+        assertNotNull(record)
+        assertEquals(GIT_STATUS_TOOL, record?.toolName)
+        assertEquals(AuditPermission.SAFE, record?.permission)
+        assertEquals(AuditApprovalOutcome.NOT_REQUIRED, record?.approvalOutcome)
+        assertFalse(record.toString().contains(secretPath))
+
+        val restored = requireNotNull(record).toTimelineEntry()
+        assertEquals("Recorded Git status task", restored.command)
+        assertEquals(TaskPhase.VERIFIED, restored.phase)
+        assertEquals(GIT_STATUS_TOOL, restored.toolName)
+        assertEquals(PermissionLevel.SAFE, restored.permission)
+        assertEquals(null, restored.result)
+        assertFalse(restored.approvalGranted)
+        assertFalse(restored.toString().contains(secretPath))
     }
 
     @Test

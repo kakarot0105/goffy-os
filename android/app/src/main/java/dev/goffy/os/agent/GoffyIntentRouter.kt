@@ -6,6 +6,8 @@ import dev.goffy.os.localmodel.LocalModelIntentFallback
 import dev.goffy.os.localmodel.LocalModelIntentObservation
 import dev.goffy.os.localmodel.isSafeLocalModelPrompt
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.GIT_STATUS_TOOL
+import dev.goffy.os.protocol.GitStatusArguments
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.MacFilesListArguments
@@ -52,6 +54,10 @@ object GoffyIntentRouter {
         pattern = "^(?:show|list)(?: me)? my mac files[.!?]?$",
         option = RegexOption.IGNORE_CASE,
     )
+    private val gitStatusCommand = Regex(
+        pattern = "^(?:show|check)(?: me)? my git status[.!?]?$",
+        option = RegexOption.IGNORE_CASE,
+    )
     private val batteryStatusCommand = Regex(
         pattern =
             "^(?:(?:show|check)(?: me)? my (?:phone )?battery (?:status|level)|" +
@@ -88,6 +94,7 @@ object GoffyIntentRouter {
         val plan = when {
             macStatusCommand.matches(normalized) -> macStatusPlan(normalized)
             macFilesListCommand.matches(normalized) -> macFilesListPlan(normalized)
+            gitStatusCommand.matches(normalized) -> gitStatusPlan(normalized)
             batteryStatusCommand.matches(normalized) -> batteryStatusPlan(normalized)
             deviceInfoCommand.matches(normalized) -> deviceInfoPlan(normalized)
             flashlightSetCommand.matches(normalized) -> flashlightSetPlan(normalized)
@@ -198,6 +205,19 @@ object GoffyIntentRouter {
             "The result contains no absolute approved-root path or file contents",
         ),
         arguments = MacFilesListArguments(rootIndex = 0),
+    )
+
+    private fun gitStatusPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = command,
+        executionTarget = ExecutionTarget.MAC,
+        toolName = GIT_STATUS_TOOL,
+        permission = PermissionLevel.SAFE,
+        successCriteria = listOf(
+            "Hub returns schema-valid approved-repo Git status metadata",
+            "Hub emits a successful verification result",
+            "The result contains no absolute repo root, file contents, diff, fetch, commit, or push",
+        ),
+        arguments = GitStatusArguments(repoIndex = 0),
     )
 
     private fun batteryStatusPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(

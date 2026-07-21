@@ -99,7 +99,8 @@ the capability boundary.
 - Allowlisted, read-only `SAFE mac.system_info` tool
 - Optional `SAFE mac.files.list` tool for explicitly configured Mac file roots,
   including an Android `List my Mac files` route for the default approved root
-- Optional `SAFE git.status` Hub/MCP tool for explicitly configured Git worktree roots
+- Optional `SAFE git.status` Hub/MCP tool for explicitly configured Git worktree roots,
+  including an Android `Show my git status` route for the default approved repo
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
 - Shared fixture `protocol/fixtures/mac-system-info-flow.jsonl`
@@ -191,7 +192,9 @@ export GOFFY_GIT_REPO_ROOTS="$HOME/Documents/GitHub/goffy-os"
 When set, the Hub exposes `SAFE git.status` over MCP. It reads bounded repository
 status metadata by repo index only, never accepts command text or repo paths from
 clients, never returns absolute repo roots or file contents, and never fetches,
-commits, pushes, or runs tests.
+commits, pushes, or runs tests. Android can invoke the default approved repo with
+`Show my git status` or `Check my git status`; richer repo selection remains
+future work.
 
 The Hub seals its registry before serving, checks registered tools locally at
 startup and every 30 seconds by default, and removes an unhealthy tool from both

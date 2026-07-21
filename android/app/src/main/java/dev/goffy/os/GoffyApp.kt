@@ -71,6 +71,7 @@ import dev.goffy.os.hub.HubOperatorAuditEvent
 import dev.goffy.os.localmodel.LocalModelRuntimeState
 import dev.goffy.os.qr.PairingQrScanner
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
@@ -1406,6 +1407,35 @@ private fun ApprovalActions(
 private fun TaskResult(result: ToolResultContent) {
     Spacer(Modifier.height(9.dp))
     when (result) {
+        is GitStatus -> {
+            Text(
+                text = "REPO ${result.repoIndex} / ${result.repoName}",
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = if (result.clean) {
+                    "clean${result.branch?.let { " / $it" } ?: ""}"
+                } else {
+                    val shown = minOf(result.changes.size, 5)
+                    "$shown of ${result.changes.size} shown" +
+                        if (result.truncated) " / truncated" else ""
+                },
+                color = Signal,
+                fontSize = 11.sp,
+            )
+            result.changes.take(5).forEach { change ->
+                Text(
+                    text = "${change.kind.uppercase()} / ${change.path}",
+                    color = Mist,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         is MacFilesList -> {
             Text(
                 text = "ROOT ${result.rootIndex} / ${result.rootName}",

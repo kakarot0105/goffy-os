@@ -52,6 +52,10 @@ review both published checksums during any wrapper upgrade.
   advertises schema-compatible `SAFE mac.files.list`. Android sends bounded
   default approved-root arguments, displays entry metadata, and never requests
   file contents or absolute root paths.
+- `Show my git status` and `Check my git status` route to MAC only when the Hub
+  advertises schema-compatible `SAFE git.status`. Android sends bounded default
+  approved-repo arguments, displays status metadata, and never requests file
+  contents, diffs, fetch, commit, push, or test execution.
 - Battery commands such as `Show my battery status` and `What's my phone battery
   level?` run entirely on PHONE without a Hub link.
 - While GOFFY is foregrounded, dock mode keeps the screen awake only when Android

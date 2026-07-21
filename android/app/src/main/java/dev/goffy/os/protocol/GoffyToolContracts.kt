@@ -35,6 +35,51 @@ fun MacFilesListEntry.matchesToolContract(): Boolean =
         (sizeBytes == null || sizeBytes >= 0) &&
         (modifiedEpochSeconds == null || modifiedEpochSeconds >= 0)
 
+fun GitStatusArguments.matchesToolContract(): Boolean =
+    repoIndex in 0..MAX_GIT_STATUS_REPO_INDEX &&
+        maxChanges in 1..MAX_GIT_STATUS_CHANGES
+
+fun GitStatus.matchesToolContract(): Boolean =
+    status.isSafeDisplayField(MAX_GIT_STATUS_STATUS_LENGTH) &&
+        repoIndex in 0..MAX_GIT_STATUS_REPO_INDEX &&
+        repoName.isSafeDisplayField(MAX_GIT_STATUS_REPO_NAME_LENGTH) &&
+        branch.isNullOrSafeDisplayField(MAX_GIT_STATUS_BRANCH_LENGTH) &&
+        headOidShort.isNullOrSafeDisplayField(MAX_GIT_STATUS_OID_LENGTH) &&
+        upstream.isNullOrSafeDisplayField(MAX_GIT_STATUS_UPSTREAM_LENGTH) &&
+        (ahead == null || ahead in 0..MAX_GIT_STATUS_COUNT) &&
+        (behind == null || behind in 0..MAX_GIT_STATUS_COUNT) &&
+        stagedCount in 0..MAX_GIT_STATUS_COUNT &&
+        unstagedCount in 0..MAX_GIT_STATUS_COUNT &&
+        untrackedCount in 0..MAX_GIT_STATUS_COUNT &&
+        conflictCount in 0..MAX_GIT_STATUS_COUNT &&
+        gitStatusCountsMatchState() &&
+        approvedRepos.size <= MAX_GIT_STATUS_REPOS &&
+        approvedRepos.any { repo -> repo.repoIndex == repoIndex && repo.name == repoName } &&
+        approvedRepos.all { repo ->
+            repo.repoIndex in 0..MAX_GIT_STATUS_REPO_INDEX &&
+                repo.name.isSafeDisplayField(MAX_GIT_STATUS_REPO_NAME_LENGTH)
+        } &&
+        changes.size <= MAX_GIT_STATUS_CHANGES &&
+        changes.all(GitStatusChange::matchesToolContract)
+
+private fun GitStatus.gitStatusCountsMatchState(): Boolean {
+    val totalCount = stagedCount + unstagedCount + untrackedCount + conflictCount
+    val minimumShownCount = changes.size
+    val nonCleanStateMatchesCounts = !clean || (totalCount == 0 && changes.isEmpty() && !truncated)
+    val shownChangesMatchCounts = if (truncated) {
+        minimumShownCount <= totalCount
+    } else {
+        minimumShownCount == totalCount
+    }
+    return nonCleanStateMatchesCounts && shownChangesMatchCounts
+}
+
+fun GitStatusChange.matchesToolContract(): Boolean =
+    path.isSafeGitStatusPath() &&
+        indexStatus in GIT_STATUS_CODE_VALUES &&
+        workingTreeStatus in GIT_STATUS_CODE_VALUES &&
+        kind in GIT_STATUS_CHANGE_KINDS
+
 fun PhoneNoteCreated.matchesToolContract(): Boolean =
     noteId > 0 &&
         text.matchesNoteTextContract() &&
@@ -71,6 +116,19 @@ private fun String.isSafeMacFilesRelativePath(): Boolean =
         } &&
         split("/").none { part -> part == ".." }
 
+private fun String.isSafeGitStatusPath(): Boolean =
+    isNotBlank() &&
+        length <= MAX_GIT_STATUS_PATH_LENGTH &&
+        !startsWith("/") &&
+        none { character ->
+            character.isISOControl() ||
+                Character.getType(character) == Character.FORMAT.toInt()
+        } &&
+        split("/").none { part -> part == ".." }
+
+private fun String?.isNullOrSafeDisplayField(maximum: Int): Boolean =
+    this == null || isSafeDisplayField(maximum)
+
 private fun String.isSafeDisplayField(maximum: Int): Boolean =
     isNotBlank() &&
         length <= maximum &&
@@ -93,6 +151,19 @@ const val MAX_MAC_FILES_RELATIVE_PATH_LENGTH = 512
 const val MAX_MAC_FILES_ROOT_NAME_LENGTH = 64
 const val MAX_MAC_FILES_ENTRY_NAME_LENGTH = 96
 val MAC_FILES_ENTRY_KINDS = setOf("file", "directory", "symlink", "other")
+const val DEFAULT_GIT_STATUS_CHANGES = 25
+const val MAX_GIT_STATUS_REPOS = 8
+const val MAX_GIT_STATUS_REPO_INDEX = MAX_GIT_STATUS_REPOS - 1
+const val MAX_GIT_STATUS_CHANGES = 32
+const val MAX_GIT_STATUS_REPO_NAME_LENGTH = 64
+const val MAX_GIT_STATUS_PATH_LENGTH = 160
+const val MAX_GIT_STATUS_BRANCH_LENGTH = 96
+const val MAX_GIT_STATUS_UPSTREAM_LENGTH = 128
+const val MAX_GIT_STATUS_OID_LENGTH = 16
+const val MAX_GIT_STATUS_STATUS_LENGTH = 64
+const val MAX_GIT_STATUS_COUNT = 10_000
+val GIT_STATUS_CHANGE_KINDS = setOf("tracked", "untracked", "conflict")
+val GIT_STATUS_CODE_VALUES = setOf(".", "M", "T", "A", "D", "R", "C", "U", "?", "!")
 const val MAX_NOTE_TEXT_LENGTH = 2_000
 const val MIN_TIMER_SECONDS = 1
 const val MAX_TIMER_SECONDS = 86_400

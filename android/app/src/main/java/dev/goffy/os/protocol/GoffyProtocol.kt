@@ -19,6 +19,7 @@ const val GOFFY_PROTOCOL_VERSION = "0.2.0"
 const val MCP_PROTOCOL_VERSION = "2025-11-25"
 const val MAC_SYSTEM_INFO_TOOL_VERSION = "1.0.0"
 const val MAC_FILES_LIST_TOOL_VERSION = "1.0.0"
+const val GIT_STATUS_TOOL_VERSION = "1.0.0"
 const val MAX_PROTOCOL_MESSAGE_BYTES = 32_768
 
 enum class MessageType(val wireName: String) {
@@ -92,6 +93,12 @@ data class MacFilesListArguments(
     val includeHidden: Boolean = false,
 ) : ToolArguments
 
+data class GitStatusArguments(
+    val repoIndex: Int = 0,
+    val maxChanges: Int = DEFAULT_GIT_STATUS_CHANGES,
+    val includeUntracked: Boolean = true,
+) : ToolArguments
+
 data class PhoneNoteCreateArguments(
     val text: String,
 ) : ToolArguments
@@ -132,6 +139,38 @@ data class MacFilesList(
     val truncated: Boolean,
     val approvedRoots: List<MacFilesApprovedRoot>,
     val entries: List<MacFilesListEntry>,
+) : ToolResultContent
+
+data class GitStatusApprovedRepo(
+    val repoIndex: Int,
+    val name: String,
+)
+
+data class GitStatusChange(
+    val path: String,
+    val pathTruncated: Boolean,
+    val indexStatus: String,
+    val workingTreeStatus: String,
+    val kind: String,
+)
+
+data class GitStatus(
+    val status: String,
+    val repoIndex: Int,
+    val repoName: String,
+    val branch: String?,
+    val headOidShort: String?,
+    val upstream: String?,
+    val ahead: Int?,
+    val behind: Int?,
+    val clean: Boolean,
+    val stagedCount: Int,
+    val unstagedCount: Int,
+    val untrackedCount: Int,
+    val conflictCount: Int,
+    val truncated: Boolean,
+    val approvedRepos: List<GitStatusApprovedRepo>,
+    val changes: List<GitStatusChange>,
 ) : ToolResultContent
 
 data class PhoneBatteryStatus(
@@ -273,6 +312,18 @@ class GoffyProtocolCodec(
                     put("includeHidden", value.includeHidden)
                 }
             }
+            GIT_STATUS_TOOL -> {
+                val value = arguments as? GitStatusArguments
+                    ?: throw ProtocolException("git.status requires typed arguments")
+                if (!value.matchesToolContract()) {
+                    throw ProtocolException("git.status arguments failed local policy")
+                }
+                buildJsonObject {
+                    put("repoIndex", value.repoIndex)
+                    put("maxChanges", value.maxChanges)
+                    put("includeUntracked", value.includeUntracked)
+                }
+            }
             else -> throw ProtocolException("unsupported invocation tool")
         }
 
@@ -394,6 +445,10 @@ class GoffyProtocolCodec(
                 validateMacFilesListInputSchema(tool.requireObject("inputSchema"))
                 validateMacFilesListOutputSchema(tool.requireObject("outputSchema"))
             }
+            GIT_STATUS_TOOL -> {
+                validateGitStatusInputSchema(tool.requireObject("inputSchema"))
+                validateGitStatusOutputSchema(tool.requireObject("outputSchema"))
+            }
             else -> throw ProtocolException("unsupported discovered tool")
         }
         validateSafeReadOnlyAnnotations(tool.requireObject("annotations"))
@@ -404,6 +459,7 @@ class GoffyProtocolCodec(
         val expectedToolVersion = when (toolName) {
             MAC_SYSTEM_INFO_TOOL -> MAC_SYSTEM_INFO_TOOL_VERSION
             MAC_FILES_LIST_TOOL -> MAC_FILES_LIST_TOOL_VERSION
+            GIT_STATUS_TOOL -> GIT_STATUS_TOOL_VERSION
             else -> throw ProtocolException("unsupported discovered tool")
         }
         if (toolVersion != expectedToolVersion) {
@@ -561,6 +617,157 @@ class GoffyProtocolCodec(
         definition.requireArray("required").requireExactStrings(MAC_FILES_ENTRY_KEYS, "entry required")
     }
 
+    private fun validateGitStatusInputSchema(schema: JsonObject) {
+        schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS)
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(GIT_STATUS_INPUT_KEYS)
+        properties.requireObject("repoIndex").also { repoIndex ->
+            repoIndex.requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS + "exclusiveMaximum" + "default")
+            repoIndex.requireType("integer")
+            repoIndex.requireInt("minimum").requireExactValue(0, "repoIndex minimum")
+            repoIndex.requireInt("exclusiveMaximum").requireExactValue(
+                MAX_GIT_STATUS_REPOS,
+                "repoIndex maximum",
+            )
+        }
+        properties.requireObject("maxChanges").also { maxChanges ->
+            maxChanges.requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS + "maximum" + "default")
+            maxChanges.requireType("integer")
+            maxChanges.requireInt("minimum").requireExactValue(1, "maxChanges minimum")
+            maxChanges.requireInt("maximum").requireExactValue(
+                MAX_GIT_STATUS_CHANGES,
+                "maxChanges maximum",
+            )
+        }
+        properties.requireObject("includeUntracked").also { includeUntracked ->
+            includeUntracked.requireKeys(BOOLEAN_SCHEMA_KEYS + "default")
+            includeUntracked.requireType("boolean")
+        }
+    }
+
+    private fun validateGitStatusOutputSchema(schema: JsonObject) {
+        schema.requireKeys(OUTPUT_SCHEMA_KEYS + "\$defs")
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(GIT_STATUS_OUTPUT_KEYS)
+        schema.requireArray("required").requireExactStrings(GIT_STATUS_REQUIRED_KEYS, "required")
+
+        properties.requireObject("approvedRepos").also { approvedRepos ->
+            approvedRepos.requireKeys(ARRAY_REF_SCHEMA_KEYS + "maxItems")
+            approvedRepos.requireType("array")
+            approvedRepos.requireInt("maxItems").requireExactValue(
+                MAX_GIT_STATUS_REPOS,
+                "approvedRepos maxItems",
+            )
+            approvedRepos.requireObject("items").requireString("\$ref").requireExactString(
+                "#/\$defs/GitStatusApprovedRepoOutput",
+                "approvedRepos ref",
+            )
+        }
+        properties.requireObject("changes").also { changes ->
+            changes.requireKeys(ARRAY_REF_SCHEMA_KEYS + "maxItems")
+            changes.requireType("array")
+            changes.requireInt("maxItems").requireExactValue(
+                MAX_GIT_STATUS_CHANGES,
+                "changes maxItems",
+            )
+            changes.requireObject("items").requireString("\$ref").requireExactString(
+                "#/\$defs/GitStatusChangeOutput",
+                "changes ref",
+            )
+        }
+        properties.requireObject("status").validateBoundedStringSchema(
+            "status",
+            1,
+            MAX_GIT_STATUS_STATUS_LENGTH,
+        )
+        properties.requireObject("repoName").validateBoundedStringSchema(
+            "repoName",
+            1,
+            MAX_GIT_STATUS_REPO_NAME_LENGTH,
+        )
+        properties.requireObject("repoIndex").validateBoundedIntegerSchema(
+            "repoIndex",
+            0,
+            MAX_GIT_STATUS_REPOS,
+        )
+        setOf("stagedCount", "unstagedCount", "untrackedCount", "conflictCount").forEach { field ->
+            properties.requireObject(field).validateNonNegativeIntegerSchema(field)
+        }
+        properties.requireObject("clean").requireTypeOnly("boolean")
+        properties.requireObject("truncated").requireTypeOnly("boolean")
+        properties.requireObject("branch").validateNullableBoundedStringSchema(
+            "branch",
+            MAX_GIT_STATUS_BRANCH_LENGTH,
+        )
+        properties.requireObject("headOidShort").validateNullableBoundedStringSchema(
+            "headOidShort",
+            MAX_GIT_STATUS_OID_LENGTH,
+        )
+        properties.requireObject("upstream").validateNullableBoundedStringSchema(
+            "upstream",
+            MAX_GIT_STATUS_UPSTREAM_LENGTH,
+        )
+        properties.requireObject("ahead").validateNullableNonNegativeIntegerSchema("ahead")
+        properties.requireObject("behind").validateNullableNonNegativeIntegerSchema("behind")
+
+        val definitions = schema.requireObject("\$defs")
+        definitions.requireKeys(GIT_STATUS_DEFINITION_KEYS)
+        validateGitStatusApprovedRepoDefinition(
+            definitions.requireObject("GitStatusApprovedRepoOutput"),
+        )
+        validateGitStatusChangeDefinition(definitions.requireObject("GitStatusChangeOutput"))
+    }
+
+    private fun validateGitStatusApprovedRepoDefinition(definition: JsonObject) {
+        definition.requireKeys(OBJECT_DEFINITION_KEYS)
+        validateObjectSchemaRootWithoutDialect(definition)
+        val properties = definition.requireObject("properties")
+        properties.requireKeys(GIT_STATUS_APPROVED_REPO_KEYS)
+        properties.requireObject("repoIndex").validateBoundedIntegerSchema(
+            "repoIndex",
+            0,
+            MAX_GIT_STATUS_REPOS,
+        )
+        properties.requireObject("name").validateBoundedStringSchema(
+            "approved repo name",
+            1,
+            MAX_GIT_STATUS_REPO_NAME_LENGTH,
+        )
+        definition.requireArray("required")
+            .requireExactStrings(GIT_STATUS_APPROVED_REPO_KEYS, "approved repo required")
+    }
+
+    private fun validateGitStatusChangeDefinition(definition: JsonObject) {
+        definition.requireKeys(OBJECT_DEFINITION_KEYS)
+        validateObjectSchemaRootWithoutDialect(definition)
+        val properties = definition.requireObject("properties")
+        properties.requireKeys(GIT_STATUS_CHANGE_KEYS)
+        properties.requireObject("path").validateBoundedStringSchema(
+            "change path",
+            1,
+            MAX_GIT_STATUS_PATH_LENGTH,
+        )
+        properties.requireObject("pathTruncated").requireTypeOnly("boolean")
+        properties.requireObject("indexStatus").validateBoundedStringSchema(
+            "indexStatus",
+            1,
+            1,
+        )
+        properties.requireObject("workingTreeStatus").validateBoundedStringSchema(
+            "workingTreeStatus",
+            1,
+            1,
+        )
+        properties.requireObject("kind").also { kind ->
+            kind.requireKeys(ENUM_STRING_SCHEMA_KEYS)
+            kind.requireType("string")
+            kind.requireArray("enum").requireExactStrings(GIT_STATUS_CHANGE_KINDS, "git kind enum")
+        }
+        definition.requireArray("required").requireExactStrings(GIT_STATUS_CHANGE_KEYS, "change required")
+    }
+
     private fun validateObjectSchemaRoot(schema: JsonObject) {
         if (schema.requireString("\$schema") != JSON_SCHEMA_DIALECT ||
             !schema.isObjectSchemaRoot()
@@ -634,6 +841,12 @@ class GoffyProtocolCodec(
                 }
                 decodeMacFilesList(content)
             }
+            GIT_STATUS_TOOL -> {
+                if (target != ExecutionTarget.MAC) {
+                    throw ProtocolException("git.status returned an unexpected execution target")
+                }
+                decodeGitStatus(content)
+            }
             else -> throw ProtocolException("unsupported structured tool result")
         }
         return ExecutionEvent.Result(
@@ -700,6 +913,64 @@ class GoffyProtocolCodec(
             truncated = content.requireBoolean("truncated"),
             approvedRoots = approvedRoots,
             entries = entries,
+        )
+    }
+
+    private fun decodeGitStatus(content: JsonObject): GitStatus {
+        content.requireKeys(GIT_STATUS_REQUIRED_KEYS, GIT_STATUS_OPTIONAL_KEYS)
+        val approvedRepos = content.requireArray("approvedRepos").boundedObjects(
+            maximum = MAX_GIT_STATUS_REPOS,
+            field = "approvedRepos",
+        ) { repo ->
+            repo.requireKeys(GIT_STATUS_APPROVED_REPO_KEYS)
+            GitStatusApprovedRepo(
+                repoIndex = repo.requireBoundedInt("repoIndex", 0, MAX_GIT_STATUS_REPO_INDEX),
+                name = repo.requireBoundedString("name", 1, MAX_GIT_STATUS_REPO_NAME_LENGTH),
+            )
+        }
+        val changes = content.requireArray("changes").boundedObjects(
+            maximum = MAX_GIT_STATUS_CHANGES,
+            field = "changes",
+        ) { change ->
+            change.requireKeys(GIT_STATUS_CHANGE_KEYS)
+            GitStatusChange(
+                path = change.requireBoundedString("path", 1, MAX_GIT_STATUS_PATH_LENGTH),
+                pathTruncated = change.requireBoolean("pathTruncated"),
+                indexStatus = change.requireBoundedString("indexStatus", 1, 1),
+                workingTreeStatus = change.requireBoundedString("workingTreeStatus", 1, 1),
+                kind = change.requireString("kind").also { kind ->
+                    if (kind !in GIT_STATUS_CHANGE_KINDS) {
+                        throw ProtocolException("unsupported Git status change kind")
+                    }
+                },
+            )
+        }
+        return GitStatus(
+            status = content.requireBoundedString("status", 1, MAX_GIT_STATUS_STATUS_LENGTH),
+            repoIndex = content.requireBoundedInt("repoIndex", 0, MAX_GIT_STATUS_REPO_INDEX),
+            repoName = content.requireBoundedString("repoName", 1, MAX_GIT_STATUS_REPO_NAME_LENGTH),
+            branch = content.requireNullableBoundedString(
+                "branch",
+                MAX_GIT_STATUS_BRANCH_LENGTH,
+            ),
+            headOidShort = content.requireNullableBoundedString(
+                "headOidShort",
+                MAX_GIT_STATUS_OID_LENGTH,
+            ),
+            upstream = content.requireNullableBoundedString(
+                "upstream",
+                MAX_GIT_STATUS_UPSTREAM_LENGTH,
+            ),
+            ahead = content.requireNullableNonNegativeInt("ahead"),
+            behind = content.requireNullableNonNegativeInt("behind"),
+            clean = content.requireBoolean("clean"),
+            stagedCount = content.requireBoundedInt("stagedCount", 0, MAX_GIT_STATUS_COUNT),
+            unstagedCount = content.requireBoundedInt("unstagedCount", 0, MAX_GIT_STATUS_COUNT),
+            untrackedCount = content.requireBoundedInt("untrackedCount", 0, MAX_GIT_STATUS_COUNT),
+            conflictCount = content.requireBoundedInt("conflictCount", 0, MAX_GIT_STATUS_COUNT),
+            truncated = content.requireBoolean("truncated"),
+            approvedRepos = approvedRepos,
+            changes = changes,
         )
     }
 
@@ -796,6 +1067,19 @@ private fun JsonObject.requireNullableInt(key: String): Int? {
     return (value as? JsonPrimitive)?.intOrNull ?: throw ProtocolException("$key must be an integer or null")
 }
 
+private fun JsonObject.requireNullableBoundedString(key: String, maximum: Int): String? {
+    val value = requireNullableString(key) ?: return null
+    requireBounded(key, value, 1, maximum)
+    return value
+}
+
+private fun JsonObject.requireNullableNonNegativeInt(key: String): Int? =
+    requireNullableInt(key)?.also { value ->
+        if (value !in 0..MAX_GIT_STATUS_COUNT) {
+            throw ProtocolException("$key is outside the supported range")
+        }
+    }
+
 private fun JsonObject.requireBoolean(key: String): Boolean =
     (this[key] as? JsonPrimitive)?.booleanOrNull
         ?: throw ProtocolException("$key must be a boolean")
@@ -823,6 +1107,75 @@ private fun JsonObject.validateNullableIntegerSchema() {
     }.toSet()
     if (types != setOf("integer", "null")) {
         throw ProtocolException("nullable integer schema is incompatible")
+    }
+}
+
+private fun JsonObject.validateBoundedStringSchema(field: String, minimum: Int, maximum: Int) {
+    requireKeys(STRING_BOUNDED_SCHEMA_KEYS)
+    requireType("string")
+    requireInt("minLength").requireExactValue(minimum, "$field minLength")
+    requireInt("maxLength").requireExactValue(maximum, "$field maxLength")
+}
+
+private fun JsonObject.validateBoundedIntegerSchema(field: String, minimum: Int, exclusiveMaximum: Int) {
+    requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS + "exclusiveMaximum")
+    requireType("integer")
+    requireInt("minimum").requireExactValue(minimum, "$field minimum")
+    requireInt("exclusiveMaximum").requireExactValue(exclusiveMaximum, "$field maximum")
+}
+
+private fun JsonObject.validateNonNegativeIntegerSchema(field: String) {
+    requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS)
+    requireType("integer")
+    requireInt("minimum").requireExactValue(0, "$field minimum")
+}
+
+private fun JsonObject.validateNullableBoundedStringSchema(field: String, maximum: Int) {
+    requireKeys(NULLABLE_SCHEMA_KEYS)
+    if (this["default"] !== JsonNull) {
+        throw ProtocolException("$field default must be null")
+    }
+    val anyOf = requireArray("anyOf")
+    if (anyOf.size != 2) throw ProtocolException("$field nullable string schema is incompatible")
+    val types = anyOf.map { element ->
+        val schema = element as? JsonObject
+            ?: throw ProtocolException("$field nullable string entries must be objects")
+        val type = schema.requireString("type")
+        when (type) {
+            "string" -> {
+                schema.requireKeys(STRING_MAX_SCHEMA_KEYS)
+                schema.requireInt("maxLength").requireExactValue(maximum, "$field maxLength")
+            }
+            "null" -> schema.requireTypeOnly("null")
+            else -> throw ProtocolException("$field nullable string schema is incompatible")
+        }
+        type
+    }.toSet()
+    if (types != setOf("string", "null")) {
+        throw ProtocolException("$field nullable string schema is incompatible")
+    }
+}
+
+private fun JsonObject.validateNullableNonNegativeIntegerSchema(field: String) {
+    requireKeys(NULLABLE_SCHEMA_KEYS)
+    if (this["default"] !== JsonNull) {
+        throw ProtocolException("$field default must be null")
+    }
+    val anyOf = requireArray("anyOf")
+    if (anyOf.size != 2) throw ProtocolException("$field nullable integer schema is incompatible")
+    val types = anyOf.map { element ->
+        val schema = element as? JsonObject
+            ?: throw ProtocolException("$field nullable integer entries must be objects")
+        val type = schema.requireString("type")
+        when (type) {
+            "integer" -> schema.validateNonNegativeIntegerSchema(field)
+            "null" -> schema.requireTypeOnly("null")
+            else -> throw ProtocolException("$field nullable integer schema is incompatible")
+        }
+        type
+    }.toSet()
+    if (types != setOf("integer", "null")) {
+        throw ProtocolException("$field nullable integer schema is incompatible")
     }
 }
 
@@ -935,6 +1288,40 @@ private val MAC_FILES_ENTRY_KEYS = setOf(
     "sizeBytes",
     "modifiedEpochSeconds",
 )
+private val GIT_STATUS_INPUT_KEYS = setOf("repoIndex", "maxChanges", "includeUntracked")
+private val GIT_STATUS_REQUIRED_KEYS = setOf(
+    "status",
+    "repoIndex",
+    "repoName",
+    "clean",
+    "stagedCount",
+    "unstagedCount",
+    "untrackedCount",
+    "conflictCount",
+    "truncated",
+    "approvedRepos",
+    "changes",
+)
+private val GIT_STATUS_OPTIONAL_KEYS = setOf(
+    "branch",
+    "headOidShort",
+    "upstream",
+    "ahead",
+    "behind",
+)
+private val GIT_STATUS_OUTPUT_KEYS = GIT_STATUS_REQUIRED_KEYS + GIT_STATUS_OPTIONAL_KEYS
+private val GIT_STATUS_DEFINITION_KEYS = setOf(
+    "GitStatusApprovedRepoOutput",
+    "GitStatusChangeOutput",
+)
+private val GIT_STATUS_APPROVED_REPO_KEYS = setOf("repoIndex", "name")
+private val GIT_STATUS_CHANGE_KEYS = setOf(
+    "path",
+    "pathTruncated",
+    "indexStatus",
+    "workingTreeStatus",
+    "kind",
+)
 private val ERROR_KEYS = setOf("code", "message", "retryable")
 private val VERIFICATION_KEYS = setOf("succeeded", "summary", "checks")
 private const val JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
@@ -969,8 +1356,11 @@ private val EMPTY_INPUT_SCHEMA_KEYS = setOf(
 )
 private val OUTPUT_SCHEMA_KEYS = EMPTY_INPUT_SCHEMA_KEYS + "required"
 private val STRING_SCHEMA_KEYS = setOf("type")
+private val STRING_BOUNDED_SCHEMA_KEYS = setOf("type", "minLength", "maxLength")
+private val STRING_MAX_SCHEMA_KEYS = setOf("type", "maxLength")
 private val BOOLEAN_SCHEMA_KEYS = setOf("type")
 private val INTEGER_BOUNDED_SCHEMA_KEYS = setOf("type", "minimum")
 private val ARRAY_REF_SCHEMA_KEYS = setOf("type", "items")
 private val OBJECT_DEFINITION_KEYS = setOf("type", "additionalProperties", "properties", "required")
 private val ENUM_STRING_SCHEMA_KEYS = setOf("type", "enum")
+private val NULLABLE_SCHEMA_KEYS = setOf("anyOf", "default")

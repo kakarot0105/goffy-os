@@ -4,6 +4,8 @@ import dev.goffy.os.localmodel.LocalModelIntentCandidate
 import dev.goffy.os.localmodel.LocalModelIntentFallback
 import dev.goffy.os.localmodel.LocalModelIntentObservation
 import dev.goffy.os.protocol.ExecutionTarget
+import dev.goffy.os.protocol.GIT_STATUS_TOOL
+import dev.goffy.os.protocol.GitStatusArguments
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MacFilesListArguments
 import dev.goffy.os.protocol.PermissionLevel
@@ -47,6 +49,19 @@ class GoffyIntentRouterTest {
         assertEquals(PermissionLevel.SAFE, plan.permission)
         assertEquals(MAC_FILES_LIST_TOOL, plan.toolName)
         assertEquals(MacFilesListArguments(rootIndex = 0), plan.arguments)
+        assertEquals(3, plan.successCriteria.size)
+    }
+
+    @Test
+    fun routesGitStatusToSafeMacTool() {
+        val decision = GoffyIntentRouter.route("Check my git status")
+
+        assertTrue(decision is RoutingDecision.Routed)
+        val plan = (decision as RoutingDecision.Routed).plan
+        assertEquals(ExecutionTarget.MAC, plan.executionTarget)
+        assertEquals(PermissionLevel.SAFE, plan.permission)
+        assertEquals(GIT_STATUS_TOOL, plan.toolName)
+        assertEquals(GitStatusArguments(repoIndex = 0), plan.arguments)
         assertEquals(3, plan.successCriteria.size)
     }
 
