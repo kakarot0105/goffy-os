@@ -28,11 +28,16 @@ Read-only ADB evidence from the connected phone:
 Current automated probe:
 
 ```bash
-.venv/bin/python scripts/rom_feasibility_probe.py --device-serial <device-serial> --json
+.venv/bin/python scripts/rom_feasibility_probe.py --device-serial <device-serial> --json > .goffy-validation/rom-feasibility.json
+.venv/bin/python scripts/create_rom_planning_checklist.py .goffy-validation/rom-feasibility.json
 ```
 
 The probe is read-only. It does not reboot, run fastboot, unlock, flash, erase,
 root, or write to the phone. It redacts the device serial in rendered commands.
+The checklist generator only reads the saved probe JSON and emits blocked or
+template-only next steps. It will not emit DSU staging templates unless the input
+contains structured stock restore evidence: `source_url`, `archive_name`,
+`sha256`, and `rollback_doc`.
 
 ## Product Direction
 
@@ -96,6 +101,9 @@ No destructive ROM work until all gates are satisfied:
 - `adb` and `fastboot` both see the device in their respective modes.
 - The first ROM experiment has a written rollback plan.
 
+The ROM-0 planning and DSU staging guide is in
+[`docs/setup/rom-0-planning-checklist.md`](docs/setup/rom-0-planning-checklist.md).
+
 ## First ROM Milestone
 
 Milestone ROM-0 is feasibility, not flashing.
@@ -108,7 +116,24 @@ Acceptance criteria:
 - Stock restore path is documented with source URL and hash.
 - First GSI/DSU candidate list is selected with licenses and known Moto/MediaTek
   risks.
-- A no-flash dry-run checklist exists for the exact commands that would be used.
+- A no-flash planning checklist exists, with DSU staging templates emitted only
+  after structured stock restore evidence exists.
+
+## Current ROM-0 Source Decisions
+
+- Primary restore source: Motorola Software Fix Rescue, because it is the
+  official Motorola restore route. Current limitation: Motorola documents the
+  download as Windows PC only.
+- Secondary firmware evidence: Lolinet Kansas RETUS mirror, because it lists
+  Kansas archives but is not an official restore authority.
+- First GSI candidate: official Google Android 16 ARM64 GSI through Android DSU,
+  using Google's release page SHA-256 before any boot attempt.
+- Second GSI candidate: TrebleDroid / ponces AOSP GSI only if official GSI is
+  too limited.
+- Helper candidate: DSU Sideloader only if built-in DSU Loader is unavailable.
+
+The exact stock package checksum remains open because we have not downloaded or
+hash-recorded a restore archive.
 
 ## Source Notes
 
