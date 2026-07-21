@@ -689,6 +689,8 @@ private fun GoffyHomeScreen(
         GoffyOrb(state.toGoffyOrbUiModel(voiceInputState))
         Spacer(Modifier.height(20.dp))
         StatusRail(state)
+        Spacer(Modifier.height(12.dp))
+        DeviceMapSection(state.toGoffyDeviceMapUiModel())
         if (state.localModelControlsAvailable) {
             Spacer(Modifier.height(12.dp))
             LocalModelRuntimeSection(
@@ -1085,7 +1087,7 @@ private fun StatusRail(state: GoffyUiState) {
     }
     val localModelAccent = when (state.localModelStatus.state) {
         LocalModelRuntimeState.READY -> Signal
-        LocalModelRuntimeState.BLOCKED -> Warning
+        LocalModelRuntimeState.BLOCKED -> Error
         LocalModelRuntimeState.DISABLED,
         LocalModelRuntimeState.UNAVAILABLE,
         -> Mist
@@ -1156,6 +1158,156 @@ private fun StatusCard(label: String, value: String, accent: Color, modifier: Mo
             )
         }
     }
+}
+
+@Composable
+private fun DeviceMapSection(model: GoffyDeviceMapUiModel) {
+    val targetLabel = model.activeTarget.label()
+    val routeLabel = when (model.routeMode) {
+        GoffyDeviceMapRouteMode.STANDBY ->
+            stringResource(R.string.device_map_route_standby, targetLabel)
+        GoffyDeviceMapRouteMode.ACTIVE_TARGET ->
+            stringResource(R.string.device_map_route_active, targetLabel)
+        GoffyDeviceMapRouteMode.LOCAL_MODEL_OBSERVATION ->
+            stringResource(R.string.device_map_route_local_model)
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF071115))
+            .border(1.dp, Line, RoundedCornerShape(18.dp))
+            .padding(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Label(stringResource(R.string.device_map_title))
+                Text(
+                    text = stringResource(R.string.device_map_description),
+                    color = Mist,
+                    fontSize = 11.sp,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = routeLabel,
+                color = if (model.routeMode == GoffyDeviceMapRouteMode.STANDBY) Mist else Signal,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        model.nodes.forEachIndexed { index, node ->
+            DeviceMapNodeRow(node)
+            if (index < model.nodes.lastIndex) {
+                Spacer(Modifier.height(7.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceMapNodeRow(node: GoffyDeviceMapNode) {
+    val label = node.kind.label()
+    val status = node.status.label()
+    val accent = node.status.accentColor()
+    val routeState = stringResource(
+        if (node.active) {
+            R.string.device_map_node_routing
+        } else {
+            R.string.device_map_node_standby
+        },
+    )
+    val description = stringResource(
+        R.string.device_map_node_description,
+        label,
+        status,
+        routeState,
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (node.active) Signal.copy(alpha = 0.09f) else Panel.copy(alpha = 0.58f))
+            .border(1.dp, accent.copy(alpha = 0.34f), RoundedCornerShape(14.dp))
+            .semantics { contentDescription = description }
+            .padding(horizontal = 11.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).background(accent, CircleShape))
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = label,
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = status,
+                color = Mist,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (node.active) {
+            Text(
+                text = routeState,
+                color = Signal,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 9.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GoffyDeviceMapNodeKind.label(): String = stringResource(
+    when (this) {
+        GoffyDeviceMapNodeKind.PHONE -> R.string.device_map_phone
+        GoffyDeviceMapNodeKind.MAC_HUB -> R.string.device_map_mac_hub
+        GoffyDeviceMapNodeKind.MCP -> R.string.device_map_mcp
+        GoffyDeviceMapNodeKind.LOCAL_MODEL -> R.string.device_map_local_model
+        GoffyDeviceMapNodeKind.CLOUD -> R.string.device_map_cloud
+    },
+)
+
+@Composable
+private fun GoffyDeviceMapNodeStatus.label(): String = stringResource(
+    when (this) {
+        GoffyDeviceMapNodeStatus.READY -> R.string.device_map_status_ready
+        GoffyDeviceMapNodeStatus.CONNECTING -> R.string.device_map_status_connecting
+        GoffyDeviceMapNodeStatus.WAITING -> R.string.device_map_status_waiting
+        GoffyDeviceMapNodeStatus.OFFLINE -> R.string.device_map_status_offline
+        GoffyDeviceMapNodeStatus.DISABLED -> R.string.device_map_status_disabled
+        GoffyDeviceMapNodeStatus.UNAVAILABLE -> R.string.device_map_status_unavailable
+        GoffyDeviceMapNodeStatus.BLOCKED -> R.string.device_map_status_blocked
+        GoffyDeviceMapNodeStatus.OBSERVE_ONLY -> R.string.device_map_status_observe_only
+    },
+)
+
+private fun GoffyDeviceMapNodeStatus.accentColor(): Color = when (this) {
+    GoffyDeviceMapNodeStatus.READY,
+    GoffyDeviceMapNodeStatus.OBSERVE_ONLY,
+    -> Signal
+    GoffyDeviceMapNodeStatus.CONNECTING -> Acid
+    GoffyDeviceMapNodeStatus.BLOCKED -> Error
+    GoffyDeviceMapNodeStatus.UNAVAILABLE,
+    GoffyDeviceMapNodeStatus.OFFLINE,
+    -> Warning
+    GoffyDeviceMapNodeStatus.WAITING,
+    GoffyDeviceMapNodeStatus.DISABLED,
+    -> Mist
 }
 
 @Composable
