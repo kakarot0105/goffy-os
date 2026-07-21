@@ -276,9 +276,10 @@ no text so file URLs are not exposed as copied strings.
 Health checks call only the provider availability hook and never read clipboard
 content. The tool reads on explicit invocation only, never writes the clipboard,
 never polls in the background, never exposes binary formats or file URLs, and
-does not create a generic Mac automation channel. Android does not route
-clipboard commands yet; MCP clients can use the tool after authenticated
-`tools/list` shows it healthy.
+does not create a generic Mac automation channel. Android can invoke only the
+exact `Read my Mac clipboard` or `Show my Mac clipboard` routes after discovery
+shows this tool healthy; MCP clients can use the tool after authenticated
+`tools/list` shows it healthy. Android TTS does not read clipboard contents aloud.
 
 Non-local binding requires `GOFFY_HUB_ALLOW_LAN=true` plus existing
 `GOFFY_HUB_TLS_CERT_FILE` and `GOFFY_HUB_TLS_KEY_FILE` paths. This is a transport

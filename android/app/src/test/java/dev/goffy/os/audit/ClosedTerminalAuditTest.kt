@@ -9,6 +9,7 @@ import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
+import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PermissionLevel
@@ -178,6 +179,39 @@ class ClosedTerminalAuditTest {
         assertEquals(null, restored.result)
         assertFalse(restored.approvalGranted)
         assertFalse(restored.toString().contains(secretPath))
+    }
+
+    @Test
+    fun macClipboardAuditRoundTripsWithoutClipboardText() {
+        val secretText = "secret launch phrase"
+        val entry = TaskTimelineEntry(
+            id = UUID.fromString("44444444-4444-4444-8444-444444444444"),
+            command = "Read my Mac clipboard",
+            executionTarget = ExecutionTarget.MAC,
+            toolName = MAC_CLIPBOARD_READ_TOOL,
+            phase = TaskPhase.VERIFIED,
+            summary = "Mac clipboard contains ${secretText.length} text characters",
+            events = listOf(
+                TaskTimelineEvent(TaskEventKind.OBSERVE, "Observed command"),
+                TaskTimelineEvent(TaskEventKind.RESULT, "Returned clipboard text"),
+                TaskTimelineEvent(TaskEventKind.VERIFY, "Verified clipboard text"),
+            ),
+            result = null,
+            permission = PermissionLevel.SAFE,
+            approvalGranted = false,
+        )
+
+        val record = entry.toClosedTerminalAuditRecord(recordedAtEpochMillis = 1_720_000_000_000)
+
+        assertNotNull(record)
+        assertEquals(MAC_CLIPBOARD_READ_TOOL, record?.toolName)
+        assertEquals(AuditPermission.SAFE, record?.permission)
+        assertFalse(record.toString().contains(secretText))
+
+        val restored = requireNotNull(record).toTimelineEntry()
+        assertEquals("Recorded Mac clipboard task", restored.command)
+        assertEquals(MAC_CLIPBOARD_READ_TOOL, restored.toolName)
+        assertEquals(null, restored.result)
     }
 
     @Test

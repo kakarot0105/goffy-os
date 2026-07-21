@@ -4,7 +4,9 @@ import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
+import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.MacFilesList
@@ -494,6 +496,9 @@ data class TaskTimelineState(
         GIT_STATUS_TOOL -> executionTarget == ExecutionTarget.MAC &&
             content is GitStatus &&
             content.matchesToolContract()
+        MAC_CLIPBOARD_READ_TOOL -> executionTarget == ExecutionTarget.MAC &&
+            content is MacClipboardRead &&
+            content.matchesToolContract()
         MAC_FILES_LIST_TOOL -> executionTarget == ExecutionTarget.MAC &&
             content is MacFilesList &&
             content.matchesToolContract()
@@ -604,6 +609,7 @@ private fun Float.displayConfidence(): String = String.format(Locale.US, "%.2f",
 
 private fun ToolResultContent.summaryText(): String = when (this) {
     is GitStatus -> gitStatusSummary()
+    is MacClipboardRead -> macClipboardSummary()
     is MacFilesList -> macFilesSummary()
     is MacSystemInfo -> "$operatingSystem $architecture: $status"
     is PhoneBatteryStatus -> "Battery $levelPercent%: ${if (charging) "charging" else "not charging"}"
@@ -613,6 +619,16 @@ private fun ToolResultContent.summaryText(): String = when (this) {
             if (stateChanged) " after state change" else " (already requested state)"
     is PhoneNoteCreated -> "Note #$noteId stored: $text"
     is PhoneTimerDispatched -> "Timer intent for $durationSeconds seconds dispatched to $clockPackage"
+}
+
+private fun MacClipboardRead.macClipboardSummary(): String = when (status) {
+    "available" -> {
+        val truncatedLabel = if (textTruncated || characterCountTruncated) " (truncated)" else ""
+        "Mac clipboard contains $characterCount text characters$truncatedLabel"
+    }
+    "empty" -> "Mac clipboard has no readable text"
+    "unsupported" -> "Mac clipboard content is unsupported by GOFFY"
+    else -> "Mac clipboard status is unavailable"
 }
 
 private fun GitStatus.gitStatusSummary(): String {

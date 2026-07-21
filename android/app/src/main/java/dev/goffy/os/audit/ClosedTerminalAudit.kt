@@ -7,6 +7,7 @@ import dev.goffy.os.agent.TaskTimelineEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GOFFY_PROTOCOL_VERSION
+import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
@@ -218,6 +219,7 @@ private fun TaskEventKind.displayMessage(
 
 private fun String?.displayCommand(): String = when (this) {
     GIT_STATUS_TOOL -> "Recorded Git status task"
+    MAC_CLIPBOARD_READ_TOOL -> "Recorded Mac clipboard task"
     MAC_FILES_LIST_TOOL -> "Recorded Mac file listing task"
     MAC_SYSTEM_INFO_TOOL -> "Recorded Mac status task"
     PHONE_BATTERY_STATUS_TOOL -> "Recorded battery status task"
@@ -237,6 +239,7 @@ internal const val MAX_EVENT_KINDS = 16
 internal val SUPPORTED_AUDIT_PROTOCOL_VERSIONS = setOf("0.2.0", GOFFY_PROTOCOL_VERSION)
 private val AUDIT_CAPABILITY_CONTRACTS = mapOf(
     GIT_STATUS_TOOL to (ExecutionTarget.MAC to AuditPermission.SAFE),
+    MAC_CLIPBOARD_READ_TOOL to (ExecutionTarget.MAC to AuditPermission.SAFE),
     MAC_FILES_LIST_TOOL to (ExecutionTarget.MAC to AuditPermission.SAFE),
     MAC_SYSTEM_INFO_TOOL to (ExecutionTarget.MAC to AuditPermission.SAFE),
     PHONE_BATTERY_STATUS_TOOL to (ExecutionTarget.PHONE to AuditPermission.SAFE),

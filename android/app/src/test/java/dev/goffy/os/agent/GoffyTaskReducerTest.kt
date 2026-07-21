@@ -8,6 +8,7 @@ import dev.goffy.os.protocol.MacFilesApprovedRoot
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
+import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacFilesListEntry
 import dev.goffy.os.protocol.MacSystemInfo
@@ -33,6 +34,8 @@ class GoffyTaskReducerTest {
     private val plan = (GoffyIntentRouter.route("Show my Mac status") as RoutingDecision.Routed).plan
     private val macFilesPlan = (GoffyIntentRouter.route("List my Mac files") as RoutingDecision.Routed).plan
     private val gitStatusPlan = (GoffyIntentRouter.route("Show my git status") as RoutingDecision.Routed).plan
+    private val macClipboardPlan =
+        (GoffyIntentRouter.route("Read my Mac clipboard") as RoutingDecision.Routed).plan
     private val phonePlan = GoffyExecutionPlan(
         command = "What's my phone battery level?",
         executionTarget = ExecutionTarget.PHONE,
@@ -139,6 +142,65 @@ class GoffyTaskReducerTest {
 
         assertEquals(TaskPhase.VERIFIED, state.entries.single().phase)
         assertTrue(state.entries.single().result is GitStatus)
+    }
+
+    @Test
+    fun macClipboardReadRequiresTypedResultAndVerification() {
+        var state = TaskTimelineState().start(taskId, macClipboardPlan)
+        state = state.apply(taskId, ExecutionEvent.Starting(1))
+        state = state.apply(taskId, ExecutionEvent.Ready)
+        state = state.apply(taskId, progress(macClipboardPlan.toolName, ExecutionTarget.MAC, "accepted", 0))
+        state = state.apply(taskId, progress(macClipboardPlan.toolName, ExecutionTarget.MAC, "completed", 1))
+        state = state.apply(
+            taskId,
+            ExecutionEvent.Result(
+                macClipboardPlan.toolName,
+                ExecutionTarget.MAC,
+                MacClipboardRead(
+                    status = "available",
+                    contentType = "text",
+                    text = "copied text",
+                    textTruncated = false,
+                    characterCount = 11,
+                    characterCountTruncated = false,
+                ),
+            ),
+        )
+
+        assertEquals(TaskPhase.COMPLETED_UNVERIFIED, state.entries.single().phase)
+        assertEquals("Mac clipboard contains 11 text characters", state.entries.single().summary)
+
+        state = state.apply(
+            taskId,
+            ExecutionEvent.Verification(true, "Schema verified", listOf("output schema")),
+        )
+
+        assertEquals(TaskPhase.VERIFIED, state.entries.single().phase)
+        assertTrue(state.entries.single().result is MacClipboardRead)
+    }
+
+    @Test
+    fun macClipboardRejectsFileUrlTextAtReducerContractBoundary() {
+        var state = TaskTimelineState().start(taskId, macClipboardPlan)
+        state = state.apply(taskId, ExecutionEvent.Starting(1))
+        state = state.apply(taskId, ExecutionEvent.Ready)
+        state = state.apply(
+            taskId,
+            ExecutionEvent.Result(
+                macClipboardPlan.toolName,
+                ExecutionTarget.MAC,
+                MacClipboardRead(
+                    status = "available",
+                    contentType = "text",
+                    text = "file:///Users/example/private.txt",
+                    textTruncated = false,
+                    characterCount = 33,
+                    characterCountTruncated = false,
+                ),
+            ),
+        )
+
+        assertEquals(TaskPhase.FAILED, state.entries.single().phase)
     }
 
     @Test

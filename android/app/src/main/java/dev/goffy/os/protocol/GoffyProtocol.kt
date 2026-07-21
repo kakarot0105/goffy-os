@@ -19,6 +19,7 @@ const val GOFFY_PROTOCOL_VERSION = "0.2.0"
 const val MCP_PROTOCOL_VERSION = "2025-11-25"
 const val MAC_SYSTEM_INFO_TOOL_VERSION = "1.0.0"
 const val MAC_FILES_LIST_TOOL_VERSION = "1.0.0"
+const val MAC_CLIPBOARD_READ_TOOL_VERSION = "1.0.0"
 const val GIT_STATUS_TOOL_VERSION = "1.0.0"
 const val MAX_PROTOCOL_MESSAGE_BYTES = 32_768
 
@@ -173,6 +174,15 @@ data class GitStatus(
     val changes: List<GitStatusChange>,
 ) : ToolResultContent
 
+data class MacClipboardRead(
+    val status: String,
+    val contentType: String,
+    val text: String?,
+    val textTruncated: Boolean,
+    val characterCount: Int,
+    val characterCountTruncated: Boolean,
+) : ToolResultContent
+
 data class PhoneBatteryStatus(
     val levelPercent: Int,
     val charging: Boolean,
@@ -296,6 +306,12 @@ class GoffyProtocolCodec(
             MAC_SYSTEM_INFO_TOOL -> {
                 if (arguments !is NoToolArguments) {
                     throw ProtocolException("mac.system_info does not accept arguments")
+                }
+                JsonObject(emptyMap())
+            }
+            MAC_CLIPBOARD_READ_TOOL -> {
+                if (arguments !is NoToolArguments) {
+                    throw ProtocolException("mac.clipboard.read does not accept Android arguments")
                 }
                 JsonObject(emptyMap())
             }
@@ -445,6 +461,10 @@ class GoffyProtocolCodec(
                 validateMacFilesListInputSchema(tool.requireObject("inputSchema"))
                 validateMacFilesListOutputSchema(tool.requireObject("outputSchema"))
             }
+            MAC_CLIPBOARD_READ_TOOL -> {
+                validateMacClipboardReadInputSchema(tool.requireObject("inputSchema"))
+                validateMacClipboardReadOutputSchema(tool.requireObject("outputSchema"))
+            }
             GIT_STATUS_TOOL -> {
                 validateGitStatusInputSchema(tool.requireObject("inputSchema"))
                 validateGitStatusOutputSchema(tool.requireObject("outputSchema"))
@@ -459,6 +479,7 @@ class GoffyProtocolCodec(
         val expectedToolVersion = when (toolName) {
             MAC_SYSTEM_INFO_TOOL -> MAC_SYSTEM_INFO_TOOL_VERSION
             MAC_FILES_LIST_TOOL -> MAC_FILES_LIST_TOOL_VERSION
+            MAC_CLIPBOARD_READ_TOOL -> MAC_CLIPBOARD_READ_TOOL_VERSION
             GIT_STATUS_TOOL -> GIT_STATUS_TOOL_VERSION
             else -> throw ProtocolException("unsupported discovered tool")
         }
@@ -615,6 +636,67 @@ class GoffyProtocolCodec(
         properties.requireObject("sizeBytes").validateNullableIntegerSchema()
         properties.requireObject("modifiedEpochSeconds").validateNullableIntegerSchema()
         definition.requireArray("required").requireExactStrings(MAC_FILES_ENTRY_KEYS, "entry required")
+    }
+
+    private fun validateMacClipboardReadInputSchema(schema: JsonObject) {
+        schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS)
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(MAC_CLIPBOARD_READ_INPUT_KEYS)
+        properties.requireObject("maxChars").also { maxChars ->
+            maxChars.requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS + "maximum" + "default")
+            maxChars.requireType("integer")
+            maxChars.requireInt("minimum").requireExactValue(1, "maxChars minimum")
+            maxChars.requireInt("maximum").requireExactValue(
+                MAX_MAC_CLIPBOARD_TEXT_LENGTH,
+                "maxChars maximum",
+            )
+            maxChars.requireInt("default").requireExactValue(
+                DEFAULT_MAC_CLIPBOARD_READ_CHARS,
+                "maxChars default",
+            )
+        }
+    }
+
+    private fun validateMacClipboardReadOutputSchema(schema: JsonObject) {
+        schema.requireKeys(OUTPUT_SCHEMA_KEYS)
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(MAC_CLIPBOARD_READ_OUTPUT_KEYS)
+        schema.requireArray("required").requireExactStrings(
+            MAC_CLIPBOARD_READ_REQUIRED_KEYS,
+            "clipboard required",
+        )
+
+        properties.requireObject("status").also { status ->
+            status.requireKeys(ENUM_STRING_SCHEMA_KEYS)
+            status.requireType("string")
+            status.requireArray("enum").requireExactStrings(
+                MAC_CLIPBOARD_STATUS_VALUES,
+                "clipboard status enum",
+            )
+        }
+        properties.requireObject("contentType").also { contentType ->
+            contentType.requireKeys(setOf("const", "default", "type"))
+            contentType.requireType("string")
+            contentType.requireString("const").requireExactString("text", "contentType const")
+            contentType.requireString("default").requireExactString("text", "contentType default")
+        }
+        properties.requireObject("text").validateNullableBoundedStringSchema(
+            "clipboard text",
+            MAX_MAC_CLIPBOARD_TEXT_LENGTH,
+        )
+        properties.requireObject("textTruncated").requireTypeOnly("boolean")
+        properties.requireObject("characterCount").also { characterCount ->
+            characterCount.requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS + "maximum")
+            characterCount.requireType("integer")
+            characterCount.requireInt("minimum").requireExactValue(0, "characterCount minimum")
+            characterCount.requireInt("maximum").requireExactValue(
+                MAX_MAC_CLIPBOARD_CHARACTER_COUNT,
+                "characterCount maximum",
+            )
+        }
+        properties.requireObject("characterCountTruncated").requireTypeOnly("boolean")
     }
 
     private fun validateGitStatusInputSchema(schema: JsonObject) {
@@ -841,6 +923,12 @@ class GoffyProtocolCodec(
                 }
                 decodeMacFilesList(content)
             }
+            MAC_CLIPBOARD_READ_TOOL -> {
+                if (target != ExecutionTarget.MAC) {
+                    throw ProtocolException("mac.clipboard.read returned an unexpected execution target")
+                }
+                decodeMacClipboardRead(content)
+            }
             GIT_STATUS_TOOL -> {
                 if (target != ExecutionTarget.MAC) {
                     throw ProtocolException("git.status returned an unexpected execution target")
@@ -972,6 +1060,45 @@ class GoffyProtocolCodec(
             approvedRepos = approvedRepos,
             changes = changes,
         )
+    }
+
+    private fun decodeMacClipboardRead(content: JsonObject): MacClipboardRead {
+        content.requireKeys(MAC_CLIPBOARD_READ_REQUIRED_KEYS, MAC_CLIPBOARD_READ_OPTIONAL_KEYS)
+        val contentType = content["contentType"]?.let { element ->
+            element.stringValueOrNull()
+                ?: throw ProtocolException("contentType must be a string")
+        } ?: "text"
+        if (contentType != "text") {
+            throw ProtocolException("unsupported clipboard content type")
+        }
+        val status = content.requireString("status").also { value ->
+            if (value !in MAC_CLIPBOARD_STATUS_VALUES) {
+                throw ProtocolException("unsupported clipboard status")
+            }
+        }
+        val text = content.requireNullableBoundedString(
+            "text",
+            MAX_MAC_CLIPBOARD_TEXT_LENGTH,
+        )
+        if (text?.contains("file://", ignoreCase = true) == true) {
+            throw ProtocolException("clipboard text contains an unsupported file URL")
+        }
+        val result = MacClipboardRead(
+            status = status,
+            contentType = contentType,
+            text = text,
+            textTruncated = content.requireBoolean("textTruncated"),
+            characterCount = content.requireBoundedInt(
+                "characterCount",
+                0,
+                MAX_MAC_CLIPBOARD_CHARACTER_COUNT,
+            ),
+            characterCountTruncated = content.requireBoolean("characterCountTruncated"),
+        )
+        if (!result.matchesToolContract()) {
+            throw ProtocolException("clipboard result failed local policy")
+        }
+        return result
     }
 
     private fun decodeVerification(payload: JsonObject): ExecutionEvent {
@@ -1288,6 +1415,16 @@ private val MAC_FILES_ENTRY_KEYS = setOf(
     "sizeBytes",
     "modifiedEpochSeconds",
 )
+private val MAC_CLIPBOARD_READ_INPUT_KEYS = setOf("maxChars")
+private val MAC_CLIPBOARD_READ_REQUIRED_KEYS = setOf(
+    "status",
+    "textTruncated",
+    "characterCount",
+    "characterCountTruncated",
+)
+private val MAC_CLIPBOARD_READ_OPTIONAL_KEYS = setOf("contentType", "text")
+private val MAC_CLIPBOARD_READ_OUTPUT_KEYS =
+    MAC_CLIPBOARD_READ_REQUIRED_KEYS + MAC_CLIPBOARD_READ_OPTIONAL_KEYS
 private val GIT_STATUS_INPUT_KEYS = setOf("repoIndex", "maxChanges", "includeUntracked")
 private val GIT_STATUS_REQUIRED_KEYS = setOf(
     "status",

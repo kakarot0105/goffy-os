@@ -160,7 +160,7 @@ class AndroidSqliteTerminalAuditStore(
         }
 
         override fun onUpgrade(database: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            if (oldVersion != 1 || newVersion != DATABASE_VERSION) {
+            if (oldVersion !in 1 until DATABASE_VERSION || newVersion != DATABASE_VERSION) {
                 error("No audit database migration exists from $oldVersion to $newVersion")
             }
             database.execSQL("ALTER TABLE $TABLE_AUDIT RENAME TO $TABLE_AUDIT_V1")
@@ -198,7 +198,8 @@ class AndroidSqliteTerminalAuditStore(
                     "$COLUMN_EVENT_KINDS TEXT NOT NULL " +
                     "CHECK (length($COLUMN_EVENT_KINDS) <= 255), " +
                     "CHECK (($COLUMN_TOOL_NAME IS NULL AND $COLUMN_PERMISSION IS NULL) OR " +
-                    "($COLUMN_TOOL_NAME = 'mac.system_info' AND " +
+                    "($COLUMN_TOOL_NAME IN " +
+                    "('mac.clipboard.read', 'mac.files.list', 'mac.system_info', 'git.status') AND " +
                     "$COLUMN_EXECUTION_TARGET = 'MAC' AND $COLUMN_PERMISSION = 'SAFE') OR " +
                     "($COLUMN_TOOL_NAME IN ('phone.battery.status', 'phone.device.info') AND " +
                     "$COLUMN_EXECUTION_TARGET = 'PHONE' AND $COLUMN_PERMISSION = 'SAFE') OR " +
@@ -213,7 +214,7 @@ class AndroidSqliteTerminalAuditStore(
 
     private companion object {
         const val DATABASE_NAME = "goffy_terminal_audit.db"
-        const val DATABASE_VERSION = 2
+        const val DATABASE_VERSION = 3
         const val TABLE_AUDIT = "terminal_audit"
         const val TABLE_AUDIT_V1 = "terminal_audit_v1"
         const val COLUMN_SCHEMA_VERSION = "schema_version"

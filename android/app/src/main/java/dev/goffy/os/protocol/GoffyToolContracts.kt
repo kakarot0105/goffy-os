@@ -80,6 +80,30 @@ fun GitStatusChange.matchesToolContract(): Boolean =
         workingTreeStatus in GIT_STATUS_CODE_VALUES &&
         kind in GIT_STATUS_CHANGE_KINDS
 
+fun MacClipboardRead.matchesToolContract(): Boolean =
+    status in MAC_CLIPBOARD_STATUS_VALUES &&
+        contentType == "text" &&
+        characterCount in 0..MAX_MAC_CLIPBOARD_CHARACTER_COUNT &&
+        textMatchesClipboardState() &&
+        text.doesNotContainFileUrl()
+
+private fun MacClipboardRead.textMatchesClipboardState(): Boolean = when (status) {
+    "available" ->
+        text != null &&
+            text.isSafeClipboardText() &&
+            if (textTruncated || characterCountTruncated) {
+                textTruncated && characterCount >= text.length
+            } else {
+                characterCount == text.length
+            }
+    "empty", "unsupported" ->
+        text == null &&
+            !textTruncated &&
+            characterCount == 0 &&
+            !characterCountTruncated
+    else -> false
+}
+
 fun PhoneNoteCreated.matchesToolContract(): Boolean =
     noteId > 0 &&
         text.matchesNoteTextContract() &&
@@ -126,6 +150,17 @@ private fun String.isSafeGitStatusPath(): Boolean =
         } &&
         split("/").none { part -> part == ".." }
 
+private fun String.isSafeClipboardText(): Boolean =
+    isNotEmpty() &&
+        length <= MAX_MAC_CLIPBOARD_TEXT_LENGTH &&
+        none { character ->
+            character == '\u0000' ||
+                Character.getType(character) == Character.FORMAT.toInt()
+        }
+
+private fun String?.doesNotContainFileUrl(): Boolean =
+    this == null || !contains("file://", ignoreCase = true)
+
 private fun String?.isNullOrSafeDisplayField(maximum: Int): Boolean =
     this == null || isSafeDisplayField(maximum)
 
@@ -164,6 +199,10 @@ const val MAX_GIT_STATUS_STATUS_LENGTH = 64
 const val MAX_GIT_STATUS_COUNT = 10_000
 val GIT_STATUS_CHANGE_KINDS = setOf("tracked", "untracked", "conflict")
 val GIT_STATUS_CODE_VALUES = setOf(".", "M", "T", "A", "D", "R", "C", "U", "?", "!")
+const val DEFAULT_MAC_CLIPBOARD_READ_CHARS = 1_000
+const val MAX_MAC_CLIPBOARD_TEXT_LENGTH = 2_000
+const val MAX_MAC_CLIPBOARD_CHARACTER_COUNT = 100_000
+val MAC_CLIPBOARD_STATUS_VALUES = setOf("available", "empty", "unsupported")
 const val MAX_NOTE_TEXT_LENGTH = 2_000
 const val MIN_TIMER_SECONDS = 1
 const val MAX_TIMER_SECONDS = 86_400

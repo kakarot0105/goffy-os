@@ -8,6 +8,7 @@ import dev.goffy.os.localmodel.isSafeLocalModelPrompt
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatusArguments
+import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.MacFilesListArguments
@@ -24,6 +25,7 @@ import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.ToolArguments
 import dev.goffy.os.protocol.matchesNoteTextContract
+import java.util.Locale
 
 data class GoffyExecutionPlan(
     val command: String,
@@ -57,6 +59,10 @@ object GoffyIntentRouter {
     private val gitStatusCommand = Regex(
         pattern = "^(?:show|check)(?: me)? my git status[.!?]?$",
         option = RegexOption.IGNORE_CASE,
+    )
+    private val macClipboardReadCommands = setOf(
+        "read my mac clipboard",
+        "show my mac clipboard",
     )
     private val batteryStatusCommand = Regex(
         pattern =
@@ -95,6 +101,7 @@ object GoffyIntentRouter {
             macStatusCommand.matches(normalized) -> macStatusPlan(normalized)
             macFilesListCommand.matches(normalized) -> macFilesListPlan(normalized)
             gitStatusCommand.matches(normalized) -> gitStatusPlan(normalized)
+            normalized.lowercase(Locale.US) in macClipboardReadCommands -> macClipboardReadPlan(normalized)
             batteryStatusCommand.matches(normalized) -> batteryStatusPlan(normalized)
             deviceInfoCommand.matches(normalized) -> deviceInfoPlan(normalized)
             flashlightSetCommand.matches(normalized) -> flashlightSetPlan(normalized)
@@ -218,6 +225,18 @@ object GoffyIntentRouter {
             "The result contains no absolute repo root, file contents, diff, fetch, commit, or push",
         ),
         arguments = GitStatusArguments(repoIndex = 0),
+    )
+
+    private fun macClipboardReadPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = command,
+        executionTarget = ExecutionTarget.MAC,
+        toolName = MAC_CLIPBOARD_READ_TOOL,
+        permission = PermissionLevel.SAFE,
+        successCriteria = listOf(
+            "Hub returns schema-valid bounded plaintext clipboard metadata",
+            "Hub emits a successful verification result",
+            "The result contains no file URLs, binary formats, or clipboard write authority",
+        ),
     )
 
     private fun batteryStatusPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(

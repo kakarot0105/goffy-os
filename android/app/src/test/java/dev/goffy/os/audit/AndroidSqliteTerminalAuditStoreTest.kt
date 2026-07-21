@@ -7,6 +7,7 @@ import android.os.Build
 import dev.goffy.os.agent.TaskEventKind
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GOFFY_PROTOCOL_VERSION
+import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
@@ -162,6 +163,23 @@ class AndroidSqliteTerminalAuditStoreTest {
     }
 
     @Test
+    fun databaseAcceptsMacClipboardSafeMetadata() = runTest {
+        val application = RuntimeEnvironment.getApplication()
+        val databaseName = uniqueDatabaseName()
+        application.deleteDatabase(databaseName)
+        val clipboardRecord = record(index = 1, recordedAtEpochMillis = 100).copy(
+            executionTarget = ExecutionTarget.MAC,
+            toolName = MAC_CLIPBOARD_READ_TOOL,
+            permission = AuditPermission.SAFE,
+        )
+
+        AndroidSqliteTerminalAuditStore(application, databaseName).useStore { store ->
+            assertEquals(clipboardRecord, store.upsert(clipboardRecord))
+            assertEquals(listOf(clipboardRecord), store.load().records)
+        }
+    }
+
+    @Test
     fun typedCompatibilityDiscardsUnknownProtocolWithoutBlockingCurrentWrites() = runTest {
         val application = RuntimeEnvironment.getApplication()
         val databaseName = uniqueDatabaseName()
@@ -231,7 +249,7 @@ class AndroidSqliteTerminalAuditStoreTest {
         SQLiteDatabase.openDatabase(databasePath, null, SQLiteDatabase.OPEN_READWRITE).use { database ->
             database.rawQuery("PRAGMA user_version", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(2, cursor.getInt(0))
+                assertEquals(3, cursor.getInt(0))
             }
             database.insertOrThrow(
                 "terminal_audit",

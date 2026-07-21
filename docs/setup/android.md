@@ -56,6 +56,10 @@ review both published checksums during any wrapper upgrade.
   advertises schema-compatible `SAFE git.status`. Android sends bounded default
   approved-repo arguments, displays status metadata, and never requests file
   contents, diffs, fetch, commit, push, or test execution.
+- `Read my Mac clipboard` and `Show my Mac clipboard` route to MAC only when the
+  Hub advertises schema-compatible `SAFE mac.clipboard.read`. Android sends no
+  arguments, shows bounded text in the visible timeline, rejects file URL text at
+  the codec/reducer boundary, and does not read clipboard contents aloud.
 - Battery commands such as `Show my battery status` and `What's my phone battery
   level?` run entirely on PHONE without a Hub link.
 - While GOFFY is foregrounded, dock mode keeps the screen awake only when Android

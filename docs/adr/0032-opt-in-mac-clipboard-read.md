@@ -48,7 +48,8 @@ automation channel.
 - Default Hub behavior is unchanged; no clipboard code runs unless explicitly
   enabled.
 - MCP clients can call the tool after authenticated discovery shows it healthy.
-- Android command routing is intentionally deferred so clipboard UX, approval,
-  timeline wording, and speech handling can be reviewed separately.
+- Android command routing is limited to exact explicit Mac clipboard commands.
+  It sends no arguments, renders bounded visible text, and does not read
+  clipboard contents aloud.
 - Future clipboard write, file URL, image, or history access requires separate
   schemas, permission classification, approvals, and verification behavior.

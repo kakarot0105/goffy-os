@@ -51,6 +51,7 @@ import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.GoffyProtocolCodec
+import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacFilesApprovedRoot
 import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacFilesListEntry
@@ -164,6 +165,24 @@ class GoffyViewModelTest {
         assertTrue(gateway.requests.single().encodedMessage.contains("\"repoIndex\":0"))
         assertTrue(gateway.requests.single().encodedMessage.contains("\"maxChanges\":25"))
         assertFalse(gateway.requests.single().encodedMessage.contains("private-plan"))
+    }
+
+    @Test
+    fun macClipboardCommandSendsSafeNoArgumentMacInvocation() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf(*successfulMacClipboardEvents().toTypedArray()) }
+        val viewModel = createViewModel(gateway)
+
+        assertTrue(viewModel.configureHub(endpoint, token))
+        viewModel.submitCommand("Read my Mac clipboard")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals("copied text", (entry.result as MacClipboardRead).text)
+        assertEquals(1, gateway.requests.size)
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"toolName\":\"mac.clipboard.read\""))
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"arguments\":{}"))
+        assertFalse(gateway.requests.single().encodedMessage.contains("copied text"))
     }
 
     @Test
@@ -1540,6 +1559,34 @@ class GoffyViewModelTest {
                     GitStatusChange("README.md", false, "M", ".", "tracked"),
                     GitStatusChange("TODO.md", false, "?", "?", "untracked"),
                 ),
+            ),
+        ),
+        ExecutionEvent.Verification(
+            succeeded = true,
+            summary = "Verified",
+            checks = listOf("output schema"),
+        ),
+    )
+
+    private fun successfulMacClipboardEvents(): List<ExecutionEvent> = listOf(
+        ExecutionEvent.Starting(1),
+        ExecutionEvent.Ready,
+        ExecutionEvent.Progress(
+            ToolProgress("mac.clipboard.read", ExecutionTarget.MAC, "accepted", 0, "Accepted"),
+        ),
+        ExecutionEvent.Progress(
+            ToolProgress("mac.clipboard.read", ExecutionTarget.MAC, "completed", 1, "Completed"),
+        ),
+        ExecutionEvent.Result(
+            toolName = "mac.clipboard.read",
+            executionTarget = ExecutionTarget.MAC,
+            content = MacClipboardRead(
+                status = "available",
+                contentType = "text",
+                text = "copied text",
+                textTruncated = false,
+                characterCount = 11,
+                characterCountTruncated = false,
             ),
         ),
         ExecutionEvent.Verification(

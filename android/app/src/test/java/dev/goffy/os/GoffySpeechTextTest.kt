@@ -8,8 +8,10 @@ import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
+import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
+import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacFilesApprovedRoot
 import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacFilesListEntry
@@ -153,6 +155,36 @@ class GoffySpeechTextTest {
 
         assertTrue(speechText.contains("2 changes"))
         assertFalse(speechText.contains("private-plan.txt"))
+    }
+
+    @Test
+    fun macClipboardTextIsNotReadAloud() {
+        val secret = "secret launch phrase"
+        val state = GoffyUiState(
+            hubEndpoint = endpoint,
+            timeline = TaskTimelineState(
+                entries = listOf(
+                    entry(
+                        toolName = MAC_CLIPBOARD_READ_TOOL,
+                        target = ExecutionTarget.MAC,
+                        result = MacClipboardRead(
+                            status = "available",
+                            contentType = "text",
+                            text = secret,
+                            textTruncated = false,
+                            characterCount = secret.length,
+                            characterCountTruncated = false,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val speechText = requireNotNull(state.latestSpeakableText())
+
+        assertTrue(speechText.contains("clipboard returned bounded text"))
+        assertTrue(speechText.contains("will not read clipboard contents aloud"))
+        assertFalse(speechText.contains(secret))
     }
 
     @Test

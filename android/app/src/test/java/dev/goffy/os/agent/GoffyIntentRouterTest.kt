@@ -6,6 +6,7 @@ import dev.goffy.os.localmodel.LocalModelIntentObservation
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatusArguments
+import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MacFilesListArguments
 import dev.goffy.os.protocol.PermissionLevel
@@ -63,6 +64,21 @@ class GoffyIntentRouterTest {
         assertEquals(GIT_STATUS_TOOL, plan.toolName)
         assertEquals(GitStatusArguments(repoIndex = 0), plan.arguments)
         assertEquals(3, plan.successCriteria.size)
+    }
+
+    @Test
+    fun routesMacClipboardReadToSafeMacTool() {
+        val decision = GoffyIntentRouter.route("Read my Mac clipboard")
+
+        assertTrue(decision is RoutingDecision.Routed)
+        val plan = (decision as RoutingDecision.Routed).plan
+        assertEquals(ExecutionTarget.MAC, plan.executionTarget)
+        assertEquals(PermissionLevel.SAFE, plan.permission)
+        assertEquals(MAC_CLIPBOARD_READ_TOOL, plan.toolName)
+        assertEquals(3, plan.successCriteria.size)
+        assertTrue(GoffyIntentRouter.route("Show my Mac clipboard") is RoutingDecision.Routed)
+        assertTrue(GoffyIntentRouter.route("show me my mac clipboard") is RoutingDecision.Unsupported)
+        assertTrue(GoffyIntentRouter.route("read my mac clipboard?") is RoutingDecision.Unsupported)
     }
 
     @Test

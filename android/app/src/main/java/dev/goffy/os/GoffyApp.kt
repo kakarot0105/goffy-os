@@ -72,6 +72,7 @@ import dev.goffy.os.localmodel.LocalModelRuntimeState
 import dev.goffy.os.qr.PairingQrScanner
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
@@ -1455,6 +1456,40 @@ private fun TaskResult(result: ToolResultContent) {
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
                     maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        is MacClipboardRead -> {
+            Text(
+                text = "MAC CLIPBOARD / ${result.status.uppercase()}",
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = when (result.status) {
+                    "available" ->
+                        "${result.characterCount} text chars" +
+                            if (result.textTruncated || result.characterCountTruncated) {
+                                " / truncated"
+                            } else {
+                                ""
+                            }
+                    "empty" -> "no readable text"
+                    "unsupported" -> "unsupported content hidden"
+                    else -> "unknown clipboard state"
+                },
+                color = Signal,
+                fontSize = 11.sp,
+            )
+            result.text?.let { text ->
+                Text(
+                    text = text,
+                    color = Mist,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
             }

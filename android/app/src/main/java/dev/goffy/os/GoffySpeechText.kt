@@ -3,6 +3,7 @@ package dev.goffy.os
 import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
@@ -37,6 +38,7 @@ private fun ToolResultContent.speakableText(verified: Boolean): String =
                 "Git status for $repoName has " +
                     "${stagedCount + unstagedCount + untrackedCount + conflictCount} changes."
             }
+        is MacClipboardRead -> clipboardSpeech()
         is MacFilesList ->
             "Mac file listing returned ${entries.size} entries from approved root $rootName. " +
                 if (truncated) "The listing was truncated." else "The listing was not truncated."
@@ -52,6 +54,13 @@ private fun ToolResultContent.speakableText(verified: Boolean): String =
             "Timer request for $durationSeconds seconds was sent to $clockPackage. " +
                 "Final timer state is owned by the Clock app."
     }.toBoundedSpeechText()
+
+private fun MacClipboardRead.clipboardSpeech(): String = when (status) {
+    "available" -> "Mac clipboard returned bounded text. I will not read clipboard contents aloud."
+    "empty" -> "Mac clipboard has no readable text."
+    "unsupported" -> "Mac clipboard content is unsupported and was hidden."
+    else -> "Mac clipboard status is unavailable."
+}
 
 private fun PhoneDeviceInfo.deviceInfoSpeech(): String {
     val homeStatus = when {

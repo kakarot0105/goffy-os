@@ -103,8 +103,8 @@ the capability boundary.
 - Optional `SAFE git.status` Hub/MCP tool for explicitly configured Git worktree roots,
   including an Android `Show my git status` route for the default approved repo
 - Optional, disabled-by-default `SAFE mac.clipboard.read` Hub/MCP tool for
-  bounded plaintext reads from the Mac clipboard; Android routing remains future
-  work
+  bounded plaintext reads from the Mac clipboard, including an Android
+  `Read my Mac clipboard` route that does not read clipboard text aloud
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
 - Shared fixture `protocol/fixtures/mac-system-info-flow.jsonl`
@@ -212,7 +212,9 @@ When set, the Hub exposes `SAFE mac.clipboard.read` over MCP. It returns bounded
 plaintext only, never writes the clipboard, never polls in the background, never
 reads clipboard content during health checks, and does not expose binary
 clipboard formats or file URLs. Plaintext containing `file://` is rejected as
-unsupported without returning text. Android does not route clipboard commands yet.
+unsupported without returning text. Android can invoke this exact tool with
+`Read my Mac clipboard` or `Show my Mac clipboard`; TTS reports status without
+reading clipboard contents aloud.
 
 The Hub seals its registry before serving, checks registered tools locally at
 startup and every 30 seconds by default, and removes an unhealthy tool from both
