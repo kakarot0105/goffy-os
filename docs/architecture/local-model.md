@@ -157,6 +157,23 @@ complete on the Moto G, but it is not enough to ship a default runtime. Repeated
 run responsiveness, idle-unload acceptance, production prompt stopping, and
 operator UX for model install/remove remain open.
 
+Production acceptance now has a read-only evidence verifier:
+
+```bash
+.venv/bin/python scripts/verify_modeldebug_acceptance.py \
+  --idle-evidence-json .goffy-validation/modeldebug-observation-smoke/idle-cleanup.json \
+  .goffy-validation/modeldebug-observation-smoke/run-1/modeldebug-observation-report.json \
+  .goffy-validation/modeldebug-observation-smoke/run-2/modeldebug-observation-report.json \
+  .goffy-validation/modeldebug-observation-smoke/run-3/modeldebug-observation-report.json
+```
+
+The verifier requires at least three executed `modelDebug` observation reports,
+the fixed unsupported command `open settings`, terminal non-executable `FAILED`
+timeline evidence, bounded memory/logcat artifacts, a consistent model SHA-256,
+each run at or below 15 seconds by default, and separate idle-cleanup JSON proving
+the provider closed after at least 60 seconds. The existing 37.6-second Qwen3
+single-run evidence intentionally fails this gate.
+
 ## Reuse-First Scan
 
 Checked on 2026-07-20:

@@ -356,6 +356,23 @@ does not package a model in the normal GOFFY LITE APK, enable executable model
 routing, clear app data, broaden ADB beyond fixed commands, or run in the
 background.
 
+Before considering any default local-model runtime promotion, collect repeated
+run evidence and verify it with:
+
+```bash
+.venv/bin/python scripts/verify_modeldebug_acceptance.py \
+  --idle-evidence-json .goffy-validation/modeldebug-observation-smoke/idle-cleanup.json \
+  .goffy-validation/modeldebug-observation-smoke/run-1/modeldebug-observation-report.json \
+  .goffy-validation/modeldebug-observation-smoke/run-2/modeldebug-observation-report.json \
+  .goffy-validation/modeldebug-observation-smoke/run-3/modeldebug-observation-report.json
+```
+
+This verifier is read-only. It blocks if fewer than three successful reports are
+provided, any observation exceeds the 15-second default budget, artifacts are
+missing, crash/OOM markers appear in bounded logcat, model hashes differ, or
+idle-cleanup evidence does not prove the provider closed after at least 60
+seconds.
+
 After the manual phone checks pass, record redacted evidence:
 
 ```bash
