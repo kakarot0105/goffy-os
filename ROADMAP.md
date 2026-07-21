@@ -175,7 +175,7 @@
 7. Polished, accessible, battery-aware GOFFY UI
    - [x] Jarvis-style home/ROM UX design contract
      (`docs/architecture/goffy-os-design.md`)
-   - [ ] Lightweight stateful GOFFY orb implemented from the design contract
-   - [ ] Read-only device map implemented from the design contract
+   - [x] Lightweight stateful GOFFY orb implemented from the design contract
+   - [x] Read-only device map implemented from the design contract
    - [ ] Screenshot-based idle, approval, executing, verified, and failed UI smoke evidence
 8. Signed beta, packaged Hub, diagnostics, upgrade, and rollback

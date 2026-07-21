@@ -327,9 +327,11 @@ Execution first requires exactly one authorized Moto G target, or an explicit
 `--device-serial` when multiple devices are connected, and then pins every ADB
 call with `-s <device-serial>`. It configures `adb reverse tcp:8787 tcp:8787`,
 installs the debug APK, force-stops and launches GOFFY, collapses the Hub setup
-card if needed, types only `check my battery level`, verifies that a fresh PHONE
-task card appeared with expected markers, captures a screenshot, and saves
-bounded GOFFY process logcat under `.goffy-validation/device-smoke/`. Add
+card if needed, verifies the launch-visible HOME shell, connection, target, and
+device-map markers from `after-launch.xml` into `home-surface.xml`, types only
+`check my battery level`, verifies that a fresh PHONE task card appeared with
+expected markers, captures a screenshot, and saves bounded GOFFY process logcat
+under `.goffy-validation/device-smoke/`. Add
 `--include-mac` only when the Hub is already running and the phone's saved Hub
 link is valid, or pass a short-lived local debug token file under
 `.goffy-validation`:
@@ -515,14 +517,17 @@ device pairing exist.
 ## Physical-device status
 
 The Moto G PHONE smoke is verified for debug APK install, GOFFY home-shell
-launch, setup-card collapse, fixed `check my battery level` entry, fresh
-`phone.battery.status` task-card verification, screenshot capture, and bounded
-GOFFY process logcat capture. The Moto G MAC localhost smoke is also verified
-over USB `adb reverse` with a raw ADB-safe debug token file whose reports and
-debug-link artifacts are redacted, fixed `check my Mac status` entry, fresh
-`mac.system_info` task-card verification, screenshot capture, and bounded GOFFY
-process logcat capture. The same script now has an allowlisted process-list MAC
-smoke path via `--mac-command "What is running on my Mac"` that verifies a fresh
+launch, setup-card collapse, launch-visible HOME viewport verification for the
+GOFFY orb, Settings escape hatch, connection/target indicators, and top device
+map, fixed `check my battery level` entry, fresh `phone.battery.status`
+task-card verification, screenshot capture, and bounded GOFFY process logcat
+capture. The
+Moto G MAC localhost smoke is also verified over USB `adb reverse` with a raw
+ADB-safe debug token file whose reports and debug-link artifacts are redacted,
+fixed `check my Mac status` entry, fresh `mac.system_info` task-card
+verification, screenshot capture, and bounded GOFFY process logcat capture. The
+same script now has an allowlisted process-list MAC smoke path via
+`--mac-command "What is running on my Mac"` that verifies a fresh
 `mac.processes.list` task card.
 
 The Moto G device-info slice is verified with `what phone is this`; the visible

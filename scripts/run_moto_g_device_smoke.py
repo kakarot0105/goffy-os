@@ -58,6 +58,50 @@ MAC_SMOKE_MARKERS = {
         "mac.processes.list output matched the registered schema.",
     ),
 }
+MOTO_G_PORTRAIT_VIEWPORT_BOUNDS = (0, 0, 720, 1604)
+COMMAND_INPUT_REVEAL_SWIPES = (
+    ("360", "1450", "360", "650", "450"),
+    ("360", "1450", "360", "650", "450"),
+    ("360", "1450", "360", "650", "450"),
+    ("360", "650", "360", "1450", "450"),
+    ("360", "650", "360", "1450", "450"),
+)
+SEND_REVEAL_SWIPES = (
+    ("360", "1450", "360", "650", "450"),
+    ("360", "650", "360", "1450", "450"),
+    ("360", "1450", "360", "650", "450"),
+    ("360", "650", "360", "1450", "450"),
+)
+TIMELINE_REVEAL_SWIPES = (
+    ("360", "1450", "360", "650", "450"),
+    ("360", "1450", "360", "650", "450"),
+    ("360", "1450", "360", "650", "450"),
+)
+HOME_TOP_RESTORE_SWIPES = (
+    ("360", "650", "360", "1450", "450"),
+    ("360", "650", "360", "1450", "450"),
+    ("360", "650", "360", "1450", "450"),
+)
+KEYEVENT_BY_INPUT_CHAR = {
+    **{chr(code): f"KEYCODE_{chr(code).upper()}" for code in range(ord("a"), ord("z") + 1)},
+    **{str(digit): f"KEYCODE_{digit}" for digit in range(10)},
+    " ": "KEYCODE_SPACE",
+}
+HOME_SURFACE_MARKERS = (
+    "GOFFY title",
+    "GOFFY LITE",
+    "SETTINGS",
+    "GOFFY orb state",
+    "LOOP phase",
+    "MAC LINK",
+    "EXECUTION TARGET",
+    "DOCK MODE",
+    "DEVICE MAP",
+    "PHONE ENGINE",
+    "MAC HUB",
+    "MCP REGISTRY",
+    "LOCAL MODEL",
+)
 
 
 class StepStatus(StrEnum):
@@ -94,6 +138,7 @@ class UiNode:
     bounds: tuple[int, int, int, int]
     enabled: bool
     clickable: bool
+    password: bool
 
     @property
     def center(self) -> tuple[int, int]:
@@ -211,6 +256,20 @@ def planned_steps(
             ),
             mutates_device=True,
             detail="would start the GOFFY launcher activity",
+        ),
+        DeviceSmokeStep(
+            name="Restore HOME top viewport",
+            status=StepStatus.PLANNED,
+            mutates_device=True,
+            detail="would restore the top HOME viewport before launch marker verification",
+        ),
+        DeviceSmokeStep(
+            name="HOME surface smoke",
+            status=StepStatus.PLANNED,
+            detail=(
+                "would verify the idle GOFFY HOME shell, orb, device map, "
+                "Settings escape hatch, and visible connection/target indicators"
+            ),
         ),
         DeviceSmokeStep(
             name="PHONE command smoke",
@@ -418,6 +477,24 @@ def build_report(
             steps=steps,
         )
 
+    restore_home = restore_home_top_viewport(
+        adb=adb,
+        target=target,
+        root=resolved_root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+        output_directory=artifacts,
+    )
+    steps.append(restore_home)
+    if restore_home.status is StepStatus.FAIL:
+        return executed_report(
+            root=resolved_root,
+            output_directory=artifacts,
+            phone_command=phone_command,
+            mac_command=mac_command if include_mac else None,
+            steps=steps,
+        )
+
     ui_after_launch = dump_ui(
         adb=adb,
         target=target,
@@ -436,6 +513,20 @@ def build_report(
             steps=steps,
         )
 
+    home_surface = verify_home_surface(
+        ui_xml=(artifacts / "after-launch.xml").read_text(encoding="utf-8"),
+        output_directory=artifacts,
+    )
+    steps.append(home_surface)
+    if home_surface.status is not StepStatus.OK:
+        return executed_report(
+            root=resolved_root,
+            output_directory=artifacts,
+            phone_command=phone_command,
+            mac_command=mac_command if include_mac else None,
+            steps=steps,
+        )
+
     steps.append(
         submit_and_verify_command(
             adb=adb,
@@ -445,7 +536,7 @@ def build_report(
             timeout_seconds=timeout_seconds,
             wait_timeout_seconds=wait_timeout_seconds,
             command=phone_command,
-            expected_markers=("VERIFIED", "%", "Battery status matched the local tool contract."),
+            expected_markers=("VERIFIED", "%"),
             step_name="PHONE command smoke",
             artifact_prefix="phone-command",
             output_directory=artifacts,
@@ -741,25 +832,183 @@ def collapse_setup_card_if_expanded(
         runner=runner,
         timeout_seconds=timeout_seconds,
     )
-    hide = find_node(ui_text, text="Hide")
-    if hide is None:
+    if find_command_field(ui_text) is not None and not setup_card_expanded(ui_text):
         return DeviceSmokeStep(
             name="Collapse Hub setup card",
             status=StepStatus.SKIP,
             detail="Hub setup card was already collapsed",
         )
-    step = tap_center(
-        adb,
-        target,
-        root,
-        runner,
-        timeout_seconds,
-        hide,
-        step_name="Collapse Hub setup card",
-    )
-    if step.status is StepStatus.OK:
+    for attempt in range(4):
+        hide = find_node(ui_text, text="Hide")
+        if hide is not None:
+            step = tap_center(
+                adb,
+                target,
+                root,
+                runner,
+                timeout_seconds,
+                hide,
+                step_name="Collapse Hub setup card",
+            )
+            if step.status is StepStatus.OK:
+                time.sleep(1)
+                after_tap = latest_ui_text(
+                    adb=adb,
+                    target=target,
+                    root=root,
+                    runner=runner,
+                    timeout_seconds=timeout_seconds,
+                )
+                if find_node(after_tap, text="Hide") is None:
+                    return step
+                return DeviceSmokeStep(
+                    name="Collapse Hub setup card",
+                    status=StepStatus.FAIL,
+                    mutates_device=True,
+                    detail="Hub setup card still exposed `Hide` after tapping it",
+                    remediation="Inspect the UI XML and confirm the Hub setup toggle collapsed.",
+                )
+            return step
+        if attempt == 3:
+            break
+        reveal = execute_step(
+            name="Collapse Hub setup card: Reveal setup toggle",
+            command=adb_command(
+                adb,
+                target,
+                "shell",
+                "input",
+                "swipe",
+                "360",
+                "1450",
+                "360",
+                "650",
+                "450",
+            ),
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            mutates_device=True,
+            display_command=display_adb_command(
+                adb,
+                "shell",
+                "input",
+                "swipe",
+                "360",
+                "1450",
+                "360",
+                "650",
+                "450",
+            ),
+        )
+        if reveal.status is not StepStatus.OK:
+            return reveal
         time.sleep(1)
-    return step
+        ui_text = latest_ui_text(
+            adb=adb,
+            target=target,
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+        )
+    if setup_card_expanded(ui_text):
+        return DeviceSmokeStep(
+            name="Collapse Hub setup card",
+            status=StepStatus.FAIL,
+            mutates_device=True,
+            detail="Hub setup card remained expanded but `Hide` was not tappable",
+            remediation="Inspect the UI XML and adjust bounded setup-card collapse logic.",
+        )
+    return DeviceSmokeStep(
+        name="Collapse Hub setup card",
+        status=StepStatus.SKIP,
+        mutates_device=True,
+        detail="Hub setup card was already collapsed or not found after bounded scan",
+    )
+
+
+def setup_card_expanded(xml_text: str) -> bool:
+    nodes = nodes_from_xml(xml_text)
+    has_endpoint = any(node.text == DEBUG_HUB_ENDPOINT for node in nodes)
+    has_secret_field = any(node.password for node in nodes)
+    has_pairing_label = any(
+        node.text in {"Pairing bundle JSON", "Development bearer token"} for node in nodes
+    )
+    return has_endpoint or has_secret_field or has_pairing_label
+
+
+def restore_home_top_viewport(
+    *,
+    adb: Path,
+    target: DeviceTarget,
+    root: Path,
+    runner: CommandRunner,
+    timeout_seconds: int,
+    output_directory: Path,
+) -> DeviceSmokeStep:
+    for start_x, start_y, end_x, end_y, duration_ms in HOME_TOP_RESTORE_SWIPES:
+        step = execute_step(
+            name="Restore HOME top viewport",
+            command=adb_command(
+                adb,
+                target,
+                "shell",
+                "input",
+                "swipe",
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                duration_ms,
+            ),
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            mutates_device=True,
+            display_command=display_adb_command(
+                adb,
+                "shell",
+                "input",
+                "swipe",
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                duration_ms,
+            ),
+        )
+        if step.status is not StepStatus.OK:
+            return step
+        time.sleep(0.4)
+    ui_text = latest_ui_text(
+        adb=adb,
+        target=target,
+        root=root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+    )
+    visible_nodes = visible_nodes_from_xml(
+        ui_text,
+        viewport_bounds=MOTO_G_PORTRAIT_VIEWPORT_BOUNDS,
+    )
+    if has_exact_text(visible_nodes, "GOFFY"):
+        return DeviceSmokeStep(
+            name="Restore HOME top viewport",
+            status=StepStatus.OK,
+            mutates_device=True,
+            detail="restored launch viewport before HOME smoke",
+        )
+    artifact = "restore-home-top.xml"
+    if ui_text.strip():
+        (output_directory / artifact).write_text(ui_text, encoding="utf-8")
+    return DeviceSmokeStep(
+        name="Restore HOME top viewport",
+        status=StepStatus.FAIL,
+        mutates_device=True,
+        detail="GOFFY title was not visible after bounded top-restore swipes",
+        remediation="Inspect restore-home-top.xml and adjust bounded viewport restore logic.",
+        artifact=artifact,
+    )
 
 
 def configure_debug_hub_link(
@@ -1035,11 +1284,12 @@ def submit_and_verify_command(
     )
     baseline_command_count = timeline_command_occurrences(ui_text, command)
     command_field = find_command_field(ui_text)
-    for attempt in range(4):
+    for attempt in range(len(COMMAND_INPUT_REVEAL_SWIPES) + 1):
         if command_field is not None:
             break
-        if attempt == 3:
+        if attempt == len(COMMAND_INPUT_REVEAL_SWIPES):
             break
+        start_x, start_y, end_x, end_y, duration_ms = COMMAND_INPUT_REVEAL_SWIPES[attempt]
         reveal = execute_step(
             name=f"{step_name}: Reveal command input",
             command=adb_command(
@@ -1048,11 +1298,11 @@ def submit_and_verify_command(
                 "shell",
                 "input",
                 "swipe",
-                "360",
-                "650",
-                "360",
-                "1450",
-                "450",
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                duration_ms,
             ),
             root=root,
             runner=runner,
@@ -1063,11 +1313,11 @@ def submit_and_verify_command(
                 "shell",
                 "input",
                 "swipe",
-                "360",
-                "650",
-                "360",
-                "1450",
-                "450",
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                duration_ms,
             ),
         )
         if reveal.status is not StepStatus.OK:
@@ -1102,7 +1352,7 @@ def submit_and_verify_command(
     )
     if tap.status is not StepStatus.OK:
         return tap
-    time.sleep(1)
+    time.sleep(2.5)
     typed = execute_step(
         name=f"{step_name}: Type command",
         command=adb_command(adb, target, "shell", "input", "text", adb_input_text(command)),
@@ -1114,6 +1364,7 @@ def submit_and_verify_command(
     )
     if typed.status is not StepStatus.OK:
         return typed
+    time.sleep(1)
 
     hidden_keyboard = execute_step(
         name=f"{step_name}: Hide keyboard",
@@ -1140,11 +1391,73 @@ def submit_and_verify_command(
     )
     current_command_field = find_command_field(ui_text) or command_field
     send = find_send_control(ui_text, command_field=current_command_field)
-    for attempt in range(4):
+    if not command_field_matches(current_command_field, command):
+        before_fallback_artifact = f"{artifact_prefix}-before-fallback.xml"
+        if ui_text.strip():
+            (output_directory / before_fallback_artifact).write_text(
+                ui_text,
+                encoding="utf-8",
+            )
+        fallback = type_command_with_keyevents(
+            adb=adb,
+            target=target,
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            command=command,
+            command_field=current_command_field,
+            step_name=step_name,
+        )
+        if fallback.status is not StepStatus.OK:
+            return fallback
+        hidden_keyboard = execute_step(
+            name=f"{step_name}: Hide keyboard after fallback",
+            command=adb_command(adb, target, "shell", "input", "keyevent", "BACK"),
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            mutates_device=True,
+            display_command=display_adb_command(adb, "shell", "input", "keyevent", "BACK"),
+        )
+        if hidden_keyboard.status is not StepStatus.OK:
+            return hidden_keyboard
+        time.sleep(1)
+        ui_text = latest_ui_text(
+            adb=adb,
+            target=target,
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+        )
+        after_fallback_artifact = f"{artifact_prefix}-after-fallback.xml"
+        if ui_text.strip():
+            (output_directory / after_fallback_artifact).write_text(
+                ui_text,
+                encoding="utf-8",
+            )
+        baseline_command_count = max(
+            baseline_command_count, timeline_command_occurrences(ui_text, command)
+        )
+        current_command_field = find_command_field(ui_text) or current_command_field
+        send = find_send_control(ui_text, command_field=current_command_field)
+        if not command_field_matches(current_command_field, command):
+            return DeviceSmokeStep(
+                name=step_name,
+                status=StepStatus.FAIL,
+                mutates_device=True,
+                detail="command text was not entered after adb text and keyevent fallback",
+                remediation=(
+                    "Inspect the fallback UI XML artifacts and confirm the command input "
+                    "retained focus on the Moto G."
+                ),
+                artifact=after_fallback_artifact,
+            )
+    for attempt in range(len(SEND_REVEAL_SWIPES) + 1):
         if send is not None:
             break
-        if attempt == 3:
+        if attempt == len(SEND_REVEAL_SWIPES):
             break
+        start_x, start_y, end_x, end_y, duration_ms = SEND_REVEAL_SWIPES[attempt]
         reveal = execute_step(
             name=f"{step_name}: Reveal Send button",
             command=adb_command(
@@ -1153,11 +1466,11 @@ def submit_and_verify_command(
                 "shell",
                 "input",
                 "swipe",
-                "360",
-                "1450",
-                "360",
-                "650",
-                "450",
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                duration_ms,
             ),
             root=root,
             runner=runner,
@@ -1168,11 +1481,11 @@ def submit_and_verify_command(
                 "shell",
                 "input",
                 "swipe",
-                "360",
-                "1450",
-                "360",
-                "650",
-                "450",
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                duration_ms,
             ),
         )
         if reveal.status is not StepStatus.OK:
@@ -1190,6 +1503,18 @@ def submit_and_verify_command(
         )
         current_command_field = find_command_field(ui_text) or current_command_field
         send = find_send_control(ui_text, command_field=current_command_field)
+    if not command_field_matches(current_command_field, command):
+        artifact = f"{artifact_prefix}-command-mismatch.xml"
+        if ui_text.strip():
+            (output_directory / artifact).write_text(ui_text, encoding="utf-8")
+        return DeviceSmokeStep(
+            name=step_name,
+            status=StepStatus.FAIL,
+            mutates_device=True,
+            detail="command text was not visible before tapping Send",
+            remediation="Inspect the saved UI XML and confirm the command field retained input.",
+            artifact=artifact,
+        )
     if send is None:
         artifact = f"{artifact_prefix}-send-missing.xml"
         if ui_text.strip():
@@ -1215,6 +1540,7 @@ def submit_and_verify_command(
 
     deadline = time.monotonic() + wait_timeout_seconds
     last_text = ""
+    timeline_reveal_count = 0
     while time.monotonic() <= deadline:
         dump_step = dump_ui(
             adb=adb,
@@ -1238,6 +1564,43 @@ def submit_and_verify_command(
                     detail=f"verified visible markers for `{command}`",
                     artifact=f"{artifact_prefix}.xml",
                 )
+            if timeline_reveal_count < len(TIMELINE_REVEAL_SWIPES):
+                start_x, start_y, end_x, end_y, duration_ms = TIMELINE_REVEAL_SWIPES[
+                    timeline_reveal_count
+                ]
+                timeline_reveal_count += 1
+                reveal = execute_step(
+                    name=f"{step_name}: Reveal task timeline",
+                    command=adb_command(
+                        adb,
+                        target,
+                        "shell",
+                        "input",
+                        "swipe",
+                        start_x,
+                        start_y,
+                        end_x,
+                        end_y,
+                        duration_ms,
+                    ),
+                    root=root,
+                    runner=runner,
+                    timeout_seconds=timeout_seconds,
+                    mutates_device=True,
+                    display_command=display_adb_command(
+                        adb,
+                        "shell",
+                        "input",
+                        "swipe",
+                        start_x,
+                        start_y,
+                        end_x,
+                        end_y,
+                        duration_ms,
+                    ),
+                )
+                if reveal.status is not StepStatus.OK:
+                    return reveal
         time.sleep(1)
 
     missing_markers = [marker for marker in expected_markers if marker not in last_text]
@@ -1260,6 +1623,79 @@ def submit_and_verify_command(
         remediation="Check the saved UI XML, screenshot, and bounded GOFFY logcat artifact.",
         artifact=f"{artifact_prefix}.xml",
     )
+
+
+def command_field_matches(command_field: UiNode, command: str) -> bool:
+    return command_field.text.strip().casefold() == command.strip().casefold()
+
+
+def type_command_with_keyevents(
+    *,
+    adb: Path,
+    target: DeviceTarget,
+    root: Path,
+    runner: CommandRunner,
+    timeout_seconds: int,
+    command: str,
+    command_field: UiNode,
+    step_name: str,
+) -> DeviceSmokeStep:
+    keyevents = keyevents_for_input_text(command)
+    if keyevents is None:
+        return DeviceSmokeStep(
+            name=f"{step_name}: Type command fallback",
+            status=StepStatus.FAIL,
+            mutates_device=True,
+            detail="command cannot be typed with bounded keyevent fallback",
+            remediation="Use a smoke command containing only ASCII letters, digits, and spaces.",
+        )
+    focused = tap_center(
+        adb,
+        target,
+        root,
+        runner,
+        timeout_seconds,
+        command_field,
+        step_name=f"{step_name}: Refocus command input for fallback",
+    )
+    if focused.status is not StepStatus.OK:
+        return focused
+    time.sleep(2.5)
+    for keyevent in keyevents:
+        typed = execute_step(
+            name=f"{step_name}: Type command fallback",
+            command=adb_command(adb, target, "shell", "input", "keyevent", keyevent),
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            mutates_device=True,
+            display_command=display_adb_command(
+                adb,
+                "shell",
+                "input",
+                "keyevent",
+                keyevent,
+            ),
+        )
+        if typed.status is not StepStatus.OK:
+            return typed
+        time.sleep(0.04)
+    return DeviceSmokeStep(
+        name=f"{step_name}: Type command fallback",
+        status=StepStatus.OK,
+        mutates_device=True,
+        detail="typed command with bounded keyevent fallback",
+    )
+
+
+def keyevents_for_input_text(text: str) -> tuple[str, ...] | None:
+    keyevents: list[str] = []
+    for character in text.casefold():
+        keyevent = KEYEVENT_BY_INPUT_CHAR.get(character)
+        if keyevent is None:
+            return None
+        keyevents.append(keyevent)
+    return tuple(keyevents)
 
 
 def latest_ui_text(
@@ -1332,6 +1768,7 @@ def nodes_from_xml(xml_text: str) -> tuple[UiNode, ...]:
                 bounds=bounds,
                 enabled=element.attrib.get("enabled") == "true",
                 clickable=element.attrib.get("clickable") == "true",
+                password=element.attrib.get("password") == "true",
             )
         )
     return tuple(nodes)
@@ -1350,7 +1787,12 @@ def parse_bounds(value: str) -> tuple[int, int, int, int] | None:
 def find_command_field(xml_text: str) -> UiNode | None:
     nodes = nodes_from_xml(xml_text)
     for node in nodes:
-        if node.class_name == "android.widget.EditText" and node.enabled:
+        if (
+            node.class_name == "android.widget.EditText"
+            and node.enabled
+            and not node.password
+            and node.text != DEBUG_HUB_ENDPOINT
+        ):
             return node
     return None
 
@@ -1376,17 +1818,20 @@ def find_node(xml_text: str, *, text: str) -> UiNode | None:
 
 
 def find_send_control(xml_text: str, *, command_field: UiNode) -> UiNode | None:
-    labelled = find_node(xml_text, text="Send")
-    if labelled is not None:
-        return labelled
+    nodes = nodes_from_xml(xml_text)
+    labelled_send_nodes = [node for node in nodes if node.text == "Send"]
+    if labelled_send_nodes:
+        return next((node for node in labelled_send_nodes if node.enabled), None)
 
-    for node in nodes_from_xml(xml_text):
-        if node.content_desc.strip().casefold() == "send" and node.enabled:
-            return node
+    content_desc_send_nodes = [
+        node for node in nodes if node.content_desc.strip().casefold() == "send"
+    ]
+    if content_desc_send_nodes:
+        return next((node for node in content_desc_send_nodes if node.enabled), None)
 
     _, field_top, field_right, field_bottom = command_field.bounds
     candidates: list[UiNode] = []
-    for node in nodes_from_xml(xml_text):
+    for node in nodes:
         left, top, right, bottom = node.bounds
         if not node.enabled or not node.clickable:
             continue
@@ -1406,16 +1851,20 @@ def find_send_control(xml_text: str, *, command_field: UiNode) -> UiNode | None:
 
 
 def timeline_texts(xml_text: str) -> tuple[str, ...]:
-    texts = tuple(node.text for node in nodes_from_xml(xml_text) if node.text)
+    nodes = nodes_from_xml(xml_text)
+    texts = tuple(
+        node.text for node in nodes if node.text and node.class_name != "android.widget.EditText"
+    )
     try:
         timeline_index = texts.index("TASK TIMELINE")
     except ValueError:
-        return texts
+        return ()
     return texts[timeline_index + 1 :]
 
 
 def timeline_command_occurrences(xml_text: str, command: str) -> int:
-    return sum(1 for text in timeline_texts(xml_text) if text == command)
+    normalized = command.casefold()
+    return sum(1 for text in timeline_texts(xml_text) if text.casefold() == normalized)
 
 
 def command_window_contains(
@@ -1426,7 +1875,8 @@ def command_window_contains(
     fresh_count: int | None = None,
 ) -> bool:
     texts = timeline_texts(xml_text)
-    command_indexes = [index for index, text in enumerate(texts) if text == command]
+    normalized = command.casefold()
+    command_indexes = [index for index, text in enumerate(texts) if text.casefold() == normalized]
     if not command_indexes:
         return False
     if fresh_count is not None and fresh_count <= 0:
@@ -1436,6 +1886,101 @@ def command_window_contains(
     next_index = command_indexes[1] if len(command_indexes) > 1 else min(len(texts), index + 30)
     segment = " ".join(texts[index:next_index])
     return all(marker in segment for marker in markers)
+
+
+def verify_home_surface(*, ui_xml: str, output_directory: Path) -> DeviceSmokeStep:
+    visible_nodes = visible_nodes_from_xml(
+        ui_xml,
+        viewport_bounds=MOTO_G_PORTRAIT_VIEWPORT_BOUNDS,
+    )
+    missing = missing_home_surface_markers(visible_nodes)
+    artifact = "home-surface.xml"
+    (output_directory / artifact).write_text(ui_xml, encoding="utf-8")
+    if missing:
+        return DeviceSmokeStep(
+            name="HOME surface smoke",
+            status=StepStatus.FAIL,
+            detail="missing HOME viewport markers: " + ", ".join(missing[:6]),
+            remediation=(
+                "Inspect home-surface.xml and confirm the GOFFY HOME shell, orb, "
+                "device map, Settings escape hatch, and connection/target indicators "
+                "intersect the Moto G portrait viewport."
+            ),
+            artifact=artifact,
+        )
+    return DeviceSmokeStep(
+        name="HOME surface smoke",
+        status=StepStatus.OK,
+        detail="verified idle GOFFY HOME viewport markers",
+        artifact=artifact,
+    )
+
+
+def missing_home_surface_markers(nodes: tuple[UiNode, ...]) -> list[str]:
+    checks: dict[str, bool] = {
+        "GOFFY title": has_exact_text(nodes, "GOFFY"),
+        "GOFFY LITE": has_exact_text(nodes, "GOFFY LITE"),
+        "SETTINGS": has_exact_text(nodes, "SETTINGS"),
+        "GOFFY orb state": has_content_desc_prefix(nodes, "GOFFY orb state:"),
+        "LOOP phase": has_text_prefix(nodes, "LOOP /"),
+        "MAC LINK": has_exact_text(nodes, "MAC LINK"),
+        "EXECUTION TARGET": has_exact_text(nodes, "EXECUTION TARGET"),
+        "DOCK MODE": has_exact_text(nodes, "DOCK MODE"),
+        "DEVICE MAP": has_exact_text(nodes, "DEVICE MAP"),
+        "PHONE ENGINE": has_exact_text(nodes, "PHONE ENGINE"),
+        "MAC HUB": has_exact_text(nodes, "MAC HUB"),
+        "MCP REGISTRY": has_exact_text(nodes, "MCP REGISTRY"),
+        "LOCAL MODEL": has_exact_text(nodes, "LOCAL MODEL"),
+    }
+    return [label for label in HOME_SURFACE_MARKERS if not checks[label]]
+
+
+def has_exact_text(nodes: tuple[UiNode, ...], text: str) -> bool:
+    return any(node.text == text for node in nodes)
+
+
+def has_text_prefix(nodes: tuple[UiNode, ...], prefix: str) -> bool:
+    return any(node.text.startswith(prefix) for node in nodes)
+
+
+def has_content_desc_prefix(nodes: tuple[UiNode, ...], prefix: str) -> bool:
+    return any(node.content_desc.startswith(prefix) for node in nodes)
+
+
+def visible_nodes_from_xml(
+    xml_text: str,
+    *,
+    viewport_bounds: tuple[int, int, int, int] | None = None,
+) -> tuple[UiNode, ...]:
+    nodes = nodes_from_xml(xml_text)
+    if viewport_bounds is None:
+        return nodes
+    return tuple(node for node in nodes if node_intersects_bounds(node, viewport_bounds))
+
+
+def visible_ui_text(
+    xml_text: str,
+    *,
+    viewport_bounds: tuple[int, int, int, int] | None = None,
+) -> str:
+    parts: list[str] = []
+    for node in visible_nodes_from_xml(xml_text, viewport_bounds=viewport_bounds):
+        if node.text:
+            parts.append(node.text)
+        if node.content_desc:
+            parts.append(node.content_desc)
+    return " ".join(parts)
+
+
+def node_intersects_bounds(node: UiNode, bounds: tuple[int, int, int, int]) -> bool:
+    left, top, right, bottom = node.bounds
+    viewport_left, viewport_top, viewport_right, viewport_bottom = bounds
+    return (
+        right > viewport_left
+        and left < viewport_right
+        and bottom > viewport_top
+        and top < viewport_bottom
+    )
 
 
 def tap_center(

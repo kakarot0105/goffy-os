@@ -111,21 +111,22 @@ def test_execute_runs_fixed_modeldebug_observation_flow(
     model = tmp_path / "qwen3_0_6b_mixed_int4.litertlm"
     model.write_text("model", encoding="utf-8")
     seen: list[tuple[str, ...]] = []
-    xml_sequence = iter(
-        [
-            disabled_runtime_xml(),
-            disabled_runtime_xml(),
-            enabled_runtime_xml(),
-            enabled_runtime_with_command_xml(),
-            enabled_runtime_with_command_xml(),
-            enabled_runtime_with_command_xml(),
-            enabled_runtime_with_command_xml(),
-            terminal_observation_xml(),
-            terminal_observation_xml(),
-        ]
-    )
+    xml_values = [
+        disabled_runtime_xml(),
+        disabled_runtime_xml(),
+        enabled_runtime_xml(),
+        enabled_runtime_with_command_xml(),
+        enabled_runtime_with_command_xml(),
+        enabled_runtime_with_command_xml(),
+        enabled_runtime_with_typed_command_xml(),
+        terminal_observation_xml(),
+        terminal_observation_xml(),
+    ]
+    xml_sequence = iter(xml_values)
+    xml_dump_count = 0
 
     def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        nonlocal xml_dump_count
         normalized = tuple(str(part) for part in command)
         seen.append(normalized)
         if normalized == ("/opt/android/adb", "devices", "-l"):
@@ -151,7 +152,11 @@ def test_execute_runs_fixed_modeldebug_observation_flow(
         if normalized[3:6] == ("shell", "uiautomator", "dump"):
             return CommandResult(0, "UI hierchary dumped\n", "")
         if normalized[3:5] == ("exec-out", "cat"):
-            return CommandResult(0, next(xml_sequence), "")
+            xml_dump_count += 1
+            try:
+                return CommandResult(0, next(xml_sequence), "")
+            except StopIteration:
+                return CommandResult(0, terminal_observation_xml(), "")
         if normalized[3:5] == ("shell", "input"):
             return CommandResult(0, "", "")
         if normalized[3:] == ("shell", "dumpsys", "battery"):
@@ -176,6 +181,7 @@ def test_execute_runs_fixed_modeldebug_observation_flow(
     assert report.ok
     assert report.executed
     assert report.observation_elapsed_millis is not None
+    assert xml_dump_count <= len(xml_values) + 1
     assert (tmp_path / "artifacts" / "final-ui.xml").is_file()
     assert any(
         command[3:9]
@@ -369,6 +375,22 @@ def enabled_runtime_with_command_xml() -> str:
     )
 
 
+def enabled_runtime_with_typed_command_xml() -> str:
+    return ui_xml(
+        [
+            "GOFFY",
+            "GOFFY LITE",
+            "OBSERVE ONLY",
+            READY_TEXT,
+            "TASK TIMELINE",
+            "No actions yet. Every GOFFY step will appear here.",
+            "Send",
+        ],
+        edit_text=True,
+        edit_text_value="open settings",
+    )
+
+
 def terminal_observation_xml() -> str:
     return ui_xml(
         [
@@ -392,7 +414,7 @@ def terminal_observation_xml() -> str:
     )
 
 
-def ui_xml(texts: list[str], *, edit_text: bool) -> str:
+def ui_xml(texts: list[str], *, edit_text: bool, edit_text_value: str = "") -> str:
     nodes = []
     top = 10
     for index, text in enumerate(texts):
@@ -409,7 +431,7 @@ def ui_xml(texts: list[str], *, edit_text: bool) -> str:
         nodes.append(
             node_xml(
                 index=len(nodes),
-                text="",
+                text=edit_text_value,
                 class_name="android.widget.EditText",
                 top=top,
             )

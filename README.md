@@ -533,9 +533,11 @@ That flow first requires exactly one authorized Moto G target, or an explicit
 `--device-serial` when multiple devices are connected, and then pins every ADB
 call with `-s <device-serial>`. It configures `adb reverse tcp:8787 tcp:8787`,
 installs the debug APK, force-stops and launches GOFFY, collapses the Hub setup
-card if needed, types only the fixed `check my battery level` smoke command,
-verifies that a fresh PHONE task card appeared with expected markers, captures a
-screenshot, and saves bounded GOFFY process logcat under
+card if needed, verifies the launch-visible HOME shell, connection, target, and
+device-map markers from `after-launch.xml` into `home-surface.xml`, types only
+the fixed `check my battery level` smoke command, verifies that a fresh PHONE
+task card appeared with expected markers, captures a screenshot, and saves
+bounded GOFFY process logcat under
 `.goffy-validation/device-smoke/`. Add `--include-mac` only when the Hub is
 already running and the phone's saved Hub link is valid, or pass a short-lived
 local debug token file under `.goffy-validation`:
