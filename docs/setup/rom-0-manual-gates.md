@@ -98,6 +98,12 @@ source URLs with credentials, query, or fragment components, writes only under a
 non-symlinked `.goffy-validation` path when `--output` is used, and performs no
 network, ADB, fastboot, unlock, flash, or root action.
 
+Do not create stock-restore evidence from nearby firmware names. For the current
+Moto G 2025 `kansas` unit, public source checks on 2026-07-21 confirmed the
+installed build `W1VKS36H.9-12-9-8-2` in Verizon and PhoneCopy metadata, while
+the Lolinet Kansas RETUS mirror only exposed nearby archives. Nearby firmware is
+not rollback evidence; ROM-0 still requires an exact archive plus SHA-256.
+
 ## Rollback Doc Requirements
 
 Start from [`kansas-stock-rollback.template.md`](kansas-stock-rollback.template.md).

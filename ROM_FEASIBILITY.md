@@ -139,6 +139,34 @@ Acceptance criteria:
 The exact stock package checksum remains open because we have not downloaded or
 hash-recorded a restore archive.
 
+## Current Stock Firmware Candidate Evidence
+
+Current stock-candidate scan date: 2026-07-21.
+
+- Installed build from the phone: `W1VKS36H.9-12-9-8-2`,
+  incremental `ebe4e3-2b6752`, security patch `2026-06-01`.
+- Verizon's Moto G 2025
+  [software-update page](https://www.verizon.com/support/motorola-moto-g-update/)
+  lists
+  `W1VKS36H.9-12-9-8-2` as System Update 12, release date `2026-06-18`,
+  Android security patch level June 2026.
+- PhoneCopy's public
+  [Moto G 5G 2025 device page](https://www.phonecopy.com/en/phones/view/motorola_moto_g_5g_2025)
+  corroborates
+  `kansas_g_sys/kansas` with `MT6835` and includes
+  `w1vks36h.9-12-9-8-2` in observed Android 16 versions.
+- Lolinet's
+  [Kansas RETUS mirror](https://mirrors.lolinet.com/firmware/lenomola/2025/kansas/official/RETUS/)
+  lists nearby archives including
+  `XT2513-1_KANSAS_RETUS_16_W1VK36H.9-12...` and
+  `XT2513-1_KANSAS_RETUS_16_W1VKS36H.9-12-1...`, but not the exact installed
+  `W1VKS36H.9-12-9-8-2` archive.
+
+Decision: nearby firmware is not rollback evidence. ROM-0 remains blocked until
+Motorola Software Fix, Verizon/Motorola repair tooling, or a verified firmware
+source provides an archive that matches the exact device variant and installed
+build, and we record its SHA-256.
+
 ## Current Reuse Prior Art Decisions
 
 Current reuse scan date: 2026-07-21.

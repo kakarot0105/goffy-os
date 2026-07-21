@@ -24,6 +24,7 @@
 - [x] Dry-run-first AOSP product import generator for signed GOFFY APK staging
 - [x] Offline ROM-0 readiness reporter for probe, manual gate, and signed APK evidence
 - [x] Android Home-shell intent declared, security-scanned, and physically queried
+- [x] Public installed-build provenance recorded; exact stock archive still missing
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist
 - [ ] User-approved destructive unlock/flash decision point
