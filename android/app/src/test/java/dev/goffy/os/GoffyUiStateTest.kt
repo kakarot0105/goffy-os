@@ -121,6 +121,29 @@ class GoffyUiStateTest {
     }
 
     @Test
+    fun tokenRotationReminderIsShownOnlyForPersistentPairing() {
+        val reminder = HubTokenRotationReminder(
+            tokenAgeDays = 31,
+            message = "x".repeat(220),
+        )
+
+        val paired = GoffyUiState(hubEndpoint = endpoint).hubConfigured(
+            endpoint,
+            persistent = true,
+            hubTokenRotationReminder = reminder,
+        )
+        val development = GoffyUiState(hubEndpoint = endpoint).hubConfigured(
+            endpoint,
+            persistent = false,
+            hubTokenRotationReminder = reminder,
+        )
+
+        assertEquals(31L, paired.hubTokenRotationReminder?.tokenAgeDays)
+        assertEquals(180, paired.hubTokenRotationReminder?.message?.length)
+        assertNull(development.hubTokenRotationReminder)
+    }
+
+    @Test
     fun rotationStateIsAnExclusiveLinkOperation() {
         val state = GoffyUiState(hubEndpoint = endpoint).hubRotationStarted()
 

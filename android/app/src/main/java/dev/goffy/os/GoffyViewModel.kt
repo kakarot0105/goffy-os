@@ -96,6 +96,7 @@ class GoffyViewModel internal constructor(
     private val nextTaskId: () -> UUID,
     private val approvalTtlMillis: Long = DEFAULT_APPROVAL_TTL_MILLIS,
     private val nowMillis: () -> Long = System::currentTimeMillis,
+    private val tokenRotationReminderAgeMillis: Long = DEFAULT_TOKEN_ROTATION_REMINDER_AGE_MILLIS,
     private val auditStore: TerminalAuditStore = NoOpTerminalAuditStore,
     private val auditDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val credentialDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -162,6 +163,7 @@ class GoffyViewModel internal constructor(
     private var hubConfig: HubConfig? = null
     private var pairedCredentialId: UUID? = null
     private var pairedCredentialCreatedAt: Instant? = null
+    private var pairedCredentialTokenIssuedAt: Instant? = null
     private var pairedHubIdentity: HubIdentityPin? = null
     private var deviceId: String = deviceId
     private var activeJob: Job? = null
@@ -174,6 +176,9 @@ class GoffyViewModel internal constructor(
 
     init {
         require(approvalTtlMillis > 0) { "approvalTtlMillis must be positive" }
+        require(tokenRotationReminderAgeMillis > 0) {
+            "tokenRotationReminderAgeMillis must be positive"
+        }
         restoreLocalModelSettings()
         restoreHubCredential()
         observeTerminalAudit()
@@ -182,6 +187,13 @@ class GoffyViewModel internal constructor(
     fun updateChargingState(charging: Boolean) {
         if (mutableUiState.value.charging == charging) return
         mutableUiState.value = mutableUiState.value.copy(charging = charging)
+    }
+
+    fun refreshForegroundHubLinkState() {
+        val tokenIssuedAt = pairedCredentialTokenIssuedAt
+        mutableUiState.value = mutableUiState.value.refreshHubTokenRotationReminder(
+            if (tokenIssuedAt != null) tokenRotationReminder(tokenIssuedAt) else null,
+        )
     }
 
     private fun restoreHubCredential() {
@@ -203,6 +215,7 @@ class GoffyViewModel internal constructor(
             when (loaded) {
                 HubCredentialLoadResult.Empty -> {
                     pairedCredentialCreatedAt = null
+                    pairedCredentialTokenIssuedAt = null
                     pairedHubIdentity = null
                     mutableUiState.value = mutableUiState.value.hubRestoreEmpty()
                 }
@@ -210,6 +223,7 @@ class GoffyViewModel internal constructor(
                     hubConfig = null
                     pairedCredentialId = null
                     pairedCredentialCreatedAt = null
+                    pairedCredentialTokenIssuedAt = null
                     pairedHubIdentity = null
                     mutableUiState.value = mutableUiState.value.hubRestoreFailed(
                         "The saved Hub credential was unreadable and has been removed. Pair again.",
@@ -220,17 +234,22 @@ class GoffyViewModel internal constructor(
                         hubConfig = loaded.credential.toHubConfig(allowInsecureLoopback)
                         pairedCredentialId = loaded.credential.credentialId
                         pairedCredentialCreatedAt = loaded.credential.createdAt
+                        pairedCredentialTokenIssuedAt = loaded.credential.tokenIssuedAt
                         pairedHubIdentity = loaded.credential.hubIdentity
                         deviceId = loaded.credential.deviceId
                         mutableUiState.value = mutableUiState.value.hubConfigured(
                             loaded.credential.endpoint,
                             persistent = true,
                             hubIdentityFingerprint = loaded.credential.hubIdentity.fingerprint,
+                            hubTokenRotationReminder = tokenRotationReminder(
+                                loaded.credential.tokenIssuedAt,
+                            ),
                         )
                     } catch (_: Exception) {
                         hubConfig = null
                         pairedCredentialId = null
                         pairedCredentialCreatedAt = null
+                        pairedCredentialTokenIssuedAt = null
                         pairedHubIdentity = null
                         runCatching {
                             withContext(credentialDispatcher) { credentialStore.clear() }
@@ -398,6 +417,7 @@ class GoffyViewModel internal constructor(
         hubConfig = config
         pairedCredentialId = null
         pairedCredentialCreatedAt = null
+        pairedCredentialTokenIssuedAt = null
         pairedHubIdentity = null
         mutableUiState.value = mutableUiState.value.hubConfigured(config.endpoint)
         return true
@@ -413,6 +433,7 @@ class GoffyViewModel internal constructor(
         }
         pairedCredentialId = null
         pairedCredentialCreatedAt = null
+        pairedCredentialTokenIssuedAt = null
         pairedHubIdentity = null
         val parsedEndpoint = try {
             HubEndpoint.create(endpoint, allowInsecureLoopback)
@@ -440,6 +461,7 @@ class GoffyViewModel internal constructor(
                     deviceId = deviceId,
                     accessToken = issued.accessToken,
                     createdAt = issued.createdAt,
+                    tokenIssuedAt = issued.createdAt,
                     hubIdentity = issued.hubIdentity,
                     allowInsecureLoopback = allowInsecureLoopback,
                 )
@@ -450,12 +472,16 @@ class GoffyViewModel internal constructor(
                 hubConfig = persisted.toHubConfig(allowInsecureLoopback)
                 pairedCredentialId = persisted.credentialId
                 pairedCredentialCreatedAt = persisted.createdAt
+                pairedCredentialTokenIssuedAt = persisted.tokenIssuedAt
                 pairedHubIdentity = persisted.hubIdentity
                 deviceId = persisted.deviceId
                 mutableUiState.value = mutableUiState.value.hubConfigured(
                     persisted.endpoint,
                     persistent = true,
                     hubIdentityFingerprint = persisted.hubIdentity.fingerprint,
+                    hubTokenRotationReminder = tokenRotationReminder(
+                        persisted.tokenIssuedAt,
+                    ),
                 )
             } catch (error: CancellationException) {
                 throw error
@@ -470,6 +496,7 @@ class GoffyViewModel internal constructor(
                     hubConfig = null
                     pairedCredentialId = null
                     pairedCredentialCreatedAt = null
+                    pairedCredentialTokenIssuedAt = null
                     pairedHubIdentity = null
                     mutableUiState.value = mutableUiState.value.hubRestoreFailed(
                         "Pairing could not be stored and was not activated. Revoke any stale " +
@@ -494,6 +521,7 @@ class GoffyViewModel internal constructor(
         hubConfig = null
         pairedCredentialId = null
         pairedCredentialCreatedAt = null
+        pairedCredentialTokenIssuedAt = null
         pairedHubIdentity = null
         mutableUiState.value = mutableUiState.value.hubForgetStarted(nowMillis())
         linkJob = viewModelScope.launch {
@@ -598,6 +626,7 @@ class GoffyViewModel internal constructor(
                     deviceId = deviceId,
                     accessToken = rotated.accessToken,
                     createdAt = credentialCreatedAt,
+                    tokenIssuedAt = rotated.rotatedAt,
                     hubIdentity = hubIdentity,
                     allowInsecureLoopback = allowInsecureLoopback,
                 )
@@ -608,6 +637,7 @@ class GoffyViewModel internal constructor(
                 hubConfig = persisted.toHubConfig(allowInsecureLoopback)
                 pairedCredentialId = persisted.credentialId
                 pairedCredentialCreatedAt = persisted.createdAt
+                pairedCredentialTokenIssuedAt = persisted.tokenIssuedAt
                 pairedHubIdentity = persisted.hubIdentity
                 deviceId = persisted.deviceId
                 mutableUiState.value = mutableUiState.value.hubRotationSucceeded(
@@ -615,6 +645,7 @@ class GoffyViewModel internal constructor(
                         "Hub token rotated and saved. New Mac requests will reconnect.",
                         warning = false,
                     ),
+                    hubTokenRotationReminder = tokenRotationReminder(persisted.tokenIssuedAt),
                 )
             } catch (error: CancellationException) {
                 throw error
@@ -623,6 +654,7 @@ class GoffyViewModel internal constructor(
                     hubConfig = null
                     pairedCredentialId = null
                     pairedCredentialCreatedAt = null
+                    pairedCredentialTokenIssuedAt = null
                     pairedHubIdentity = null
                     runCatching {
                         withContext(credentialDispatcher) { credentialStore.clear() }
@@ -644,6 +676,7 @@ class GoffyViewModel internal constructor(
         hubConfig = null
         pairedCredentialId = null
         pairedCredentialCreatedAt = null
+        pairedCredentialTokenIssuedAt = null
         pairedHubIdentity = null
         mutableUiState.value = mutableUiState.value.hubPairingRejected(
             "Pairing stopped when GOFFY left the foreground. Revoke any newly listed " +
@@ -709,6 +742,16 @@ class GoffyViewModel internal constructor(
                 nowMillis(),
             )
         }
+    }
+
+    private fun tokenRotationReminder(tokenIssuedAt: Instant): HubTokenRotationReminder? {
+        val ageMillis = nowMillis() - tokenIssuedAt.toEpochMilli()
+        if (ageMillis < tokenRotationReminderAgeMillis) return null
+        val ageDays = (ageMillis / MILLIS_PER_DAY).coerceAtLeast(1)
+        return HubTokenRotationReminder(
+            tokenAgeDays = ageDays,
+            message = "Hub token is ${ageDays}d old. Rotate it from this card while USB loopback is active.",
+        )
     }
 
     fun recordForegroundQrScan(rawPayload: String) {
@@ -1253,6 +1296,8 @@ class GoffyViewModel internal constructor(
         const val DEBUG_HUB_ENDPOINT = "ws://127.0.0.1:8787/ws/v1"
         const val RELEASE_HUB_ENDPOINT_HINT = "wss://your-mac.example:8787/ws/v1"
         const val DEFAULT_APPROVAL_TTL_MILLIS = 60_000L
+        const val MILLIS_PER_DAY = 86_400_000L
+        const val DEFAULT_TOKEN_ROTATION_REMINDER_AGE_MILLIS = 30L * MILLIS_PER_DAY
         const val APPROVAL_PREVIEW_LENGTH = 160
         const val QR_SCAN_COMMAND = "Read foreground QR code"
         const val OCR_READ_COMMAND = "Read foreground text"

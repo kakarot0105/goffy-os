@@ -46,17 +46,25 @@ class AndroidHubCredentialStore internal constructor(
             val plaintext = cipher.open(sealed)
             if (plaintext.size > MAX_PLAINTEXT_BYTES) throw IllegalArgumentException("record too large")
             val value = json.parseToJsonElement(plaintext.toString(Charsets.UTF_8)).jsonObject
-            value.requireExactKeys(RECORD_KEYS)
+            val schemaVersion = value.requiredInt("schemaVersion")
+            value.requireExactKeys(recordKeysFor(schemaVersion))
             val wire = StoredCredentialWire(
-                schemaVersion = value.requiredInt("schemaVersion"),
+                schemaVersion = schemaVersion,
                 endpoint = value.requiredString("endpoint"),
                 credentialId = value.requiredString("credentialId"),
                 deviceId = value.requiredString("deviceId"),
                 accessToken = value.requiredString("accessToken"),
                 createdAt = value.requiredString("createdAt"),
+                tokenIssuedAt = if (schemaVersion == SCHEMA_VERSION) {
+                    value.requiredString("tokenIssuedAt")
+                } else {
+                    value.requiredString("createdAt")
+                },
                 hubIdentity = value.requiredObject("hubIdentity"),
             )
-            if (wire.schemaVersion != SCHEMA_VERSION) throw IllegalArgumentException("schema mismatch")
+            if (wire.schemaVersion !in SUPPORTED_SCHEMA_VERSIONS) {
+                throw IllegalArgumentException("schema mismatch")
+            }
             val identity = wire.hubIdentity
             identity.requireExactKeys(HUB_IDENTITY_KEYS)
             if (
@@ -72,6 +80,7 @@ class AndroidHubCredentialStore internal constructor(
                 deviceId = wire.deviceId,
                 accessToken = wire.accessToken,
                 createdAt = java.time.Instant.parse(wire.createdAt),
+                tokenIssuedAt = java.time.Instant.parse(wire.tokenIssuedAt),
                 hubIdentity = HubIdentityPin.create(
                     hubId = java.util.UUID.fromString(identity.requiredString("hubId")),
                     fingerprint = identity.requiredString("fingerprint"),
@@ -96,6 +105,7 @@ class AndroidHubCredentialStore internal constructor(
             put("deviceId", credential.deviceId)
             put("accessToken", credential.accessToken)
             put("createdAt", credential.createdAt.toString())
+            put("tokenIssuedAt", credential.tokenIssuedAt.toString())
             put("hubIdentity", buildJsonObject {
                 put("schemaVersion", HubIdentityPin.SCHEMA_VERSION)
                 put("hubId", credential.hubIdentity.hubId.toString())
@@ -175,20 +185,22 @@ class AndroidHubCredentialStore internal constructor(
         val deviceId: String,
         val accessToken: String,
         val createdAt: String,
+        val tokenIssuedAt: String,
         val hubIdentity: JsonObject,
     ) {
         override fun toString(): String =
             "StoredCredentialWire(schemaVersion=$schemaVersion, endpoint=$endpoint, " +
                 "credentialId=$credentialId, deviceId=$deviceId, accessToken=REDACTED, " +
-                "createdAt=$createdAt, hubIdentity=$hubIdentity)"
+                "createdAt=$createdAt, tokenIssuedAt=$tokenIssuedAt, hubIdentity=$hubIdentity)"
     }
 
     private companion object {
         const val CREDENTIAL_FILE_NAME = "paired-hub-credential.v1"
-        const val SCHEMA_VERSION = 2
+        const val SCHEMA_VERSION = 3
+        const val LEGACY_SCHEMA_VERSION = 2
         const val MAX_PLAINTEXT_BYTES = 8_192
         const val MAX_SEALED_BYTES = 12_288
-        val RECORD_KEYS = setOf(
+        val RECORD_KEYS_V2 = setOf(
             "schemaVersion",
             "endpoint",
             "credentialId",
@@ -197,6 +209,8 @@ class AndroidHubCredentialStore internal constructor(
             "createdAt",
             "hubIdentity",
         )
+        val RECORD_KEYS_V3 = RECORD_KEYS_V2 + "tokenIssuedAt"
+        val SUPPORTED_SCHEMA_VERSIONS = setOf(LEGACY_SCHEMA_VERSION, SCHEMA_VERSION)
         val HUB_IDENTITY_KEYS = setOf(
             "schemaVersion",
             "hubId",
@@ -214,6 +228,12 @@ class AndroidHubCredentialStore internal constructor(
 
         fun JsonObject.requireExactKeys(expected: Set<String>) {
             if (keys != expected) throw SerializationException("unexpected JSON fields")
+        }
+
+        fun recordKeysFor(schemaVersion: Int): Set<String> = when (schemaVersion) {
+            LEGACY_SCHEMA_VERSION -> RECORD_KEYS_V2
+            SCHEMA_VERSION -> RECORD_KEYS_V3
+            else -> throw SerializationException("unsupported credential schema")
         }
 
         fun JsonObject.requiredString(name: String): String {

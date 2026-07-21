@@ -19,6 +19,7 @@
     <string name="hub_degraded">LOCAL LINK NEEDS ATTENTION</string>
     <string name="hub_endpoint_label">WebSocket endpoint</string>
     <string name="hub_identity_fingerprint">HUB ID / %1$s</string>
+    <string name="hub_token_rotation_reminder">TOKEN AGE / %1$d DAYS / ROTATE WHILE USB LOOPBACK IS ACTIVE</string>
     <string name="hub_pairing_challenge_label">Pairing bundle JSON</string>
     <string name="hub_pairing_qr_note">Scan the Hub QR bundle only while this setup card is open, or paste the JSON manually.</string>
     <string name="hub_token_label">Development bearer token</string>

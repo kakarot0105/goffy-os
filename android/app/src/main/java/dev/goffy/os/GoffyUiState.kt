@@ -55,6 +55,11 @@ data class LocalModelNotice(
     val warning: Boolean,
 )
 
+data class HubTokenRotationReminder(
+    val tokenAgeDays: Long,
+    val message: String,
+)
+
 data class GoffyUiState(
     val macConnection: MacConnectionState = MacConnectionState.DISCONNECTED,
     val executionTarget: ExecutionTarget = ExecutionTarget.PHONE,
@@ -63,6 +68,7 @@ data class GoffyUiState(
     val hubEndpoint: String,
     val linkError: String? = null,
     val linkNotice: HubLinkNotice? = null,
+    val hubTokenRotationReminder: HubTokenRotationReminder? = null,
     val developmentTokenAllowed: Boolean = false,
     val pendingApproval: PendingApproval? = null,
     val auditPersistence: AuditPersistenceState = AuditPersistenceState.LOADING,
@@ -105,11 +111,17 @@ data class GoffyUiState(
         endpoint: String,
         persistent: Boolean = false,
         hubIdentityFingerprint: String? = null,
+        hubTokenRotationReminder: HubTokenRotationReminder? = null,
     ): GoffyUiState = copy(
         hubLinkState = if (persistent) HubLinkState.PAIRED else HubLinkState.DEVELOPMENT,
         hubEndpoint = endpoint,
         hubIdentityFingerprint = if (persistent) {
             hubIdentityFingerprint?.take(MAX_FINGERPRINT_LENGTH)
+        } else {
+            null
+        },
+        hubTokenRotationReminder = if (persistent) {
+            hubTokenRotationReminder?.bounded()
         } else {
             null
         },
@@ -160,6 +172,7 @@ data class GoffyUiState(
     fun hubRestoreEmpty(): GoffyUiState = copy(
         hubLinkState = HubLinkState.UNPAIRED,
         hubIdentityFingerprint = null,
+        hubTokenRotationReminder = null,
         linkError = null,
         linkNotice = null,
         hubOperatorAudit = HubOperatorAuditUiState(),
@@ -168,6 +181,7 @@ data class GoffyUiState(
     fun hubRestoreFailed(message: String): GoffyUiState = copy(
         hubLinkState = HubLinkState.DEGRADED,
         hubIdentityFingerprint = null,
+        hubTokenRotationReminder = null,
         linkError = message.take(MAX_ERROR_LENGTH),
         linkNotice = null,
         hubOperatorAudit = HubOperatorAuditUiState(),
@@ -177,6 +191,7 @@ data class GoffyUiState(
         hubLinkState = HubLinkState.PAIRING,
         hubEndpoint = endpoint,
         hubIdentityFingerprint = null,
+        hubTokenRotationReminder = null,
         linkError = null,
         linkNotice = null,
         hubOperatorAudit = HubOperatorAuditUiState(),
@@ -185,6 +200,7 @@ data class GoffyUiState(
     fun hubPairingRejected(message: String): GoffyUiState = copy(
         hubLinkState = HubLinkState.UNPAIRED,
         hubIdentityFingerprint = null,
+        hubTokenRotationReminder = null,
         linkError = message.take(MAX_ERROR_LENGTH),
         linkNotice = null,
         hubOperatorAudit = HubOperatorAuditUiState(),
@@ -196,6 +212,7 @@ data class GoffyUiState(
         macConnection = MacConnectionState.DISCONNECTED,
         hubLinkState = HubLinkState.FORGETTING,
         hubIdentityFingerprint = null,
+        hubTokenRotationReminder = null,
         linkError = null,
         linkNotice = null,
         timeline = timeline.cancelActive(terminalAtEpochMillis),
@@ -210,24 +227,38 @@ data class GoffyUiState(
         hubLinkState = HubLinkState.ROTATING,
         linkError = null,
         linkNotice = null,
+        hubTokenRotationReminder = null,
         timeline = timeline.cancelActive(terminalAtEpochMillis),
         pendingApproval = null,
         hubOperatorAudit = HubOperatorAuditUiState(),
     )
 
-    fun hubRotationSucceeded(notice: HubLinkNotice): GoffyUiState = copy(
+    fun hubRotationSucceeded(
+        notice: HubLinkNotice,
+        hubTokenRotationReminder: HubTokenRotationReminder?,
+    ): GoffyUiState = copy(
         macConnection = MacConnectionState.DISCONNECTED,
         hubLinkState = HubLinkState.PAIRED,
         linkError = null,
         linkNotice = notice.bounded(),
+        hubTokenRotationReminder = hubTokenRotationReminder?.bounded(),
         pendingApproval = null,
         hubOperatorAudit = HubOperatorAuditUiState(),
     )
+
+    fun refreshHubTokenRotationReminder(
+        hubTokenRotationReminder: HubTokenRotationReminder?,
+    ): GoffyUiState = if (hubLinkState == HubLinkState.PAIRED) {
+        copy(hubTokenRotationReminder = hubTokenRotationReminder?.bounded())
+    } else {
+        copy(hubTokenRotationReminder = null)
+    }
 
     fun hubRotationFailed(message: String): GoffyUiState = copy(
         macConnection = MacConnectionState.DISCONNECTED,
         hubLinkState = HubLinkState.DEGRADED,
         hubIdentityFingerprint = null,
+        hubTokenRotationReminder = null,
         linkError = message.take(MAX_ERROR_LENGTH),
         linkNotice = null,
         pendingApproval = null,
@@ -243,6 +274,7 @@ data class GoffyUiState(
         hubLinkState = HubLinkState.UNPAIRED,
         hubEndpoint = defaultEndpoint,
         hubIdentityFingerprint = null,
+        hubTokenRotationReminder = null,
         linkError = null,
         linkNotice = notice.bounded(),
         timeline = timeline.cancelActive(terminalAtEpochMillis),
@@ -259,6 +291,7 @@ data class GoffyUiState(
         hubLinkState = HubLinkState.DEGRADED,
         hubEndpoint = defaultEndpoint,
         hubIdentityFingerprint = null,
+        hubTokenRotationReminder = null,
         linkError = message.take(MAX_ERROR_LENGTH),
         linkNotice = null,
         timeline = timeline.cancelActive(terminalAtEpochMillis),
@@ -442,6 +475,7 @@ data class GoffyUiState(
         const val MAX_NOTICE_LENGTH = 256
         const val MAX_FINGERPRINT_LENGTH = 80
         const val MAX_LOCAL_MODEL_NOTICE_LENGTH = 180
+        const val MAX_TOKEN_ROTATION_NOTICE_LENGTH = 180
         const val MAX_HUB_AUDIT_LABEL_LENGTH = 32
         const val MAX_HUB_OPERATOR_AUDIT_EVENTS = 20
     }
@@ -452,6 +486,10 @@ data class GoffyUiState(
 
     private fun LocalModelNotice.bounded(): LocalModelNotice = copy(
         message = message.take(MAX_LOCAL_MODEL_NOTICE_LENGTH),
+    )
+
+    private fun HubTokenRotationReminder.bounded(): HubTokenRotationReminder = copy(
+        message = message.take(MAX_TOKEN_ROTATION_NOTICE_LENGTH),
     )
 }
 

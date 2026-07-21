@@ -1037,6 +1037,19 @@ private fun HubLinkSection(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                state.hubTokenRotationReminder?.let { reminder ->
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(
+                            R.string.hub_token_rotation_reminder,
+                            reminder.tokenAgeDays,
+                        ),
+                        color = Warning,
+                        fontSize = 11.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             TextButton(onClick = onToggleSetup) {
                 Text(stringResource(if (showSetup) R.string.hide_link_setup else R.string.edit_link_setup))

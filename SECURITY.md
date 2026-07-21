@@ -149,8 +149,12 @@ include real credentials or unrelated personal data.
 - `Rotate token` requires an explicit confirmation and runs only for paired
   loopback links. Android cancels active work before the request, accepts only a
   matching returned credential ID, preserves the existing endpoint, credential ID,
-  descriptive phone ID, and original creation time, and activates the new bearer
-  only after encrypted read-back verification succeeds.
+  descriptive phone ID, and original creation time, records the returned bearer
+  issue time, and activates the new bearer only after encrypted read-back
+  verification succeeds.
+- Android displays a foreground token-rotation reminder when the current paired
+  bearer issue time is older than the local policy threshold. The reminder does
+  not schedule background work, contact the Hub, or rotate automatically.
 - Android makes exactly one rotation request and does not retry ambiguous
   transport or HTTP failures. If Hub rotation, response validation, or local
   persistence fails, Android disables Mac access, best-effort clears local paired

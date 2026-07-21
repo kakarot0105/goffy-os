@@ -32,7 +32,24 @@ class AndroidHubCredentialStoreTest {
         assertFalse(diskBytes.toString(Charsets.UTF_8).contains(credential.endpoint))
         assertTrue(reopened is HubCredentialLoadResult.Loaded)
         assertTrue((reopened as HubCredentialLoadResult.Loaded).credential.sameAuthority(credential))
+        assertEquals(Instant.parse("2026-07-13T16:05:00Z"), reopened.credential.tokenIssuedAt)
         assertFalse(reopened.toString().contains(ACCESS_TOKEN))
+    }
+
+    @Test
+    fun legacyPinnedRecordMigratesTokenIssueTimeFromCreationTime() {
+        val context = RuntimeEnvironment.getApplication()
+        credentialFile().delete()
+        val cipher = XorCredentialCipher()
+        credentialFile().writeBytes(cipher.seal(LEGACY_SCHEMA_TWO_RECORD.toByteArray()))
+
+        val result = AndroidHubCredentialStore(context, true, cipher).load()
+
+        assertTrue(result is HubCredentialLoadResult.Loaded)
+        val credential = (result as HubCredentialLoadResult.Loaded).credential
+        assertEquals(Instant.parse("2026-07-13T16:00:00Z"), credential.createdAt)
+        assertEquals(credential.createdAt, credential.tokenIssuedAt)
+        assertTrue(credentialFile().exists())
     }
 
     @Test
@@ -109,6 +126,7 @@ class AndroidHubCredentialStoreTest {
         deviceId = "goffy-android-test",
         accessToken = ACCESS_TOKEN,
         createdAt = Instant.parse("2026-07-13T16:00:00Z"),
+        tokenIssuedAt = Instant.parse("2026-07-13T16:05:00Z"),
         hubIdentity = hubIdentityPin(),
         allowInsecureLoopback = true,
     )
@@ -158,5 +176,18 @@ class AndroidHubCredentialStoreTest {
                 "\"deviceId\":\"goffy-android-test\"," +
                 "\"accessToken\":\"$ACCESS_TOKEN\"," +
                 "\"createdAt\":\"2026-07-13T16:00:00Z\"}"
+        const val LEGACY_SCHEMA_TWO_RECORD =
+            "{\"schemaVersion\":2," +
+                "\"endpoint\":\"ws://127.0.0.1:8787/ws/v1\"," +
+                "\"credentialId\":\"22222222-2222-4222-8222-222222222222\"," +
+                "\"deviceId\":\"goffy-android-test\"," +
+                "\"accessToken\":\"$ACCESS_TOKEN\"," +
+                "\"createdAt\":\"2026-07-13T16:00:00Z\"," +
+                "\"hubIdentity\":{\"schemaVersion\":\"goffy.hub.identity.v1\"," +
+                "\"hubId\":\"33333333-3333-4333-8333-333333333333\"," +
+                "\"fingerprint\":\"$HUB_FINGERPRINT\"," +
+                "\"createdAt\":\"2026-07-13T15:59:00Z\"," +
+                "\"verifiedBy\":\"loopback_admin_session\"," +
+                "\"trustedLanSupported\":false}}"
     }
 }

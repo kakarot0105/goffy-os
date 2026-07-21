@@ -250,6 +250,95 @@ class GoffyViewModelTest {
     }
 
     @Test
+    fun stalePairedTokenShowsRotationReminderWithoutRotatingAutomatically() = runTest(dispatcher) {
+        val pairingGateway = RecordingPairingGateway()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            pairingGateway = pairingGateway,
+            credentialStore = RecordingCredentialStore(HubCredentialLoadResult.Loaded(storedCredential())),
+            nowMillis = {
+                Instant.parse("2026-07-15T16:00:00Z").toEpochMilli()
+            },
+            tokenRotationReminderAgeMillis = 24 * 60 * 60 * 1000L,
+        )
+        advanceUntilIdle()
+
+        val reminder = viewModel.uiState.value.hubTokenRotationReminder
+        assertEquals(HubLinkState.PAIRED, viewModel.uiState.value.hubLinkState)
+        assertEquals(2L, reminder?.tokenAgeDays)
+        assertTrue(reminder?.message.orEmpty().contains("Rotate"))
+        assertEquals(0, pairingGateway.rotationCalls)
+        assertFalse(viewModel.uiState.value.toString().contains(token))
+    }
+
+    @Test
+    fun freshPairedTokenDoesNotShowRotationReminder() = runTest(dispatcher) {
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            credentialStore = RecordingCredentialStore(HubCredentialLoadResult.Loaded(storedCredential())),
+            nowMillis = {
+                Instant.parse("2026-07-13T20:00:00Z").toEpochMilli()
+            },
+            tokenRotationReminderAgeMillis = 24 * 60 * 60 * 1000L,
+        )
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.hubTokenRotationReminder)
+    }
+
+    @Test
+    fun foregroundRefreshShowsReminderWhenFreshTokenCrossesAgeThreshold() = runTest(dispatcher) {
+        var currentTime = Instant.parse("2026-07-13T20:00:00Z").toEpochMilli()
+        val pairingGateway = RecordingPairingGateway()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            pairingGateway = pairingGateway,
+            credentialStore = RecordingCredentialStore(HubCredentialLoadResult.Loaded(storedCredential())),
+            nowMillis = { currentTime },
+            tokenRotationReminderAgeMillis = 24 * 60 * 60 * 1000L,
+        )
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.hubTokenRotationReminder)
+
+        currentTime = Instant.parse("2026-07-15T16:00:00Z").toEpochMilli()
+        viewModel.refreshForegroundHubLinkState()
+
+        val reminder = viewModel.uiState.value.hubTokenRotationReminder
+        assertEquals(2L, reminder?.tokenAgeDays)
+        assertTrue(reminder?.message.orEmpty().contains("Rotate"))
+        assertEquals(0, pairingGateway.rotationCalls)
+        assertFalse(viewModel.uiState.value.toString().contains(token))
+    }
+
+    @Test
+    fun foregroundRefreshUsesRotatedTokenIssueTime() = runTest(dispatcher) {
+        var currentTime = Instant.parse("2026-07-15T16:00:00Z").toEpochMilli()
+        val pairingGateway = RecordingPairingGateway(
+            rotatedAt = Instant.parse("2026-07-15T15:59:00Z"),
+        )
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            pairingGateway = pairingGateway,
+            credentialStore = RecordingCredentialStore(HubCredentialLoadResult.Loaded(storedCredential())),
+            nowMillis = { currentTime },
+            tokenRotationReminderAgeMillis = 24 * 60 * 60 * 1000L,
+        )
+        advanceUntilIdle()
+        assertEquals(2L, viewModel.uiState.value.hubTokenRotationReminder?.tokenAgeDays)
+
+        viewModel.rotateHubCredential()
+        advanceUntilIdle()
+        assertNull(viewModel.uiState.value.hubTokenRotationReminder)
+
+        currentTime = Instant.parse("2026-07-17T16:00:00Z").toEpochMilli()
+        viewModel.refreshForegroundHubLinkState()
+
+        assertEquals(2L, viewModel.uiState.value.hubTokenRotationReminder?.tokenAgeDays)
+        assertEquals(1, pairingGateway.rotationCalls)
+        assertFalse(viewModel.uiState.value.toString().contains("rotated-token"))
+    }
+
+    @Test
     fun pairedHubAuditRefreshShowsOnlyBoundedSelfAuditState() = runTest(dispatcher) {
         val auditGateway = RecordingHubOperatorAuditGateway()
         val viewModel = createViewModel(
@@ -530,11 +619,16 @@ class GoffyViewModelTest {
             credentialStore.savedCredentials.single().createdAt,
         )
         assertEquals(
+            Instant.parse("2026-07-13T16:05:00Z"),
+            credentialStore.savedCredentials.single().tokenIssuedAt,
+        )
+        assertEquals(
             hubFingerprint,
             credentialStore.savedCredentials.single().hubIdentity.fingerprint,
         )
         assertEquals(HubLinkState.PAIRED, viewModel.uiState.value.hubLinkState)
         assertEquals(hubFingerprint, viewModel.uiState.value.hubIdentityFingerprint)
+        assertNull(viewModel.uiState.value.hubTokenRotationReminder)
         assertTrue(viewModel.uiState.value.linkNotice?.message.orEmpty().contains("rotated"))
         assertEquals(TaskPhase.CANCELLED, viewModel.uiState.value.timeline.entries.single().phase)
         assertFalse(viewModel.uiState.value.toString().contains("rotated-token"))
@@ -1520,6 +1614,7 @@ class GoffyViewModelTest {
         approvalTtlMillis: Long = 60_000,
         allowDevelopmentTokenConfiguration: Boolean = true,
         nowMillis: () -> Long = System::currentTimeMillis,
+        tokenRotationReminderAgeMillis: Long = 30L * 24 * 60 * 60 * 1000,
         auditStore: TerminalAuditStore = RecordingAuditStore(),
         localModelFallback: LocalModelIntentFallback = LocalModelIntentFallback {
             LocalModelIntentObservation.Disabled(
@@ -1560,6 +1655,7 @@ class GoffyViewModelTest {
             nextTaskId = { UUID.fromString("22222222-2222-4222-8222-222222222222") },
             approvalTtlMillis = approvalTtlMillis,
             nowMillis = nowMillis,
+            tokenRotationReminderAgeMillis = tokenRotationReminderAgeMillis,
             auditStore = auditStore,
             auditDispatcher = dispatcher,
             credentialDispatcher = dispatcher,
@@ -1599,6 +1695,7 @@ class GoffyViewModelTest {
         deviceId = "goffy-android-test",
         accessToken = "$token-xx",
         createdAt = Instant.parse("2026-07-13T16:00:00Z"),
+        tokenIssuedAt = Instant.parse("2026-07-13T16:00:00Z"),
         hubIdentity = hubIdentityPin(),
         allowInsecureLoopback = true,
     )
@@ -2009,6 +2106,7 @@ class GoffyViewModelTest {
     private inner class RecordingPairingGateway(
         private val failRevocation: Boolean = false,
         private val failRotation: Boolean = false,
+        private val rotatedAt: Instant = Instant.parse("2026-07-13T16:05:00Z"),
     ) : HubPairingGateway {
         var calls = 0
         var revocationCalls = 0
@@ -2061,7 +2159,7 @@ class GoffyViewModelTest {
             return RotatedHubCredential(
                 expectedCredentialId,
                 "rotated-token-that-is-long-enough-xx",
-                Instant.parse("2026-07-13T16:05:00Z"),
+                rotatedAt,
             )
         }
 

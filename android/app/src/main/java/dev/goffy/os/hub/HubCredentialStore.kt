@@ -56,6 +56,7 @@ class StoredHubCredential private constructor(
     val deviceId: String,
     internal val accessToken: String,
     val createdAt: Instant,
+    val tokenIssuedAt: Instant,
     val hubIdentity: HubIdentityPin,
 ) {
     companion object {
@@ -65,6 +66,7 @@ class StoredHubCredential private constructor(
             deviceId: String,
             accessToken: String,
             createdAt: Instant,
+            tokenIssuedAt: Instant = createdAt,
             hubIdentity: HubIdentityPin,
             allowInsecureLoopback: Boolean,
         ): StoredHubCredential {
@@ -75,12 +77,16 @@ class StoredHubCredential private constructor(
             if (accessToken.length !in MIN_TOKEN_LENGTH..MAX_TOKEN_LENGTH) {
                 throw HubCredentialStoreException("Stored Hub credential is invalid.")
             }
+            if (tokenIssuedAt.isBefore(createdAt)) {
+                throw HubCredentialStoreException("Stored Hub token issue time is invalid.")
+            }
             return StoredHubCredential(
                 endpoint,
                 credentialId,
                 deviceId,
                 accessToken,
                 createdAt,
+                tokenIssuedAt,
                 hubIdentity,
             )
         }
@@ -99,6 +105,7 @@ class StoredHubCredential private constructor(
             deviceId == other.deviceId &&
             accessToken == other.accessToken &&
             createdAt == other.createdAt &&
+            tokenIssuedAt == other.tokenIssuedAt &&
             hubIdentity.hubId == other.hubIdentity.hubId &&
             hubIdentity.fingerprint == other.hubIdentity.fingerprint &&
             hubIdentity.createdAt == other.hubIdentity.createdAt
@@ -106,5 +113,6 @@ class StoredHubCredential private constructor(
     override fun toString(): String =
         "StoredHubCredential(endpoint=$endpoint, credentialId=$credentialId, " +
             "deviceId=$deviceId, accessToken=REDACTED, createdAt=$createdAt, " +
+            "tokenIssuedAt=$tokenIssuedAt, " +
             "hubIdentity=$hubIdentity)"
 }

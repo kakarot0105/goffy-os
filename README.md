@@ -28,6 +28,9 @@ the capability boundary.
 > WebSocket, and MCP control-plane events, and exposes an explicit
 > USB-loopback-only Hub identity trust contract that blocks certificate,
 > public-key, and LAN trust claims until those are actually implemented.
+> Android paired links now track the current bearer issue time and show a
+> foreground token-rotation reminder when the bearer ages past local policy; no
+> background rotation is performed.
 > Physical Moto G PHONE and MAC
 > localhost smoke now verify the home shell, `phone.battery.status`, and
 > `mac.system_info` over USB `adb reverse`; physical Moto G LiteRT-LM
@@ -98,6 +101,8 @@ the capability boundary.
 - Foreground Android challenge redemption with API-26 Keystore AES-GCM storage,
   verified restart restore, paired self-revocation, and manual paired-token
   rotation
+- Foreground paired-token rotation reminder based on the current bearer issue
+  time; reminders do not rotate automatically or schedule background work
 - Foreground-only Android QR scanner for pairing bundles, with no image storage
   or automatic pairing after scan
 - Bounded, loopback-admin Hub operator audit event retrieval for pairing,
@@ -169,7 +174,8 @@ public Hub fingerprint from the bundle only after the redemption response return
 the same identity, reject bundles that claim certificate, public-key, or LAN
 trust, and restore the encrypted credential and fingerprint after restart.
 Hub-side token rotation is available over loopback, and Android exposes a
-confirmed manual rotation action for paired links.
+confirmed manual rotation action plus a foreground stale-token reminder for
+paired links.
 Generate the local QR artifact from the Mac with:
 
 ```bash

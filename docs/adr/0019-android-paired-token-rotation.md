@@ -25,7 +25,8 @@ foreground security action because it can invalidate the only local credential.
 - Require the returned `credentialId` to exactly match the stored paired
   credential.
 - Preserve the original endpoint, credential ID, descriptive phone ID, and
-  original credential creation time. Replace only the bearer.
+  original credential creation time. Replace only the bearer and current bearer
+  issue time.
 - Activate the rotated bearer only after encrypted local persistence and
   read-back verification succeed.
 - If Hub rotation, response validation, or local persistence is ambiguous or
@@ -44,8 +45,9 @@ The fail-closed policy may require re-pairing even when the old token would have
 remained valid. That is intentional because an ambiguous lost response can also
 mean the old token is already dead and the new token is unrecoverable.
 
-Automatic rotation schedules, rotation reminders, trusted LAN rotation, and
-physical Moto G process-failure validation remain future work.
+Foreground rotation reminders based on the current bearer issue time are handled
+by ADR 0036. Automatic rotation schedules, trusted LAN rotation, and physical
+Moto G process-failure validation remain future work.
 
 ## Rejected alternatives
 

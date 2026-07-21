@@ -155,7 +155,9 @@ have changed Hub state.
 Paired mode requires a local Hub bind, and all pairing and administration routes
 also reject non-loopback clients. Configured LAN TLS and allowlists do not override
 these guards. Android exposes manual confirmed token rotation for paired links;
-automatic rotation schedules and trusted LAN onboarding are not implemented yet.
+it also shows a foreground reminder when the current paired bearer issue time is
+older than the local policy threshold. Automatic rotation schedules and trusted
+LAN onboarding are not implemented yet.
 
 ## MCP client
 
