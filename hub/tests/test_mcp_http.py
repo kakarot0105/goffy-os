@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import platform
+import sys
 from dataclasses import replace
+from pathlib import Path
 from typing import Any, cast
 
 import httpx
@@ -18,6 +20,7 @@ from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import goffy_hub.mcp_server as mcp_server_module
+import goffy_hub.tools.git_status as git_status_module
 from goffy_hub.app import build_registry, create_app
 from goffy_hub.auth import CredentialAuthenticator
 from goffy_hub.mcp_server import (
@@ -189,6 +192,74 @@ async def test_official_client_lists_approved_mac_file_root(tmp_path) -> None:
     assert result.structuredContent["rootIndex"] == 0
     assert result.structuredContent["approvedRoots"] == [{"rootIndex": 0, "name": tmp_path.name}]
     assert [entry["name"] for entry in result.structuredContent["entries"]] == ["visible.txt"]
+    assert str(tmp_path) not in json.dumps(result.structuredContent)
+
+
+@pytest.mark.asyncio
+async def test_official_client_reads_approved_git_status(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(git_status_module, "_resolve_git_executable", lambda: Path(sys.executable))
+
+    def fake_status(
+        _git_executable: Path,
+        _repo_path: Path,
+        _include_untracked: bool,
+        _timeout_seconds: float,
+    ) -> str:
+        return "\n".join(
+            [
+                "# branch.oid 0123456789abcdef0123456789abcdef01234567",
+                "# branch.head main",
+                "? TODO.md",
+            ]
+        )
+
+    monkeypatch.setattr(git_status_module, "_run_git_status", fake_status)
+    settings = HubSettings(
+        auth_token=SecretStr("test-token-that-is-long-enough"),
+        git_repo_roots=(tmp_path,),
+    )
+    app = create_app(settings)
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with (
+            httpx.AsyncClient(
+                transport=transport,
+                base_url="http://127.0.0.1:8787",
+                headers={"Authorization": AUTHORIZATION},
+                timeout=5,
+            ) as http_client,
+            streamable_http_client(
+                "http://127.0.0.1:8787/mcp",
+                http_client=http_client,
+            ) as (read_stream, write_stream, _get_session_id),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            initialization = await session.initialize()
+            listed = await session.list_tools()
+            result = await session.call_tool("git.status", {"repoIndex": 0, "maxChanges": 5})
+
+    assert initialization.protocolVersion == MCP_PROTOCOL_VERSION
+    assert sorted(tool.name for tool in listed.tools) == ["git.status", "mac.system_info"]
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent["repoIndex"] == 0
+    assert result.structuredContent["branch"] == "main"
+    assert result.structuredContent["untrackedCount"] == 1
+    assert result.structuredContent["approvedRepos"] == [{"repoIndex": 0, "name": tmp_path.name}]
+    assert result.structuredContent["changes"] == [
+        {
+            "path": "TODO.md",
+            "pathTruncated": False,
+            "indexStatus": "?",
+            "workingTreeStatus": "?",
+            "kind": "untracked",
+        }
+    ]
     assert str(tmp_path) not in json.dumps(result.structuredContent)
 
 

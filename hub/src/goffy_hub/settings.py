@@ -32,6 +32,7 @@ class HubSettings(BaseModel):
     mcp_max_active_sessions: int = Field(default=8, ge=1, le=64)
     operator_audit_max_events: int = Field(default=256, ge=16, le=2048)
     mac_files_roots: tuple[Path, ...] = Field(default=(), max_length=8)
+    git_repo_roots: tuple[Path, ...] = Field(default=(), max_length=8)
 
     @model_validator(mode="after")
     def guard_network_binding(self) -> HubSettings:
@@ -78,6 +79,22 @@ class HubSettings(BaseModel):
         if len(set(resolved_mac_roots)) != len(resolved_mac_roots):
             raise ValueError("GOFFY_MAC_FILES_ROOTS entries must be unique")
         self.mac_files_roots = tuple(resolved_mac_roots)
+        resolved_git_roots: list[Path] = []
+        for root in self.git_repo_roots:
+            if not root.is_absolute():
+                raise ValueError("GOFFY_GIT_REPO_ROOTS entries must be absolute directories")
+            try:
+                resolved = root.expanduser().resolve(strict=True)
+            except OSError as exc:
+                raise ValueError(
+                    "GOFFY_GIT_REPO_ROOTS entries must be existing directories"
+                ) from exc
+            if not resolved.is_dir():
+                raise ValueError("GOFFY_GIT_REPO_ROOTS entries must be existing directories")
+            resolved_git_roots.append(resolved)
+        if len(set(resolved_git_roots)) != len(resolved_git_roots):
+            raise ValueError("GOFFY_GIT_REPO_ROOTS entries must be unique")
+        self.git_repo_roots = tuple(resolved_git_roots)
         return self
 
     @property
@@ -141,6 +158,7 @@ class HubSettings(BaseModel):
             mcp_max_active_sessions=int(os.getenv("GOFFY_MCP_MAX_ACTIVE_SESSIONS", "8")),
             operator_audit_max_events=int(os.getenv("GOFFY_OPERATOR_AUDIT_MAX_EVENTS", "256")),
             mac_files_roots=_path_tuple("GOFFY_MAC_FILES_ROOTS"),
+            git_repo_roots=_path_tuple("GOFFY_GIT_REPO_ROOTS"),
         )
 
 

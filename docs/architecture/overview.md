@@ -6,9 +6,9 @@ Android app/default-launcher layer remains the safe bootstrap and fallback while
 ROM feasibility is proven. Across both forms, GOFFY separates intent, policy,
 transport, and capability execution so no model or UI can directly acquire
 ambient authority. The current runtime has five offline PHONE tools, one default
-authenticated MAC tool, one optional approved-root MAC listing tool, and a
-redacted Android-local audit trail for terminal tasks, not a general command
-channel.
+authenticated MAC tool, optional approved-root MAC file listing and Git status
+tools, and a redacted Android-local audit trail for terminal tasks, not a
+general command channel.
 
 ```text
 GOFFY ROM or bootstrap Android command surface
@@ -27,6 +27,7 @@ deterministic router
                          |            `-> invoke only after compatibility gate
                          `--------------> FastAPI Hub -> SAFE mac.system_info
                                                       -> optional SAFE mac.files.list
+                                                      -> optional SAFE git.status
 
 Official MCP client -> authenticated POST /mcp -> MCP SDK -> same ToolRegistry
                                                         ^
@@ -116,6 +117,11 @@ approval state, active work, and execution authority are not revived.
     It returns bounded directory metadata by root index and relative path,
     hides dotfiles by default, rejects traversal outside the resolved root, and
     reports symlinks without following target paths.
+32. `git.status` exists only when explicit approved Git worktree roots are
+    configured. It accepts repo index and bounded count only, runs one fixed
+    `git status --porcelain=v2` command with `shell=False`, and returns status
+    metadata without absolute roots, file contents, diffs, fetch, commit, or
+    push authority.
 
 ## Performance posture
 
@@ -133,6 +139,8 @@ body capture, polling, or background upload.
 Hub health checks are Mac-side only: one startup pass, then a 30-second default
 sleep between passes, at most four concurrent probes, and a five-second maximum
 per probe. Current probes use local platform/path APIs and perform no network I/O.
+`git.status` invokes the fixed Git command only for explicit tool calls, not for
+periodic health checks.
 Android re-discovers before every Mac invocation. MCP clients re-run `tools/list`;
 the Hub signals changed availability over authenticated MCP GET/SSE without
 introducing Android polling.

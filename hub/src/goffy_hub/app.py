@@ -27,7 +27,7 @@ from goffy_hub.registry import (
 )
 from goffy_hub.settings import HubSettings
 from goffy_hub.tool_health import ToolHealthMonitor
-from goffy_hub.tools import build_mac_files_list_tool, build_mac_system_tool
+from goffy_hub.tools import build_git_status_tool, build_mac_files_list_tool, build_mac_system_tool
 from goffy_protocol import (
     MCP_PROTOCOL_VERSION,
     PROTOCOL_VERSION,
@@ -71,6 +71,14 @@ def build_registry(settings: HubSettings) -> ToolRegistry:
         registry.register(
             build_mac_files_list_tool(
                 settings.mac_files_roots,
+                settings.tool_timeout_seconds,
+                settings.tool_health_timeout_seconds,
+            )
+        )
+    if settings.git_repo_roots:
+        registry.register(
+            build_git_status_tool(
+                settings.git_repo_roots,
                 settings.tool_timeout_seconds,
                 settings.tool_health_timeout_seconds,
             )

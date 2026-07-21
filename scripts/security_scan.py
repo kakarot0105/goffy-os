@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -15,6 +16,9 @@ PROHIBITED_SOURCE_PATTERNS = {
     "shell execution": re.compile(r"shell\s*=\s*True"),
     "dynamic eval": re.compile(r"\beval\s*\("),
     "dynamic exec": re.compile(r"\bexec\s*\("),
+}
+ALLOWED_SUBPROCESS_FILES = {
+    ROOT / "hub" / "src" / "goffy_hub" / "tools" / "git_status.py",
 }
 
 SECRET_PATTERNS = {
@@ -245,6 +249,123 @@ def validate_no_pairing_qr_artifact(path: Path, text: str) -> list[str]:
     return findings
 
 
+def prohibited_source_patterns(path: Path) -> dict[str, re.Pattern[str]]:
+    return dict(PROHIBITED_SOURCE_PATTERNS)
+
+
+def validate_allowed_subprocess_usage(path: Path, text: str) -> list[str]:
+    location = path.relative_to(ROOT) if path.is_relative_to(ROOT) else path
+    try:
+        tree = ast.parse(text)
+    except SyntaxError as exc:
+        return [f"{location}: cannot validate subprocess usage ({exc.msg})"]
+
+    findings: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "subprocess":
+            findings.append(f"{location}: subprocess from-import is not allowed")
+        if (
+            isinstance(node, ast.Attribute)
+            and _is_name(node.value, "subprocess")
+            and node.attr != "run"
+        ):
+            findings.append(f"{location}: unsupported subprocess API subprocess.{node.attr}")
+        if (
+            isinstance(node, ast.Call)
+            and _is_subprocess_run_call(node)
+            and not _is_allowed_git_status_run_call(node)
+        ):
+            findings.append(f"{location}: subprocess.run shape does not match git.status policy")
+    return sorted(set(findings))
+
+
+def _is_subprocess_run_call(node: ast.Call) -> bool:
+    return (
+        isinstance(node.func, ast.Attribute)
+        and _is_name(node.func.value, "subprocess")
+        and node.func.attr == "run"
+    )
+
+
+def _is_allowed_git_status_run_call(node: ast.Call) -> bool:
+    if len(node.args) != 1:
+        return False
+    command = node.args[0]
+    if not isinstance(command, ast.List) or len(command.elts) != 6:
+        return False
+    if not _is_str_call(command.elts[0], "git_executable"):
+        return False
+    expected_literals = ["status", "--porcelain=v2", "--branch", "--no-renames"]
+    for element, expected in zip(command.elts[1:5], expected_literals, strict=True):
+        if not _is_constant(element, expected):
+            return False
+    if not _is_name(command.elts[5], "untracked_mode"):
+        return False
+
+    keywords = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg is not None}
+    if set(keywords) != {
+        "cwd",
+        "check",
+        "capture_output",
+        "text",
+        "encoding",
+        "errors",
+        "env",
+        "timeout",
+    }:
+        return False
+    if not _is_name(keywords["cwd"], "repo_path"):
+        return False
+    if not _is_constant(keywords["check"], False):
+        return False
+    if not _is_constant(keywords["capture_output"], True):
+        return False
+    if not _is_constant(keywords["text"], True):
+        return False
+    if not _is_constant(keywords["encoding"], "utf-8"):
+        return False
+    if not _is_constant(keywords["errors"], "replace"):
+        return False
+    if not _is_name(keywords["timeout"], "timeout_seconds"):
+        return False
+    env = keywords["env"]
+    if not isinstance(env, ast.Dict):
+        return False
+    env_values = {
+        key.value: value.value
+        for key, value in zip(env.keys, env.values, strict=True)
+        if isinstance(key, ast.Constant)
+        and isinstance(key.value, str)
+        and isinstance(value, ast.Constant)
+        and isinstance(value.value, str)
+    }
+    return env_values == {
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_PAGER": "cat",
+        "GIT_TERMINAL_PROMPT": "0",
+        "LC_ALL": "C",
+    }
+
+
+def _is_name(node: ast.AST, value: str) -> bool:
+    return isinstance(node, ast.Name) and node.id == value
+
+
+def _is_str_call(node: ast.AST, argument_name: str) -> bool:
+    return (
+        isinstance(node, ast.Call)
+        and _is_name(node.func, "str")
+        and len(node.args) == 1
+        and not node.keywords
+        and _is_name(node.args[0], argument_name)
+    )
+
+
+def _is_constant(node: ast.AST, value: object) -> bool:
+    return isinstance(node, ast.Constant) and node.value == value
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -267,9 +388,12 @@ def main(argv: list[str] | None = None) -> int:
             findings.extend(validate_no_pairing_qr_artifact(path, text))
         patterns = dict(SECRET_PATTERNS)
         if path in source_files:
-            patterns.update(PROHIBITED_SOURCE_PATTERNS)
+            patterns.update(prohibited_source_patterns(path))
         for label, pattern in patterns.items():
             if pattern.search(text):
+                if label == "subprocess API" and path in ALLOWED_SUBPROCESS_FILES:
+                    findings.extend(validate_allowed_subprocess_usage(path, text))
+                    continue
                 findings.append(f"{path.relative_to(ROOT)}: {label}")
 
     findings.extend(validate_manifest(ANDROID_MANIFEST, ALLOWED_ANDROID_PERMISSIONS))

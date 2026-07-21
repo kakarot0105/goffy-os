@@ -143,6 +143,41 @@ def test_mac_files_roots_reject_duplicates(tmp_path: Path) -> None:
         HubSettings(mac_files_roots=(tmp_path, tmp_path))
 
 
+def test_git_repo_roots_are_explicit_existing_directories(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    settings = HubSettings(git_repo_roots=(root,))
+
+    assert settings.git_repo_roots == (root.resolve(),)
+
+
+def test_git_repo_roots_environment_is_parsed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    monkeypatch.setenv("GOFFY_GIT_REPO_ROOTS", f"{first}, {second}")
+
+    settings = HubSettings.from_environment()
+
+    assert settings.git_repo_roots == (first.resolve(), second.resolve())
+
+
+@pytest.mark.parametrize("value", [Path("relative"), Path("/definitely/not/goffy-os")])
+def test_git_repo_roots_reject_unsafe_entries(value: Path) -> None:
+    with pytest.raises(ValidationError, match="GOFFY_GIT_REPO_ROOTS"):
+        HubSettings(git_repo_roots=(value,))
+
+
+def test_git_repo_roots_reject_duplicates(tmp_path: Path) -> None:
+    with pytest.raises(ValidationError, match="unique"):
+        HubSettings(git_repo_roots=(tmp_path, tmp_path))
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

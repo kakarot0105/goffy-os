@@ -231,6 +231,25 @@ files, or execute shell commands. Android currently invokes only the default
 approved root through `List my Mac files` or `Show my Mac files`; root/path
 selection needs a separate UX and policy review.
 
+## Approved Git Repository Roots
+
+`git.status` is disabled by default. Enable it only for repositories the
+operator is comfortable exposing through SAFE, read-only status metadata:
+
+```bash
+export GOFFY_GIT_REPO_ROOTS="$HOME/Documents/GitHub/goffy-os,$HOME/Documents/GitHub/app-lab"
+```
+
+Each entry must be an existing absolute Git worktree root. The Hub resolves and
+dedupes the roots at startup, registers the tool only when at least one root is
+configured, and marks the tool unavailable if a configured root or `.git` marker
+later disappears. Tool input uses `repoIndex`, `maxChanges`, and
+`includeUntracked`. Output contains repo indices/names, branch metadata, bounded
+status counts, bounded change paths, and no absolute repo roots. This tool uses
+fixed `git status --porcelain=v2` arguments with `shell=False`; it does not read
+file contents, produce diffs, fetch, commit, push, run tests, or execute
+client-provided commands.
+
 Non-local binding requires `GOFFY_HUB_ALLOW_LAN=true` plus existing
 `GOFFY_HUB_TLS_CERT_FILE` and `GOFFY_HUB_TLS_KEY_FILE` paths. This is a transport
 guard, not trusted pairing transport. Configuring paired mode with a non-local

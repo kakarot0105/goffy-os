@@ -3,8 +3,11 @@ from pathlib import Path
 from scripts.security_scan import (
     ALLOWED_ANDROID_PERMISSIONS,
     ALLOWED_MERGED_ANDROID_PERMISSIONS,
+    ALLOWED_SUBPROCESS_FILES,
     PAIRING_QR_ARTIFACT_MARKER,
     merged_manifest_permission_allowlist,
+    prohibited_source_patterns,
+    validate_allowed_subprocess_usage,
     validate_main_activity_intent_filters,
     validate_manifest,
     validate_merged_manifests,
@@ -220,3 +223,23 @@ def test_security_scan_rejects_generated_pairing_qr_artifact(tmp_path: Path) -> 
         f"<!-- {PAIRING_QR_ARTIFACT_MARKER} --><svg />",
     )
     assert validate_no_pairing_qr_artifact(tmp_path / "logo.svg", "<svg />") == []
+
+
+def test_subprocess_exception_is_limited_to_git_status_tool_shape() -> None:
+    git_status_file = next(iter(ALLOWED_SUBPROCESS_FILES))
+    generic_file = git_status_file.with_name("other_tool.py")
+    source = git_status_file.read_text(encoding="utf-8")
+    git_status_location = git_status_file.relative_to(git_status_file.parents[4])
+
+    assert validate_allowed_subprocess_usage(git_status_file, source) == []
+    assert validate_allowed_subprocess_usage(
+        git_status_file,
+        source.replace("subprocess.run(", "subprocess.Popen(", 1),
+    ) == [f"{git_status_location}: unsupported subprocess API subprocess.Popen"]
+    assert validate_allowed_subprocess_usage(
+        git_status_file,
+        source.replace("timeout=timeout_seconds,", "timeout=timeout_seconds, shell=True,", 1),
+    ) == [f"{git_status_location}: subprocess.run shape does not match git.status policy"]
+    assert "subprocess API" in prohibited_source_patterns(git_status_file)
+    assert "subprocess API" in prohibited_source_patterns(generic_file)
+    assert "shell execution" in prohibited_source_patterns(git_status_file)
