@@ -53,6 +53,23 @@ The validator:
 Passing validation means only `READY_FOR_HUMAN_REVIEW`. It does not mean GOFFY
 may unlock or flash the phone.
 
+## Stock Restore Evidence Helper
+
+After downloading the exact stock restore archive locally, generate a redacted
+evidence fragment without committing the archive or its local path:
+
+```bash
+.venv/bin/python scripts/create_rom_stock_restore_evidence.py \
+  --archive ~/Downloads/exact-firmware-archive-name.zip \
+  --source-url https://en-us.support.motorola.com/app/softwarefix \
+  --rollback-doc docs/setup/kansas-stock-rollback.md \
+  --output .goffy-validation/rom-stock-restore-evidence.json
+```
+
+The helper hashes the local archive, records only the archive filename, writes
+only under `.goffy-validation` when `--output` is used, and performs no network,
+ADB, fastboot, unlock, flash, or root action.
+
 ## Rollback Doc Requirements
 
 The rollback Markdown should record:
