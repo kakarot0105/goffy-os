@@ -104,6 +104,24 @@ installed build `W1VKS36H.9-12-9-8-2` in Verizon and PhoneCopy metadata, while
 the Lolinet Kansas RETUS mirror only exposed nearby archives. Nearby firmware is
 not rollback evidence; ROM-0 still requires an exact archive plus SHA-256.
 
+To compare archive names from a manually inspected source without downloading or
+flashing anything, create a candidate report:
+
+```bash
+.venv/bin/python scripts/create_rom_stock_candidate_report.py \
+  .goffy-validation/rom-feasibility-current.json \
+  --source-url https://mirrors.lolinet.com/firmware/lenomola/2025/kansas/official/RETUS/ \
+  --candidate XT2513-1_KANSAS_RETUS_16_W1VKS36H.9-12-1_subsidy-DEFAULT.zip \
+  --json \
+  --output .goffy-validation/rom-stock-candidates.json
+```
+
+The candidate report is not manual-gate evidence. It only records whether an
+archive filename appears to contain the connected phone's codename and installed
+build ID on filename token boundaries. A filename match is still not exact
+variant proof; manual gates still require a trusted source, local archive,
+SHA-256, and rollback document.
+
 ## Rollback Doc Requirements
 
 Start from [`kansas-stock-rollback.template.md`](kansas-stock-rollback.template.md).

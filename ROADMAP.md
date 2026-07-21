@@ -25,6 +25,7 @@
 - [x] Offline ROM-0 readiness reporter for probe, manual gate, and signed APK evidence
 - [x] Android Home-shell intent declared, security-scanned, and physically queried
 - [x] Public installed-build provenance recorded; exact stock archive still missing
+- [x] Non-destructive stock archive-name candidate matcher keeps filename matches out of manual gates
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist
 - [ ] User-approved destructive unlock/flash decision point

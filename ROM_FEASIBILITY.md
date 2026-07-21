@@ -167,6 +167,21 @@ Motorola Software Fix, Verizon/Motorola repair tooling, or a verified firmware
 source provides an archive that matches the exact device variant and installed
 build, and we record its SHA-256.
 
+The non-destructive candidate matcher can record future manual archive-name
+checks without treating filename matches as restore evidence:
+
+```bash
+.venv/bin/python scripts/create_rom_stock_candidate_report.py \
+  .goffy-validation/rom-feasibility-current.json \
+  --candidate <firmware-archive-name.zip> \
+  --json \
+  --output .goffy-validation/rom-stock-candidates.json
+```
+
+Even when an archive name contains the installed build ID, it remains blocked
+until variant/source verification, local SHA-256, and rollback documentation are
+recorded.
+
 ## Current Reuse Prior Art Decisions
 
 Current reuse scan date: 2026-07-21.
