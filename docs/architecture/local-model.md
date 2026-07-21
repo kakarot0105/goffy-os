@@ -160,6 +160,11 @@ operator UX for model install/remove remain open.
 Production acceptance now has a read-only evidence verifier:
 
 ```bash
+.venv/bin/python scripts/collect_modeldebug_idle_cleanup_evidence.py \
+  --execute \
+  --observation-report .goffy-validation/modeldebug-observation-smoke/run-3/modeldebug-observation-report.json \
+  --output .goffy-validation/modeldebug-observation-smoke/idle-cleanup.json
+
 .venv/bin/python scripts/verify_modeldebug_acceptance.py \
   --idle-evidence-json .goffy-validation/modeldebug-observation-smoke/idle-cleanup.json \
   .goffy-validation/modeldebug-observation-smoke/run-1/modeldebug-observation-report.json \
@@ -172,12 +177,22 @@ the fixed unsupported command `open settings`, terminal non-executable `FAILED`
 timeline evidence, bounded memory/logcat artifacts, a consistent model SHA-256,
 each run at or below 15 seconds by default, bounded logcat evidence containing
 the fixed observation engine teardown marker `observation_engine_scope_closed`,
-and separate idle-cleanup JSON proving the provider closed after at least 60
-seconds. The teardown marker proves the LiteRT-LM engine/conversation scope
-unwound for that observation; provider idle cleanup remains a separate evidence
-requirement. The marker is non-sensitive lifecycle telemetry only; it must not
-include the prompt, model output, model path, or command text. The existing
-37.6-second Qwen3 single-run evidence intentionally fails this gate.
+and separate idle-cleanup JSON with `provider_closed_after_idle=true`. The
+collector sets that field only when the observation report contains the teardown
+marker and the modelDebug process is no longer running after the idle wait. The
+teardown marker proves the LiteRT-LM engine/conversation scope unwound for that
+observation; process absence is the separate idle-cleanup evidence. The marker
+is non-sensitive lifecycle telemetry only; it must not include the prompt, model
+output, model path, or command text. The existing 37.6-second Qwen3 single-run
+evidence intentionally fails this gate.
+
+The idle-cleanup collector is also read-only against the phone. It requires a
+supplied observation report, reads that report's bounded logcat artifact for the
+fixed teardown marker, waits 60 seconds by default, and then probes only `pidof`
+plus bounded `dumpsys meminfo` if the process remains. It writes local JSON
+evidence and blocks if the modelDebug process is still running after the wait.
+It does not install an APK, push files, type commands, clear app state, read live
+logcat, or broaden ADB.
 
 ## Reuse-First Scan
 
