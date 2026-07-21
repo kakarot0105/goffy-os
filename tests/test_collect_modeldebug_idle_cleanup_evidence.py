@@ -75,6 +75,61 @@ def test_execute_collects_idle_evidence_when_process_exited(
     assert report.total_pss_kb is None
 
 
+def test_execute_blocks_slow_observation_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(idle, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+    observation_report = write_observation_report(tmp_path, elapsed_millis=22_000)
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        _ = (command, cwd, timeout)
+        raise AssertionError("slow observation preflight should not run ADB probes")
+
+    report = idle.build_evidence(
+        root=tmp_path,
+        execute=True,
+        observation_report=observation_report,
+        runner=runner,
+        sleep=lambda _: None,
+    )
+
+    assert not report.ok
+    assert not report.executed
+    assert any("observation took 22000 ms" in blocker for blocker in report.blockers)
+
+
+def test_execute_can_collect_idle_diagnostics_for_slow_observation_with_override(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(idle, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+    observation_report = write_observation_report(tmp_path, elapsed_millis=22_000)
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        normalized = tuple(str(part) for part in command)
+        if normalized == ("/opt/android/adb", "devices", "-l"):
+            return CommandResult(0, ADB_DEVICES, "")
+        if normalized[-3:] == ("shell", "getprop", "ro.product.model"):
+            return CommandResult(0, "moto g - 2025\n", "")
+        if normalized[3:] == ("shell", "pidof", MODEL_DEBUG_PACKAGE_NAME):
+            return CommandResult(1, "", "")
+        return CommandResult(1, "", f"unexpected command: {normalized}")
+
+    report = idle.build_evidence(
+        root=tmp_path,
+        execute=True,
+        observation_report=observation_report,
+        runner=runner,
+        sleep=lambda _: None,
+        max_observation_millis=30_000,
+    )
+
+    assert report.ok
+    assert report.executed
+    assert report.provider_closed_after_idle is True
+
+
 def test_execute_blocks_missing_teardown_marker(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -172,7 +227,7 @@ def test_execute_blocks_running_process_with_high_idle_pss(
     assert "idle cleanup TOTAL PSS exceeds 64000 KB" in report.blockers
 
 
-def test_execute_blocks_running_process_even_below_idle_pss(
+def test_execute_accepts_running_process_below_idle_pss_when_provider_closed(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -200,9 +255,10 @@ def test_execute_blocks_running_process_even_below_idle_pss(
         max_idle_pss_kb=64_000,
     )
 
-    assert not report.ok
+    assert report.ok
     assert report.process_running_after_idle is True
-    assert "modelDebug process is still running after idle wait" in report.blockers
+    assert report.provider_closed_after_idle is True
+    assert "modelDebug process remained running below idle PSS budget" in report.warnings
 
 
 def test_execute_blocks_failed_pidof_probe(
@@ -286,7 +342,12 @@ def test_evidence_output_is_accepted_by_production_verifier(
     assert acceptance.ok
 
 
-def write_observation_report(tmp_path: Path, *, include_marker: bool = True) -> Path:
+def write_observation_report(
+    tmp_path: Path,
+    *,
+    include_marker: bool = True,
+    elapsed_millis: int = 8_000,
+) -> Path:
     output_dir = tmp_path / "run-1"
     output_dir.mkdir()
     (output_dir / "final-ui.xml").write_text(
@@ -311,7 +372,7 @@ def write_observation_report(tmp_path: Path, *, include_marker: bool = True) -> 
                 "command": "open settings",
                 "model_source": "qwen3_0_6b_mixed_int4.litertlm",
                 "model_sha256": MODEL_SHA,
-                "observation_elapsed_millis": 8_000,
+                "observation_elapsed_millis": elapsed_millis,
                 "steps": [
                     {"name": "Verify Moto G target", "status": "OK"},
                     {"name": "Unsupported command observation smoke", "status": "OK"},

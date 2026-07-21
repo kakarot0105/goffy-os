@@ -52,7 +52,8 @@ SAFE_COMMAND = re.compile(r"^[A-Za-z0-9 .,_:-]{1,120}$")
 OBSERVATION_MARKERS = (
     "FAILED",
     "No safe deterministic route is available",
-    "Model output exceeded the local routing output budget",
+    "PREPARE Local model ready for observe-only fallback",
+    "Model output",
 )
 DEVICE_SERIAL_PLACEHOLDER = "<device-serial>"
 MODEL_PLACEHOLDER = "<host-model>"

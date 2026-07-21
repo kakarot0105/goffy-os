@@ -174,15 +174,18 @@ Production acceptance now has a read-only evidence verifier:
 
 The verifier requires at least three executed `modelDebug` observation reports,
 the fixed unsupported command `open settings`, terminal non-executable `FAILED`
-timeline evidence, bounded memory/logcat artifacts, a consistent model SHA-256,
-each run at or below 15 seconds by default, bounded logcat evidence containing
-the fixed observation engine teardown marker `observation_engine_scope_closed`,
-and separate idle-cleanup JSON with `provider_closed_after_idle=true`. The
-collector sets that field only when the observation report contains the teardown
-marker and the modelDebug process is no longer running after the idle wait. The
-teardown marker proves the LiteRT-LM engine/conversation scope unwound for that
-observation; process absence is the separate idle-cleanup evidence. The marker
-is non-sensitive lifecycle telemetry only; it must not include the prompt, model
+timeline evidence, visible proof that local-model observation ran, bounded
+memory/logcat artifacts, a consistent model SHA-256, each run at or below 15
+seconds by default, bounded logcat evidence containing the fixed observation
+engine teardown marker `observation_engine_scope_closed`, and separate
+idle-cleanup JSON with `provider_closed_after_idle=true`. The smoke runner
+accepts safe model-output rejection reasons such as strict-schema mismatch or
+output-budget overflow; it does not require one exact model failure string. The
+collector sets the idle field when the observation report contains the teardown
+marker, which proves the LiteRT-LM engine/conversation scope unwound for that
+observation. If the foreground `modelDebug` app process remains alive after the
+idle wait, the verifier separately requires bounded idle PSS. The marker is
+non-sensitive lifecycle telemetry only; it must not include the prompt, model
 output, model path, or command text. The existing 37.6-second Qwen3 single-run
 evidence intentionally fails this gate.
 
@@ -190,9 +193,12 @@ The idle-cleanup collector is also read-only against the phone. It requires a
 supplied observation report, reads that report's bounded logcat artifact for the
 fixed teardown marker, waits 60 seconds by default, and then probes only `pidof`
 plus bounded `dumpsys meminfo` if the process remains. It writes local JSON
-evidence and blocks if the modelDebug process is still running after the wait.
+evidence and blocks if a remaining modelDebug process exceeds the idle PSS
+budget.
 It does not install an APK, push files, type commands, clear app state, read live
-logcat, or broaden ADB.
+logcat, or broaden ADB. For slow-but-safe diagnostics, pass
+`--max-observation-millis <limit>` to the collector only; the production
+acceptance verifier still defaults to 15 seconds unless explicitly overridden.
 
 ## Reuse-First Scan
 
@@ -416,4 +422,31 @@ Qwen3 `modelDebug` observe-only unsupported-command smoke result:
 
 This is acceptable for the developer-only observation path. It is not acceptable
 for default GOFFY LITE enablement because 37.6 seconds is too slow for normal
-phone-first routing and repeated-run/idle-unload behavior is still unproven.
+phone-first routing; repeated-run and idle-cleanup acceptance are evaluated
+separately below.
+
+Granite 350M repeated `modelDebug` observe-only evidence:
+
+- Artifacts:
+  `.goffy-validation/modeldebug-observation-smoke/granite-run-3/modeldebug-observation-report.json`,
+  `.goffy-validation/modeldebug-observation-smoke/granite-run-4/modeldebug-observation-report.json`,
+  `.goffy-validation/modeldebug-observation-smoke/granite-run-5/modeldebug-observation-report.json`,
+  and
+  `.goffy-validation/modeldebug-observation-smoke/granite-idle-cleanup.json`
+- Command:
+  `open settings`
+- Model:
+  `granite-4.0-350m_q8_ekv1280.litertlm`
+- SHA-256:
+  `c8e9a29493f62b7c44461fb36980987c4c1454c75e95f57ba0539a8edc9dce76`
+- Observation elapsed:
+  21,745 ms; 22,608 ms; 22,741 ms
+- Idle cleanup after 60 seconds:
+  `observation_engine_scope_closed=true`,
+  `provider_closed_after_idle=true`,
+  `process_running_after_idle=true`, `TOTAL PSS: 174823` KB
+- Result:
+  all three runs safely displayed terminal `FAILED` timeline cards, did not
+  execute a tool, and preserved deterministic routing authority. Production
+  acceptance remains blocked because each run exceeds the 15-second observation
+  budget and idle PSS exceeds the 64 MB process-remaining budget.

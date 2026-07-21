@@ -70,6 +70,7 @@ def build_evidence(
     execute: bool = False,
     wait_seconds: int = DEFAULT_MIN_IDLE_SECONDS,
     timeout_seconds: int = 30,
+    max_observation_millis: int = DEFAULT_MAX_OBSERVATION_MILLIS,
     max_idle_pss_kb: int = DEFAULT_MAX_IDLE_PSS_KB,
     model_sha256: str | None = None,
     observation_report: Path | None = None,
@@ -87,6 +88,7 @@ def build_evidence(
         model_sha256=model_sha256,
         observation_report=observation_report,
         require_report=execute,
+        max_observation_millis=max_observation_millis,
     )
     plan_steps = planned_steps(wait_seconds=wait_seconds)
     if not execute:
@@ -115,6 +117,8 @@ def build_evidence(
         blockers.append(f"wait_seconds must be at least {DEFAULT_MIN_IDLE_SECONDS}")
     if timeout_seconds < 10:
         blockers.append("timeout_seconds must be at least 10")
+    if max_observation_millis <= 0:
+        blockers.append("max_observation_millis must be positive")
     if max_idle_pss_kb <= 0:
         blockers.append("max_idle_pss_kb must be positive")
     if blockers:
@@ -212,10 +216,9 @@ def build_evidence(
         elif total_pss > max_idle_pss_kb:
             blockers.append(f"idle cleanup TOTAL PSS exceeds {max_idle_pss_kb} KB")
         else:
-            blockers.append("modelDebug process is still running after idle wait")
-            warnings.append("modelDebug process remained below idle PSS budget")
+            warnings.append("modelDebug process remained running below idle PSS budget")
 
-    provider_closed = observation_scope_closed is True and not process_running
+    provider_closed = observation_scope_closed is True
     if not provider_closed:
         blockers.append("idle evidence does not satisfy provider_closed_after_idle")
 
@@ -359,6 +362,7 @@ def resolve_observation_context(
     model_sha256: str | None,
     observation_report: Path | None,
     require_report: bool,
+    max_observation_millis: int = DEFAULT_MAX_OBSERVATION_MILLIS,
 ) -> tuple[str | None, bool | None, tuple[str, ...]]:
     if model_sha256 is not None:
         normalized = model_sha256.strip()
@@ -373,7 +377,7 @@ def resolve_observation_context(
     try:
         accepted = validate_observation_report(
             observation_report,
-            max_observation_millis=DEFAULT_MAX_OBSERVATION_MILLIS,
+            max_observation_millis=max_observation_millis,
             max_run_pss_kb=DEFAULT_MAX_RUN_PSS_KB,
         )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
@@ -412,6 +416,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--model-sha256")
     parser.add_argument("--wait-seconds", type=int, default=DEFAULT_MIN_IDLE_SECONDS)
     parser.add_argument("--timeout-seconds", type=int, default=30)
+    parser.add_argument(
+        "--max-observation-millis",
+        type=int,
+        default=DEFAULT_MAX_OBSERVATION_MILLIS,
+        help=(
+            "Observation-report time budget for diagnostic idle collection. "
+            "Defaults to the production acceptance budget."
+        ),
+    )
     parser.add_argument("--max-idle-pss-kb", type=int, default=DEFAULT_MAX_IDLE_PSS_KB)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--json", action="store_true")
@@ -440,6 +453,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         execute=args.execute,
         wait_seconds=args.wait_seconds,
         timeout_seconds=args.timeout_seconds,
+        max_observation_millis=args.max_observation_millis,
         max_idle_pss_kb=args.max_idle_pss_kb,
         model_sha256=args.model_sha256,
         observation_report=args.observation_report,

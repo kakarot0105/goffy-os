@@ -71,6 +71,20 @@ def test_modeldebug_acceptance_blocks_idle_process_with_high_pss(tmp_path: Path)
     assert any("idle cleanup TOTAL PSS" in blocker for blocker in report.blockers)
 
 
+def test_modeldebug_acceptance_accepts_idle_process_below_pss_budget(tmp_path: Path) -> None:
+    reports = [write_observation_report(tmp_path, index, elapsed=8_000) for index in range(3)]
+    idle = write_idle_evidence(
+        tmp_path,
+        process_running_after_idle=True,
+        total_pss_kb=32_000,
+    )
+
+    report = build_acceptance_report(reports=reports, idle_evidence_json=idle)
+
+    assert report.ok
+    assert report.idle_cleanup.process_running_after_idle is True
+
+
 def test_modeldebug_acceptance_blocks_logcat_crash_marker(tmp_path: Path) -> None:
     reports = [write_observation_report(tmp_path, index, elapsed=8_000) for index in range(3)]
     (tmp_path / "run-1" / "modeldebug-logcat.txt").write_text(

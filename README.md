@@ -43,9 +43,12 @@ the capability boundary.
 > at-use model-file rechecks. An optional `modelDebug` LiteRT-LM provider compiles
 > behind that async gate, and `modelDebug` has a foreground enable/disable
 > setting backed by verified app-private settings. Physical Moto G `modelDebug`
-> smoke now verifies that a user-enabled Qwen3 0.6B observe-only pass for an
-> unsupported command records a non-executable failed timeline result with
-> bounded battery, memory, UI, and logcat artifacts.
+> smoke now verifies that user-enabled Qwen3 0.6B and Granite 350M observe-only
+> passes for an unsupported command record non-executable failed timeline
+> results with bounded battery, memory, UI, and logcat artifacts. Three Granite
+> 350M repeated runs completed safely, but production local-model acceptance is
+> still blocked by 21.7-22.7 second observation latency and about 175 MB idle
+> PSS after 60 seconds.
 > Default GOFFY LITE still does not ship or load the LiteRT-LM runtime. Automatic
 > rotation scheduling, Android retrieval for Hub audit, certificate-backed Hub
 > identity proof, trusted LAN operation, bootloader unlock eligibility, stock

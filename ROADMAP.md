@@ -102,7 +102,8 @@
 - [x] Automated physical Moto G `modelDebug` observe-only local-model smoke with UI, battery, memory, and logcat evidence
 - [x] Read-only repeated-run and idle-cleanup acceptance verifier for `modelDebug`
 - [x] Read-only Moto G `modelDebug` idle-cleanup evidence collector
-- [ ] Repeated-run responsiveness, idle-unload, and production acceptance evidence for user-enabled LiteRT-LM observation execution
+- [x] Repeated-run and idle-cleanup evidence for user-enabled Granite 350M LiteRT-LM observation execution
+- [ ] Production acceptance for user-enabled LiteRT-LM observation execution within latency and idle-memory budgets
 
 ## Milestone 3: MCP core - in progress
 

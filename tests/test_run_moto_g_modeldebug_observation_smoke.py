@@ -381,12 +381,12 @@ def terminal_observation_xml() -> str:
             "FAILED",
             (
                 "No safe deterministic route is available for this command yet. "
-                "Model output exceeded the local routing output budget."
+                "Model output did not match the strict routing JSON schema."
             ),
             "OBSERVE Received typed command input",
             "PLAN No deterministic route selected",
             "PREPARE Local model ready for observe-only fallback.",
-            "ERROR Model output exceeded the local routing output budget.",
+            "ERROR Model output did not match the strict routing JSON schema.",
         ],
         edit_text=True,
     )
