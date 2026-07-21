@@ -36,7 +36,8 @@ RevokeCallback = Callable[[UUID], Awaitable[None]]
 DEVICE_ID_PATTERN = r"^[A-Za-z0-9._:-]{1,64}$"
 DISPLAY_NAME_PATTERN = r"^[^\x00-\x1F\x7F]{1,80}$"
 MAX_PAIRING_REQUEST_BYTES = 2_048
-PAIRING_BUNDLE_VERSION: Literal["goffy.pairing.bundle.v2"] = "goffy.pairing.bundle.v2"
+PAIRING_BUNDLE_VERSION: Literal["goffy.pairing.bundle.v3"] = "goffy.pairing.bundle.v3"
+HUB_TRUST_CONTRACT_VERSION: Literal["goffy.hub.trust.v1"] = "goffy.hub.trust.v1"
 
 
 class PairingApiModel(BaseModel):
@@ -54,6 +55,15 @@ class PairingChallengeResponse(PairingApiModel):
     expires_at: datetime
 
 
+class HubIdentityTrustContract(PairingApiModel):
+    schema_version: Literal["goffy.hub.trust.v1"]
+    proof_kind: Literal["loopback_fingerprint_only"]
+    transport_scope: Literal["usb_loopback_only"]
+    public_key_pin_status: Literal["absent"]
+    certificate_pin_status: Literal["absent"]
+    trusted_lan_supported: Literal[False]
+
+
 class PairingBundleHubIdentity(PairingApiModel):
     schema_version: HubIdentitySchemaVersion
     hub_id: UUID
@@ -62,6 +72,7 @@ class PairingBundleHubIdentity(PairingApiModel):
     mode: Literal["usb_loopback"]
     verified_by: Literal["loopback_admin_session"]
     trusted_lan_supported: Literal[False]
+    trust_contract: HubIdentityTrustContract
 
 
 class HubIdentityResponse(PairingApiModel):
@@ -71,10 +82,11 @@ class HubIdentityResponse(PairingApiModel):
     created_at: datetime
     verified_by: Literal["loopback_admin_session"]
     trusted_lan_supported: Literal[False]
+    trust_contract: HubIdentityTrustContract
 
 
 class PairingBundleResponse(PairingApiModel):
-    bundle_version: Literal["goffy.pairing.bundle.v2"]
+    bundle_version: Literal["goffy.pairing.bundle.v3"]
     hub_endpoint: str = Field(min_length=1, max_length=2048)
     hub_identity: PairingBundleHubIdentity
     challenge: PairingChallengeResponse
@@ -578,6 +590,7 @@ def _hub_identity_response(hub_identity: HubIdentity) -> HubIdentityResponse:
         created_at=hub_identity.created_at,
         verified_by="loopback_admin_session",
         trusted_lan_supported=False,
+        trust_contract=_hub_identity_trust_contract(),
     )
 
 
@@ -589,6 +602,18 @@ def _pairing_bundle_identity(hub_identity: HubIdentity) -> PairingBundleHubIdent
         created_at=hub_identity.created_at,
         mode="usb_loopback",
         verified_by="loopback_admin_session",
+        trusted_lan_supported=False,
+        trust_contract=_hub_identity_trust_contract(),
+    )
+
+
+def _hub_identity_trust_contract() -> HubIdentityTrustContract:
+    return HubIdentityTrustContract(
+        schema_version=HUB_TRUST_CONTRACT_VERSION,
+        proof_kind="loopback_fingerprint_only",
+        transport_scope="usb_loopback_only",
+        public_key_pin_status="absent",
+        certificate_pin_status="absent",
         trusted_lan_supported=False,
     )
 

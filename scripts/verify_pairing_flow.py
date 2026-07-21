@@ -28,6 +28,14 @@ from scripts.create_pairing_qr import (  # noqa: E402
 
 BOOTSTRAP_TOKEN = "local-pairing-smoke-bootstrap-token"  # noqa: S105
 BOOTSTRAP_HEADERS = {"Authorization": f"Bearer {BOOTSTRAP_TOKEN}"}
+EXPECTED_VERIFIER_TRUST_CONTRACT = {
+    "schemaVersion": "goffy.hub.trust.v1",
+    "proofKind": "loopback_fingerprint_only",
+    "transportScope": "usb_loopback_only",
+    "publicKeyPinStatus": "absent",
+    "certificatePinStatus": "absent",
+    "trustedLanSupported": False,
+}
 
 
 @dataclass(frozen=True)
@@ -111,6 +119,7 @@ def verify_pairing_flow(output: Path | None = None, force: bool = False) -> Pair
                 "createdAt",
                 "verifiedBy",
                 "trustedLanSupported",
+                "trustContract",
             }
             if (
                 set(identity) != expected_identity_keys
@@ -118,6 +127,7 @@ def verify_pairing_flow(output: Path | None = None, force: bool = False) -> Pair
                 or not isinstance(identity["fingerprint"], str)
                 or not identity["fingerprint"].startswith("sha256:")
                 or identity["trustedLanSupported"]
+                or identity["trustContract"] != EXPECTED_VERIFIER_TRUST_CONTRACT
                 or "identitySeed" in identity_response.text
             ):
                 raise PairingSmokeError("Hub identity response is invalid")
@@ -137,6 +147,8 @@ def verify_pairing_flow(output: Path | None = None, force: bool = False) -> Pair
             require_no_store(bundle_response, "pairing bundle creation")
             bundle = bundle_response.json()
             validate_pairing_bundle(bundle)
+            if bundle["hubIdentity"].get("trustContract") != EXPECTED_VERIFIER_TRUST_CONTRACT:
+                raise PairingSmokeError("Pairing bundle trust contract is invalid")
 
             payload = canonical_bundle_payload(bundle)
             if output is not None:

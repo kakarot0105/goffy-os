@@ -25,7 +25,7 @@ from goffy_protocol import (
 
 FIXTURE_PATH = Path(__file__).parents[1] / "protocol" / "fixtures" / "mac-system-info-flow.jsonl"
 PAIRING_BUNDLE_FIXTURE_PATH = (
-    Path(__file__).parents[1] / "protocol" / "fixtures" / "pairing-bundle-v2.json"
+    Path(__file__).parents[1] / "protocol" / "fixtures" / "pairing-bundle-v3.json"
 )
 DISCOVERY_SCHEMA_PATH = (
     Path(__file__).parents[1] / "protocol" / "schemas" / "capability-discovery.schema.json"
@@ -191,6 +191,16 @@ def test_pairing_bundle_json_schema_matches_qr_onboarding_boundary() -> None:
     trusted_lan_claim["hubIdentity"]["trustedLanSupported"] = True
     with pytest.raises(JsonSchemaValidationError):
         validator.validate(trusted_lan_claim)
+
+    public_key_claim = deepcopy(bundle)
+    public_key_claim["hubIdentity"]["trustContract"]["publicKeyPinStatus"] = "configured"
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(public_key_claim)
+
+    contract_lan_claim = deepcopy(bundle)
+    contract_lan_claim["hubIdentity"]["trustContract"]["trustedLanSupported"] = True
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(contract_lan_claim)
 
     extended = deepcopy(bundle)
     extended["unexpected"] = True

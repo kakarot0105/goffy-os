@@ -39,6 +39,10 @@ ADR 0021 supersedes this initial `goffy.pairing.bundle.v1` shape with
 `goffy.pairing.bundle.v2` so Android can require and persist public Hub identity
 metadata.
 
+ADR 0035 supersedes `goffy.pairing.bundle.v2` with
+`goffy.pairing.bundle.v3` so the bundle also carries the explicit
+USB-loopback-only Hub identity trust contract.
+
 This does not implement camera capture, QR decoding, trusted certificate
 onboarding, LAN pairing, or automatic token rotation schedules. Hub-side paired
 token rotation is handled by ADR 0018; Android manual rotation UX is handled by

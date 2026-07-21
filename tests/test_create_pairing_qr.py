@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from scripts import create_pairing_qr
 from scripts.create_pairing_qr import (
+    EXPECTED_HUB_TRUST_CONTRACT,
     PAIRING_QR_ARTIFACT_MARKER,
     PairingQrError,
     canonical_bundle_payload,
@@ -25,7 +26,7 @@ from scripts.create_pairing_qr import (
 
 TEST_BOOTSTRAP_TOKEN = "bootstrap-" + "token"
 PAIRING_BUNDLE: dict[str, Any] = {
-    "bundleVersion": "goffy.pairing.bundle.v2",
+    "bundleVersion": "goffy.pairing.bundle.v3",
     "hubEndpoint": "ws://127.0.0.1:8787/ws/v1",
     "hubIdentity": {
         "schemaVersion": "goffy.hub.identity.v1",
@@ -35,6 +36,7 @@ PAIRING_BUNDLE: dict[str, Any] = {
         "mode": "usb_loopback",
         "verifiedBy": "loopback_admin_session",
         "trustedLanSupported": False,
+        "trustContract": EXPECTED_HUB_TRUST_CONTRACT,
     },
     "challenge": {
         "challengeId": "30303030-3030-4030-8030-303030303030",
@@ -126,6 +128,18 @@ def test_validate_pairing_bundle_rejects_trusted_lan_claim() -> None:
 
     with pytest.raises(PairingQrError):
         validate_pairing_bundle(bad_bundle)
+
+
+def test_validate_pairing_bundle_rejects_public_key_or_certificate_claim() -> None:
+    bad_public_key = json.loads(json.dumps(PAIRING_BUNDLE))
+    bad_public_key["hubIdentity"]["trustContract"]["publicKeyPinStatus"] = "configured"
+    bad_certificate = json.loads(json.dumps(PAIRING_BUNDLE))
+    bad_certificate["hubIdentity"]["trustContract"]["certificatePinStatus"] = "configured"
+
+    with pytest.raises(PairingQrError):
+        validate_pairing_bundle(bad_public_key)
+    with pytest.raises(PairingQrError):
+        validate_pairing_bundle(bad_certificate)
 
 
 def test_validate_pairing_bundle_requires_hub_identity_fingerprint() -> None:

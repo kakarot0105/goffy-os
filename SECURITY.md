@@ -36,17 +36,20 @@ include real credentials or unrelated personal data.
   JSON is capped at 2 KiB, validation errors never echo secret input, and
   secret-bearing success responses disable caching.
 - Pairing bundles wrap one challenge in the versioned
-  `goffy.pairing.bundle.v2` QR payload shape. The Hub creates them only through
+  `goffy.pairing.bundle.v3` QR payload shape. The Hub creates them only through
   loopback bootstrap administration, requires a loopback Host header, marks them
   no-store, and includes the public Hub ID, stable SHA-256 fingerprint, creation
-  timestamp, and `trustedLanSupported=false`. Redemption success responses carry
-  the same public identity so Android can reject a mismatch before persistence.
+  timestamp, `trustedLanSupported=false`, and a `goffy.hub.trust.v1` contract
+  declaring loopback-only proof with absent public-key and certificate pins.
+  Redemption success responses carry the same public identity so Android can
+  reject a mismatch before persistence.
 - In paired mode, the Hub creates an owner-only `hub-identity.json` file next to
   the pairing credential database. `GET /admin/v1/hub-identity` is loopback-only,
   bootstrap-admin-only, no-store, and returns only a stable Hub ID, SHA-256
-  fingerprint, creation timestamp, and `trustedLanSupported=false`. It never
-  exposes the private identity seed and does not implement LAN trust, certificate
-  pinning, or remote identity proof.
+  fingerprint, creation timestamp, `trustedLanSupported=false`, and the same
+  public trust contract. It never exposes the private identity seed, public-key
+  material, certificate PEM, or remote identity proof, and it does not implement
+  LAN trust or certificate pinning.
 - `scripts/create_pairing_qr.py` creates local operator QR artifacts only from an
   HTTP loopback Hub URL, sends the bootstrap token in an `Authorization` header,
   validates the returned bundle shape, and writes the SVG with owner-only file
@@ -109,12 +112,14 @@ include real credentials or unrelated personal data.
   local cleanup. The temporary challenge input is foreground-only,
   password-masked, bounded to 2 KiB, and excluded from saved Compose state, audit
   rows, URLs, and error text. Bundles missing the public Hub identity fingerprint
-  are rejected before any redemption request. If the Hub redemption response
-  returns different public identity metadata, Android rejects pairing before
-  persistence. Persistent paired activation requires encrypted read-back of the
-  bearer plus the pinned Hub identity; legacy records without a pin fail closed
-  and are deleted. The visible fingerprint is public loopback identity metadata
-  only and is not a certificate, public-key proof, or LAN trust grant.
+  or the loopback-only trust contract are rejected before any redemption request.
+  Android also rejects bundles or redemption responses that claim configured
+  public-key pins, certificate pins, or trusted LAN support. If the Hub redemption
+  response returns different public identity metadata, Android rejects pairing
+  before persistence. Persistent paired activation requires encrypted read-back
+  of the bearer plus the pinned Hub identity; legacy records without a pin fail
+  closed and are deleted. The visible fingerprint is public loopback identity
+  metadata only and is not a certificate, public-key proof, or LAN trust grant.
 - Android QR transfer is limited to the visible pairing setup flow. `Scan QR`
   requests `CAMERA` only from that foreground action, binds CameraX preview and
   image analysis to the Activity lifecycle, decodes QR codes only with ML Kit,

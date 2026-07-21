@@ -130,6 +130,7 @@
 - [x] Bounded loopback-admin Hub/MCP operator audit event retrieval
 - [x] Paired loopback Hub/MCP self-audit event retrieval
 - [x] Persistent hash-chained Hub/MCP operator audit storage foundation
+- [x] Public Hub identity trust-contract readiness gate for certificate/public-key onboarding
 - [ ] Certificate/public-key trusted Hub identity onboarding
 - [ ] Automatic token rotation reminders or schedules after physical validation
 - [x] Android retrieval and user controls for Hub/MCP operator audit

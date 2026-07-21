@@ -11,7 +11,7 @@
   ],
   "properties": {
     "bundleVersion": {
-      "const": "goffy.pairing.bundle.v2"
+      "const": "goffy.pairing.bundle.v3"
     },
     "hubEndpoint": {
       "type": "string",
@@ -29,7 +29,8 @@
         "createdAt",
         "mode",
         "verifiedBy",
-        "trustedLanSupported"
+        "trustedLanSupported",
+        "trustContract"
       ],
       "properties": {
         "schemaVersion": {
@@ -55,6 +56,38 @@
         },
         "trustedLanSupported": {
           "const": false
+        },
+        "trustContract": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schemaVersion",
+            "proofKind",
+            "transportScope",
+            "publicKeyPinStatus",
+            "certificatePinStatus",
+            "trustedLanSupported"
+          ],
+          "properties": {
+            "schemaVersion": {
+              "const": "goffy.hub.trust.v1"
+            },
+            "proofKind": {
+              "const": "loopback_fingerprint_only"
+            },
+            "transportScope": {
+              "const": "usb_loopback_only"
+            },
+            "publicKeyPinStatus": {
+              "const": "absent"
+            },
+            "certificatePinStatus": {
+              "const": "absent"
+            },
+            "trustedLanSupported": {
+              "const": false
+            }
+          }
         }
       }
     },

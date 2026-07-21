@@ -23,8 +23,16 @@ DEFAULT_HUB_URL = "http://127.0.0.1:8787"
 DEFAULT_OUTPUT = Path("goffy-pairing-bundle.svg")
 MAX_BUNDLE_BYTES = 4096
 TIMEOUT_SECONDS = 5.0
-PAIRING_BUNDLE_VERSION = "goffy.pairing.bundle.v2"
+PAIRING_BUNDLE_VERSION = "goffy.pairing.bundle.v3"
 PAIRING_QR_ARTIFACT_MARKER = "GOFFY_PAIRING_QR_ARTIFACT_V1"
+EXPECTED_HUB_TRUST_CONTRACT = {
+    "schemaVersion": "goffy.hub.trust.v1",
+    "proofKind": "loopback_fingerprint_only",
+    "transportScope": "usb_loopback_only",
+    "publicKeyPinStatus": "absent",
+    "certificatePinStatus": "absent",
+    "trustedLanSupported": False,
+}
 PAIRING_ENDPOINT_PATTERN = re.compile(r"^wss?://127\.0\.0\.1(?::[0-9]{1,5})?/ws/v1$")
 TIMESTAMP_PATTERN = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$"
@@ -136,6 +144,7 @@ def validate_pairing_bundle(bundle: Mapping[str, Any]) -> None:
         "mode",
         "verifiedBy",
         "trustedLanSupported",
+        "trustContract",
     }:
         raise PairingQrError("Hub pairing bundle identity is invalid.")
     if (
@@ -149,6 +158,7 @@ def validate_pairing_bundle(bundle: Mapping[str, Any]) -> None:
         or identity["mode"] != "usb_loopback"
         or identity["verifiedBy"] != "loopback_admin_session"
         or identity["trustedLanSupported"] is not False
+        or identity["trustContract"] != EXPECTED_HUB_TRUST_CONTRACT
     ):
         raise PairingQrError("Hub pairing bundle identity is not USB-loopback-only.")
     if not isinstance(challenge, dict) or set(challenge) != {

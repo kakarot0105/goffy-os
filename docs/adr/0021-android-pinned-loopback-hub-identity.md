@@ -42,6 +42,9 @@ This intentionally rejects `goffy.pairing.bundle.v1` for pinned Android pairing
 and breaks compatibility with schema-1 Android credential records. Users must
 create a fresh QR pairing bundle and pair again.
 
+ADR 0035 supersedes this `goffy.pairing.bundle.v2` shape with
+`goffy.pairing.bundle.v3` by adding an explicit USB-loopback-only trust contract.
+
 ## Rejected alternatives
 
 - Accept legacy unpinned bundles for compatibility. Rejected because it would

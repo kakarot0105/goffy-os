@@ -50,6 +50,28 @@ class AndroidHubCredentialStoreTest {
     }
 
     @Test
+    fun storedCredentialClaimingLanTrustFailsClosedAndIsDeleted() {
+        val context = RuntimeEnvironment.getApplication()
+        credentialFile().delete()
+        val cipher = XorCredentialCipher()
+        AndroidHubCredentialStore(context, true, cipher).save(credential())
+        val plaintext = cipher.open(credentialFile().readBytes()).toString(Charsets.UTF_8)
+        credentialFile().writeBytes(
+            cipher.seal(
+                plaintext
+                    .replace("\"trustedLanSupported\":false", "\"trustedLanSupported\":true")
+                    .toByteArray(),
+            ),
+        )
+
+        val result = AndroidHubCredentialStore(context, true, cipher).load()
+
+        assertEquals(HubCredentialLoadResult.Corrupt, result)
+        assertFalse(credentialFile().exists())
+        assertTrue(cipher.keyDeleted)
+    }
+
+    @Test
     fun tamperedRecordFailsClosedAndIsDeleted() {
         val context = RuntimeEnvironment.getApplication()
         credentialFile().delete()

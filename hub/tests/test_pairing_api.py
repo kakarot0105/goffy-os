@@ -21,6 +21,14 @@ from goffy_protocol import MCP_PROTOCOL_VERSION, PROTOCOL_VERSION, MessageEnvelo
 
 BOOTSTRAP_TOKEN = "bootstrap-token-that-is-long-enough"  # noqa: S105
 BOOTSTRAP_HEADERS = {"Authorization": f"Bearer {BOOTSTRAP_TOKEN}"}
+EXPECTED_TRUST_CONTRACT = {
+    "schemaVersion": "goffy.hub.trust.v1",
+    "proofKind": "loopback_fingerprint_only",
+    "transportScope": "usb_loopback_only",
+    "publicKeyPinStatus": "absent",
+    "certificatePinStatus": "absent",
+    "trustedLanSupported": False,
+}
 
 
 @contextmanager
@@ -233,7 +241,7 @@ def test_pairing_bundle_contains_loopback_identity_and_redeemable_challenge(
         )
 
     assert bundle == {
-        "bundleVersion": "goffy.pairing.bundle.v2",
+        "bundleVersion": "goffy.pairing.bundle.v3",
         "hubEndpoint": "ws://127.0.0.1:8787/ws/v1",
         "hubIdentity": {
             "schemaVersion": "goffy.hub.identity.v1",
@@ -243,6 +251,7 @@ def test_pairing_bundle_contains_loopback_identity_and_redeemable_challenge(
             "mode": "usb_loopback",
             "verifiedBy": "loopback_admin_session",
             "trustedLanSupported": False,
+            "trustContract": EXPECTED_TRUST_CONTRACT,
         },
         "challenge": {
             "challengeId": bundle["challenge"]["challengeId"],
@@ -430,12 +439,39 @@ def test_admin_hub_identity_is_stable_no_store_and_never_exposes_seed(
         "createdAt": first_response.json()["createdAt"],
         "verifiedBy": "loopback_admin_session",
         "trustedLanSupported": False,
+        "trustContract": EXPECTED_TRUST_CONTRACT,
     }
     assert first_response.json()["fingerprint"].startswith("sha256:")
     assert "identitySeed" not in first_response.text
+    assert "publicKeyPem" not in first_response.text
+    assert "publicKeyMaterial" not in first_response.text
+    assert "certificatePem" not in first_response.text
     assert "pairingToken" not in first_response.text
     assert paired_response.status_code == 403
     assert paired_response.json()["detail"]["code"] == "insufficient_scope"
+
+
+def test_hub_identity_trust_contract_blocks_lan_and_key_pinning_claims(
+    tmp_path: Path,
+) -> None:
+    with pairing_client(tmp_path) as client:
+        identity_response = client.get(
+            "/admin/v1/hub-identity",
+            headers=BOOTSTRAP_HEADERS,
+        )
+        bundle_response = client.post(
+            "/admin/v1/pairing/bundles",
+            headers=BOOTSTRAP_HEADERS,
+        )
+
+    assert identity_response.status_code == 200
+    assert bundle_response.status_code == 201
+    identity_contract = identity_response.json()["trustContract"]
+    bundle_contract = bundle_response.json()["hubIdentity"]["trustContract"]
+    assert identity_contract == EXPECTED_TRUST_CONTRACT
+    assert bundle_contract == EXPECTED_TRUST_CONTRACT
+    assert identity_response.json()["trustedLanSupported"] is False
+    assert bundle_response.json()["hubIdentity"]["trustedLanSupported"] is False
 
 
 def test_admin_hub_identity_survives_app_restart(tmp_path: Path) -> None:

@@ -225,12 +225,7 @@ class OkHttpHubPairingGateway internal constructor(
         }
         val identity = value.requiredObject("hubIdentity")
         identity.requireExactKeys(PAIRING_BUNDLE_IDENTITY_KEYS)
-        if (identity.requiredString("mode") != "usb_loopback" ||
-            identity.requiredString("verifiedBy") != "loopback_admin_session" ||
-            identity.requiredBoolean("trustedLanSupported")
-        ) {
-            throw invalidChallenge()
-        }
+        requireLoopbackIdentityContract(identity, ::invalidChallenge)
         val hubIdentity = parseHubIdentity(identity)
         return parseChallengeObject(value.requiredObject("challenge"), hubIdentity)
     }
@@ -315,12 +310,7 @@ class OkHttpHubPairingGateway internal constructor(
             throw invalidResponse()
         }
         wire.hubIdentity.requireExactKeys(PAIRING_BUNDLE_IDENTITY_KEYS)
-        if (wire.hubIdentity.requiredString("mode") != "usb_loopback" ||
-            wire.hubIdentity.requiredString("verifiedBy") != "loopback_admin_session" ||
-            wire.hubIdentity.requiredBoolean("trustedLanSupported")
-        ) {
-            throw invalidResponse()
-        }
+        requireLoopbackIdentityContract(wire.hubIdentity, ::invalidResponse)
         val returnedHubIdentity = parseHubIdentity(wire.hubIdentity)
         if (!sameHubIdentity(returnedHubIdentity, hubIdentity)) {
             throw HubPairingException(
@@ -338,6 +328,29 @@ class OkHttpHubPairingGateway internal constructor(
             throw invalidResponse()
         }
         return IssuedHubCredential(credentialId, wire.accessToken, createdAt, returnedHubIdentity)
+    }
+
+    private fun requireLoopbackIdentityContract(
+        identity: JsonObject,
+        invalid: () -> HubPairingException,
+    ) {
+        if (identity.requiredString("mode") != "usb_loopback" ||
+            identity.requiredString("verifiedBy") != "loopback_admin_session" ||
+            identity.requiredBoolean("trustedLanSupported")
+        ) {
+            throw invalid()
+        }
+        val trustContract = identity.requiredObject("trustContract")
+        trustContract.requireExactKeys(HUB_TRUST_CONTRACT_KEYS)
+        if (trustContract.requiredString("schemaVersion") != "goffy.hub.trust.v1" ||
+            trustContract.requiredString("proofKind") != "loopback_fingerprint_only" ||
+            trustContract.requiredString("transportScope") != "usb_loopback_only" ||
+            trustContract.requiredString("publicKeyPinStatus") != "absent" ||
+            trustContract.requiredString("certificatePinStatus") != "absent" ||
+            trustContract.requiredBoolean("trustedLanSupported")
+        ) {
+            throw invalid()
+        }
     }
 
     private fun sameHubIdentity(first: HubIdentityPin, second: HubIdentityPin): Boolean =
@@ -549,7 +562,7 @@ class OkHttpHubPairingGateway internal constructor(
         const val MAX_ACCESS_TOKEN_LENGTH = 4_096
         const val MAX_DISPLAY_NAME_LENGTH = 80
         val DEVICE_ID_REGEX = Regex("^[A-Za-z0-9._:-]{1,64}$")
-        const val PAIRING_BUNDLE_VERSION = "goffy.pairing.bundle.v2"
+        const val PAIRING_BUNDLE_VERSION = "goffy.pairing.bundle.v3"
         val CHALLENGE_KEYS = setOf("challengeId", "pairingToken", "expiresAt")
         val PAIRING_BUNDLE_KEYS = setOf(
             "bundleVersion",
@@ -564,6 +577,15 @@ class OkHttpHubPairingGateway internal constructor(
             "createdAt",
             "mode",
             "verifiedBy",
+            "trustedLanSupported",
+            "trustContract",
+        )
+        val HUB_TRUST_CONTRACT_KEYS = setOf(
+            "schemaVersion",
+            "proofKind",
+            "transportScope",
+            "publicKeyPinStatus",
+            "certificatePinStatus",
             "trustedLanSupported",
         )
         val SUCCESS_KEYS = setOf("credentialId", "accessToken", "createdAt", "hubIdentity")

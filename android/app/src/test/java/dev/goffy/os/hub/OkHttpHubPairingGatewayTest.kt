@@ -525,13 +525,51 @@ class OkHttpHubPairingGatewayTest {
         }
     }
 
+    @Test
+    fun rejectsPairingBundleThatClaimsUnsupportedTrustBeforeAnyNetworkCall() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            val gateway = OkHttpHubPairingGateway(OkHttpClient())
+            val unsupportedClaims = listOf(
+                pairingBundle(server).replace(
+                    "\"transportScope\":\"usb_loopback_only\"",
+                    "\"transportScope\":\"trusted_lan\"",
+                ),
+                pairingBundle(server).replace(
+                    "\"publicKeyPinStatus\":\"absent\"",
+                    "\"publicKeyPinStatus\":\"configured\"",
+                ),
+                pairingBundle(server).replace(
+                    "\"certificatePinStatus\":\"absent\"",
+                    "\"certificatePinStatus\":\"configured\"",
+                ),
+                pairingBundle(server).replace(
+                    "\"trustedLanSupported\":false}",
+                    "\"trustedLanSupported\":true}",
+                ),
+            )
+
+            unsupportedClaims.forEach { unsupportedClaim ->
+                val failure = runCatching {
+                    gateway.redeem(endpoint(server), unsupportedClaim, "goffy-test", "Moto G")
+                }.exceptionOrNull()
+
+                assertTrue(failure is HubPairingException)
+                assertEquals("invalid_pairing_payload", (failure as HubPairingException).code)
+                assertFalse(failure.message.orEmpty().contains(PAIRING_TOKEN))
+            }
+            assertEquals(0, server.requestCount)
+            gateway.close()
+        }
+    }
+
     private fun endpoint(server: MockWebServer): HubEndpoint = HubEndpoint.create(
         server.url("/ws/v1").toString().replaceFirst("http://", "ws://"),
         allowInsecureLoopback = true,
     )
 
     private fun pairingBundle(server: MockWebServer): String =
-        "{\"bundleVersion\":\"goffy.pairing.bundle.v2\"," +
+        "{\"bundleVersion\":\"goffy.pairing.bundle.v3\"," +
             "\"hubEndpoint\":\"${endpoint(server).webSocketUrl}\"," +
             hubIdentityJson() + "," +
             "\"challenge\":$CHALLENGE_JSON}"
@@ -543,6 +581,15 @@ class OkHttpHubPairingGatewayTest {
             "\"createdAt\":\"$HUB_IDENTITY_CREATED_AT\"," +
             "\"mode\":\"usb_loopback\"," +
             "\"verifiedBy\":\"loopback_admin_session\"," +
+            "\"trustedLanSupported\":false," +
+            hubTrustContractJson() + "}"
+
+    private fun hubTrustContractJson(): String =
+        "\"trustContract\":{\"schemaVersion\":\"goffy.hub.trust.v1\"," +
+            "\"proofKind\":\"loopback_fingerprint_only\"," +
+            "\"transportScope\":\"usb_loopback_only\"," +
+            "\"publicKeyPinStatus\":\"absent\"," +
+            "\"certificatePinStatus\":\"absent\"," +
             "\"trustedLanSupported\":false}"
 
     private fun jsonResponse(status: Int, body: String): MockResponse = MockResponse.Builder()
@@ -574,7 +621,13 @@ class OkHttpHubPairingGatewayTest {
                 "\"createdAt\":\"$HUB_IDENTITY_CREATED_AT\"," +
                 "\"mode\":\"usb_loopback\"," +
                 "\"verifiedBy\":\"loopback_admin_session\"," +
-                "\"trustedLanSupported\":false}}"
+                "\"trustedLanSupported\":false," +
+                "\"trustContract\":{\"schemaVersion\":\"goffy.hub.trust.v1\"," +
+                "\"proofKind\":\"loopback_fingerprint_only\"," +
+                "\"transportScope\":\"usb_loopback_only\"," +
+                "\"publicKeyPinStatus\":\"absent\"," +
+                "\"certificatePinStatus\":\"absent\"," +
+                "\"trustedLanSupported\":false}}}"
         const val ROTATION_JSON =
             "{\"credentialId\":\"$CREDENTIAL_ID\",\"accessToken\":\"$ROTATED_ACCESS_TOKEN\"," +
                 "\"rotatedAt\":\"2026-07-13T16:05:00Z\"}"
