@@ -125,6 +125,19 @@ The ROM-0 planning and DSU staging guide is in
 Manual restore/unlock evidence requirements are in
 [`docs/setup/rom-0-manual-gates.md`](docs/setup/rom-0-manual-gates.md).
 
+To produce a single safe "what do I do next?" packet for the human checks, run:
+
+```bash
+.venv/bin/python scripts/create_rom0_manual_action_packet.py \
+  .goffy-validation/rom-feasibility-current.json \
+  --output .goffy-validation/rom-0-manual-action-packet.md
+```
+
+The packet is read-only/template-only. It summarizes missing OEM/Motorola
+unlock eligibility and stock-restore evidence, links those actions to the typed
+GOFFY evidence helpers, redacts the device serial placeholder, and rejects any
+unlock, flash, erase, or bootloader-reboot command authority.
+
 ## First ROM Milestone
 
 Milestone ROM-0 is feasibility, not flashing.
@@ -152,6 +165,11 @@ Acceptance criteria:
 - Second GSI candidate: TrebleDroid / ponces AOSP GSI only if official GSI is
   too limited.
 - Helper candidate: DSU Sideloader only if built-in DSU Loader is unavailable.
+- Generic bootloader-unlock scripts and ROM flashing guides: inspect only.
+  Current scans surfaced guides that emit destructive fastboot commands or
+  broad device-agnostic instructions. GOFFY reuses official Motorola/Android
+  documentation plus its typed local evidence validators instead of importing
+  those scripts.
 
 The exact stock package checksum remains open because we have not downloaded or
 hash-recorded a restore archive.

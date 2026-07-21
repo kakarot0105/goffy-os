@@ -6,6 +6,30 @@ This document defines the evidence GOFFY needs before a human even reviews a
 destructive ROM step. It is not approval to unlock, flash, erase, root, or boot a
 custom image.
 
+## Manual Action Packet
+
+Start with a packet generated from the latest read-only ROM probe:
+
+```bash
+.venv/bin/python scripts/create_rom0_manual_action_packet.py \
+  .goffy-validation/rom-feasibility-current.json \
+  --output .goffy-validation/rom-0-manual-action-packet.md
+```
+
+The packet is a local checklist for the human operator. It identifies missing
+stock-restore and OEM/Motorola unlock-eligibility evidence, gives the exact
+GOFFY evidence-helper commands to run after manual checks, and refuses to emit
+unlock, flash, erase, fastboot-reboot, root, or boot-image mutation commands.
+It may also consume already-created redacted evidence:
+
+```bash
+.venv/bin/python scripts/create_rom0_manual_action_packet.py \
+  .goffy-validation/rom-feasibility-current.json \
+  --unlock-eligibility-evidence .goffy-validation/rom-unlock-eligibility-evidence.json \
+  --stock-restore-evidence .goffy-validation/rom-stock-restore-evidence.json \
+  --output .goffy-validation/rom-0-manual-action-packet.md
+```
+
 ## Evidence File
 
 Create a local JSON file under `.goffy-validation/`, not in the repo:

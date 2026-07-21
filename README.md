@@ -352,15 +352,24 @@ validate agent policy, Hub pairing, audit, local tools, and model behavior befor
 flashing anything. It is not the final product if the Moto `kansas` hardware can
 be unlocked and boot a recoverable GSI or custom ROM safely.
 
-For the next ROM-0 evidence step, generate a safe local manual-gates template
-before editing evidence by hand:
+For the next ROM-0 evidence step, generate a safe manual action packet from the
+latest read-only probe. It tells the human exactly which restore/unlock evidence
+is missing without emitting unlock, flash, erase, or reboot commands:
+
+```bash
+.venv/bin/python scripts/create_rom0_manual_action_packet.py \
+  .goffy-validation/rom-feasibility-current.json \
+  --output .goffy-validation/rom-0-manual-action-packet.md
+```
+
+Then generate a local manual-gates template before editing evidence by hand:
 
 ```bash
 .venv/bin/python scripts/create_rom_manual_gates_template.py
 ```
 
-The template stays under `.goffy-validation`, defaults to blocked values, and
-does not authorize unlock, flash, erase, root, or boot-image changes.
+Both files stay under `.goffy-validation`, default to blocked values, and do not
+authorize unlock, flash, erase, root, or boot-image changes.
 
 For ROM APK packaging, keep release keys outside the repo, generate a dry-run
 signing plan before producing any `GoffyOS-signed.apk`, then verify the signed

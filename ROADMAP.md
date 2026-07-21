@@ -28,6 +28,7 @@
 - [x] Non-destructive stock archive-name candidate matcher keeps filename matches out of manual gates
 - [x] Redacted unlock-eligibility evidence helper for manual OEM/Motorola checks
 - [x] Read-only probe surfaces missing or disallowing OEM unlock property evidence
+- [x] Non-destructive ROM-0 manual action packet for restore/unlock evidence collection
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist
 - [ ] User-approved destructive unlock/flash decision point
