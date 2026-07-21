@@ -1,0 +1,15 @@
+// GOFFY ROM system-app import template.
+//
+// Copy the release APK into this directory as GoffyOS.apk inside an AOSP/GSI
+// build tree, include this module in PRODUCT_PACKAGES, and keep it
+// non-privileged until a reviewed GOFFY ROM tool requires privileged APIs.
+
+android_app_import {
+    name: "GoffyOS",
+    apk: "GoffyOS.apk",
+    presigned: true,
+    privileged: false,
+    dex_preopt: {
+        enabled: false,
+    },
+}

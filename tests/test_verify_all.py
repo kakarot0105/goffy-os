@@ -14,6 +14,7 @@ from scripts.verify_all import (
     android_local_model_provider_command,
     merged_manifest_security_command,
     render_verification_report,
+    rom_system_app_command,
     run_verification,
 )
 
@@ -131,6 +132,21 @@ def test_verifier_runs_android_gradle_when_preflight_passes(tmp_path: Path) -> N
     assert seen[-3] == android_apk_budget_command("python")
     assert seen[-2] == android_local_model_provider_command(tmp_path)
     assert seen[-1] == merged_manifest_security_command("python")
+
+
+def test_verifier_runs_rom_system_app_validation(tmp_path: Path) -> None:
+    seen: list[tuple[str, ...]] = []
+
+    report = run_verification(
+        root=tmp_path,
+        python="python",
+        runner=passing_runner(seen),
+        preflight_collector=preflight(False),
+        allow_missing_android=True,
+    )
+
+    assert report.ok
+    assert rom_system_app_command("python") in seen
 
 
 def test_verifier_fails_when_android_gradle_is_skipped_on_ready_toolchain(

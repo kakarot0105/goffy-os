@@ -139,6 +139,28 @@ Acceptance criteria:
 The exact stock package checksum remains open because we have not downloaded or
 hash-recorded a restore archive.
 
+## ROM Packaging Readiness
+
+GOFFY now has a ROM-side system-app package descriptor in
+[`rom/system-app/goffy-system-app.json`](rom/system-app/goffy-system-app.json).
+It intentionally targets a non-privileged system app first:
+
+- No platform signing.
+- The Gradle release artifact is unsigned and must be signed with a dedicated
+  GOFFY release key before ROM import.
+- No `priv-app` permission grants.
+- No signature or privileged Android permissions.
+- Camera remains foreground and user-approved only.
+
+The descriptor is validated by:
+
+```bash
+.venv/bin/python scripts/validate_rom_system_app.py
+```
+
+This prepares GOFFY for inclusion in a future AOSP/GSI build tree without
+claiming that the Moto can be flashed yet.
+
 ## Source Notes
 
 - Motorola bootloader support states that many recent devices are supported but

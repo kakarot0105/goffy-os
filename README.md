@@ -115,6 +115,7 @@ hub/           FastAPI Hub, auth boundary, routing, audit, and tools
 mcp-servers/   MCP server module placeholders
 protocol/      Versioned schemas and shared Python protocol package
 shared/        Cross-component constants and fixtures
+rom/           Future AOSP/GSI integration descriptors and ROM-side checks
 docs/          Architecture, ADRs, security, and setup guides
 scripts/       Verification and security tooling
 tests/         Cross-component integration tests

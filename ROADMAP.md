@@ -12,6 +12,7 @@
 - [x] No-flash planning checklist generator and DSU staging setup guide
 - [x] Official stock restore source identified through Motorola Software Fix
 - [x] Manual restore/unlock evidence validator and sensitive-key rejection
+- [x] Non-privileged ROM system-app descriptor and validator
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist
 - [ ] User-approved destructive unlock/flash decision point
