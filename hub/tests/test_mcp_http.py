@@ -30,9 +30,9 @@ from goffy_hub.mcp_server import (
     _ExactMcpEndpoint,
 )
 from goffy_hub.operator_audit import OperatorAuditLog
-from goffy_hub.registry import ToolInvocationResult
+from goffy_hub.registry import ToolInvocationResult, ToolRegistry
 from goffy_hub.settings import HubSettings
-from goffy_hub.tools import build_mac_system_tool
+from goffy_hub.tools import build_mac_clipboard_read_tool, build_mac_system_tool
 from goffy_protocol import MCP_PROTOCOL_VERSION
 
 AUTHORIZATION = "Bearer test-token-that-is-long-enough"  # noqa: S105
@@ -261,6 +261,61 @@ async def test_official_client_reads_approved_git_status(
         }
     ]
     assert str(tmp_path) not in json.dumps(result.structuredContent)
+
+
+@pytest.mark.asyncio
+async def test_official_client_reads_opt_in_mac_clipboard_text() -> None:
+    class FakeClipboardReader:
+        def read_text(self) -> str:
+            return "copied text"
+
+        def is_available(self) -> bool:
+            return True
+
+    registry = ToolRegistry()
+    registry.register(build_mac_system_tool(timeout_seconds=1))
+    registry.register(
+        build_mac_clipboard_read_tool(
+            timeout_seconds=1,
+            reader=FakeClipboardReader(),
+        )
+    )
+    app = create_app(
+        HubSettings(auth_token=SecretStr("test-token-that-is-long-enough")),
+        registry=registry,
+    )
+
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with (
+            httpx.AsyncClient(
+                transport=transport,
+                base_url="http://127.0.0.1:8787",
+                headers={"Authorization": AUTHORIZATION},
+                timeout=5,
+            ) as http_client,
+            streamable_http_client(
+                "http://127.0.0.1:8787/mcp",
+                http_client=http_client,
+            ) as (read_stream, write_stream, _get_session_id),
+            ClientSession(read_stream, write_stream) as session,
+        ):
+            initialization = await session.initialize()
+            listed = await session.list_tools()
+            result = await session.call_tool("mac.clipboard.read", {"maxChars": 6})
+
+    assert initialization.protocolVersion == MCP_PROTOCOL_VERSION
+    assert sorted(tool.name for tool in listed.tools) == ["mac.clipboard.read", "mac.system_info"]
+    assert result.isError is False
+    assert result.structuredContent is not None
+    assert result.structuredContent == {
+        "status": "available",
+        "contentType": "text",
+        "text": "copied",
+        "textTruncated": True,
+        "characterCount": 11,
+        "characterCountTruncated": False,
+    }
 
 
 @pytest.mark.asyncio

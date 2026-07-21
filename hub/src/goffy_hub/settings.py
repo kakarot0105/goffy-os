@@ -33,6 +33,7 @@ class HubSettings(BaseModel):
     operator_audit_max_events: int = Field(default=256, ge=16, le=2048)
     mac_files_roots: tuple[Path, ...] = Field(default=(), max_length=8)
     git_repo_roots: tuple[Path, ...] = Field(default=(), max_length=8)
+    mac_clipboard_read_enabled: bool = False
 
     @model_validator(mode="after")
     def guard_network_binding(self) -> HubSettings:
@@ -132,15 +133,11 @@ class HubSettings(BaseModel):
 
     @classmethod
     def from_environment(cls) -> HubSettings:
-        allow_lan = os.getenv("GOFFY_HUB_ALLOW_LAN", "false").strip().lower()
-        if allow_lan not in {"true", "false"}:
-            raise ValueError("GOFFY_HUB_ALLOW_LAN must be true or false")
-
         token = os.getenv("GOFFY_HUB_TOKEN")
         return cls(
             host=os.getenv("GOFFY_HUB_HOST", "127.0.0.1"),
             port=int(os.getenv("GOFFY_HUB_PORT", "8787")),
-            allow_lan=allow_lan == "true",
+            allow_lan=_boolean_environment("GOFFY_HUB_ALLOW_LAN"),
             auth_token=SecretStr(token) if token else None,
             pairing_database_path=_optional_path("GOFFY_PAIRING_DATABASE_PATH"),
             pairing_challenge_ttl_seconds=int(
@@ -159,6 +156,7 @@ class HubSettings(BaseModel):
             operator_audit_max_events=int(os.getenv("GOFFY_OPERATOR_AUDIT_MAX_EVENTS", "256")),
             mac_files_roots=_path_tuple("GOFFY_MAC_FILES_ROOTS"),
             git_repo_roots=_path_tuple("GOFFY_GIT_REPO_ROOTS"),
+            mac_clipboard_read_enabled=_boolean_environment("GOFFY_MAC_CLIPBOARD_READ_ENABLED"),
         )
 
 
@@ -179,6 +177,13 @@ def _comma_separated(environment_name: str) -> tuple[str, ...]:
 
 def _path_tuple(environment_name: str) -> tuple[Path, ...]:
     return tuple(Path(value).expanduser() for value in _comma_separated(environment_name))
+
+
+def _boolean_environment(environment_name: str) -> bool:
+    value = os.getenv(environment_name, "false").strip().lower()
+    if value not in {"true", "false"}:
+        raise ValueError(f"{environment_name} must be true or false")
+    return value == "true"
 
 
 def _validate_allowed_host(value: str) -> None:

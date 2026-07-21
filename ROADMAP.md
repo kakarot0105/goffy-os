@@ -132,6 +132,9 @@
    - [x] Optional approved-repo `git.status` Hub/MCP tool
    - [x] Android route, typed codec, timeline, speech, and audit handling for
      default approved-repo `git.status`
+   - [x] Optional opt-in `mac.clipboard.read` Hub/MCP tool
+   - [ ] Android route, typed codec, timeline, speech, and audit handling for
+     `mac.clipboard.read`
 6. Inspectable and deletable user-approved memory
 7. Polished, accessible, battery-aware GOFFY UI
 8. Signed beta, packaged Hub, diagnostics, upgrade, and rollback

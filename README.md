@@ -13,7 +13,8 @@ the capability boundary.
 > as the primary product track, with the launcher/app layer kept for safe
 > validation and fallback. The current repo implements five
 > offline PHONE actions, discovery-gated SAFE Mac status/file-list actions, an
-> approved-repo SAFE Git status MCP tool, an official MCP
+> approved-repo SAFE Git status MCP tool, an opt-in SAFE Mac clipboard-read MCP
+> tool, an official MCP
 > Streamable HTTP boundary, stable Hub paired-device credentials, Keystore-backed
 > Android pairing restore, and a persistent user-visible Android audit trail
 > for the newest 50 terminal tasks. MCP tool-list changes now stream with
@@ -101,6 +102,9 @@ the capability boundary.
   including an Android `List my Mac files` route for the default approved root
 - Optional `SAFE git.status` Hub/MCP tool for explicitly configured Git worktree roots,
   including an Android `Show my git status` route for the default approved repo
+- Optional, disabled-by-default `SAFE mac.clipboard.read` Hub/MCP tool for
+  bounded plaintext reads from the Mac clipboard; Android routing remains future
+  work
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
 - Shared fixture `protocol/fixtures/mac-system-info-flow.jsonl`
@@ -195,6 +199,20 @@ clients, never returns absolute repo roots or file contents, and never fetches,
 commits, pushes, or runs tests. Android can invoke the default approved repo with
 `Show my git status` or `Check my git status`; richer repo selection remains
 future work.
+
+Optional clipboard reading is disabled until the operator installs the optional
+macOS provider and enables the exact feature flag:
+
+```bash
+.venv/bin/pip install -e '.[clipboard]'
+export GOFFY_MAC_CLIPBOARD_READ_ENABLED=true
+```
+
+When set, the Hub exposes `SAFE mac.clipboard.read` over MCP. It returns bounded
+plaintext only, never writes the clipboard, never polls in the background, never
+reads clipboard content during health checks, and does not expose binary
+clipboard formats or file URLs. Plaintext containing `file://` is rejected as
+unsupported without returning text. Android does not route clipboard commands yet.
 
 The Hub seals its registry before serving, checks registered tools locally at
 startup and every 30 seconds by default, and removes an unhealthy tool from both

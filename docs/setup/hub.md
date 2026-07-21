@@ -252,6 +252,34 @@ client-provided commands. Android currently invokes only the default approved
 repo through `Show my git status` or `Check my git status`; repo selection needs
 a separate UX and policy review.
 
+## Approved Mac Clipboard Read
+
+`mac.clipboard.read` is disabled by default. Enable it only when the operator is
+comfortable exposing bounded plaintext clipboard contents through authenticated
+SAFE Hub/MCP calls:
+
+```bash
+.venv/bin/pip install -e '.[clipboard]'
+export GOFFY_MAC_CLIPBOARD_READ_ENABLED=true
+```
+
+The optional `clipboard` extra installs `pasteboard==0.4.0` on macOS. The Hub
+registers `mac.clipboard.read` only when the environment flag is exactly `true`.
+If the flag is enabled without a working provider, the Hub starts with the tool
+unavailable and `/health` reports degraded instead of granting clipboard access.
+Tool input uses `maxChars`, bounded to 1 through 2000. Output contains
+`status`, `contentType=text`, bounded `text`, truncation flags, and bounded
+character-count metadata. Empty or non-text clipboards return `status=empty`
+with no text. Plaintext containing `file://` returns `status=unsupported` with
+no text so file URLs are not exposed as copied strings.
+
+Health checks call only the provider availability hook and never read clipboard
+content. The tool reads on explicit invocation only, never writes the clipboard,
+never polls in the background, never exposes binary formats or file URLs, and
+does not create a generic Mac automation channel. Android does not route
+clipboard commands yet; MCP clients can use the tool after authenticated
+`tools/list` shows it healthy.
+
 Non-local binding requires `GOFFY_HUB_ALLOW_LAN=true` plus existing
 `GOFFY_HUB_TLS_CERT_FILE` and `GOFFY_HUB_TLS_KEY_FILE` paths. This is a transport
 guard, not trusted pairing transport. Configuring paired mode with a non-local

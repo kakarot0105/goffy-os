@@ -18,6 +18,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+clipboard = [
+  "pasteboard==0.4.0; sys_platform == 'darwin'",
+]
 dev = [
   "build>=1.2,<2",
   "httpx2>=2.5,<3",

@@ -108,6 +108,27 @@ def test_mcp_environment_allowlists_are_parsed(monkeypatch: pytest.MonkeyPatch) 
     assert settings.pairing_challenge_ttl_seconds == 90
 
 
+def test_clipboard_read_is_disabled_by_default() -> None:
+    assert HubSettings().mac_clipboard_read_enabled is False
+
+
+def test_clipboard_read_environment_flag_is_parsed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GOFFY_MAC_CLIPBOARD_READ_ENABLED", " TRUE ")
+
+    settings = HubSettings.from_environment()
+
+    assert settings.mac_clipboard_read_enabled is True
+
+
+def test_clipboard_read_environment_flag_rejects_ambiguous_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GOFFY_MAC_CLIPBOARD_READ_ENABLED", "yes")
+
+    with pytest.raises(ValueError, match="GOFFY_MAC_CLIPBOARD_READ_ENABLED"):
+        HubSettings.from_environment()
+
+
 def test_mac_files_roots_are_explicit_existing_directories(tmp_path: Path) -> None:
     root = tmp_path / "approved"
     root.mkdir()
