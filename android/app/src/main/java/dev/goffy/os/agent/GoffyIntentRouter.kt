@@ -9,8 +9,10 @@ import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatusArguments
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
+import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
+import dev.goffy.os.protocol.MacFilesLargestArguments
 import dev.goffy.os.protocol.MacFilesListArguments
 import dev.goffy.os.protocol.MAX_TIMER_SECONDS
 import dev.goffy.os.protocol.NoToolArguments
@@ -56,6 +58,10 @@ object GoffyIntentRouter {
         pattern = "^(?:show|list)(?: me)? my mac files[.!?]?$",
         option = RegexOption.IGNORE_CASE,
     )
+    private val macFilesLargestCommand = Regex(
+        pattern = "^(?:find|show|list)(?: me)? (?:the )?largest files on my mac[.!?]?$",
+        option = RegexOption.IGNORE_CASE,
+    )
     private val gitStatusCommand = Regex(
         pattern = "^(?:show|check)(?: me)? my git status[.!?]?$",
         option = RegexOption.IGNORE_CASE,
@@ -99,6 +105,7 @@ object GoffyIntentRouter {
         val normalized = command.trim().replace(whitespace, " ")
         val plan = when {
             macStatusCommand.matches(normalized) -> macStatusPlan(normalized)
+            macFilesLargestCommand.matches(normalized) -> macFilesLargestPlan(normalized)
             macFilesListCommand.matches(normalized) -> macFilesListPlan(normalized)
             gitStatusCommand.matches(normalized) -> gitStatusPlan(normalized)
             normalized.lowercase(Locale.US) in macClipboardReadCommands -> macClipboardReadPlan(normalized)
@@ -212,6 +219,19 @@ object GoffyIntentRouter {
             "The result contains no absolute approved-root path or file contents",
         ),
         arguments = MacFilesListArguments(rootIndex = 0),
+    )
+
+    private fun macFilesLargestPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = command,
+        executionTarget = ExecutionTarget.MAC,
+        toolName = MAC_FILES_LARGEST_TOOL,
+        permission = PermissionLevel.SAFE,
+        successCriteria = listOf(
+            "Hub returns schema-valid largest-file metadata from an approved root",
+            "Hub emits a successful verification result",
+            "The result contains no absolute approved-root path, file contents, or symlink targets",
+        ),
+        arguments = MacFilesLargestArguments(rootIndex = 0),
     )
 
     private fun gitStatusPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(

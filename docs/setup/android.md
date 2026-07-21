@@ -52,6 +52,10 @@ review both published checksums during any wrapper upgrade.
   advertises schema-compatible `SAFE mac.files.list`. Android sends bounded
   default approved-root arguments, displays entry metadata, and never requests
   file contents or absolute root paths.
+- `Find the largest files on my Mac` routes to MAC only when the Hub advertises
+  schema-compatible `SAFE mac.files.largest`. Android sends bounded default
+  approved-root scan arguments, displays top relative paths and sizes, does not
+  read file contents, and does not speak file paths aloud.
 - `Show my git status` and `Check my git status` route to MAC only when the Hub
   advertises schema-compatible `SAFE git.status`. Android sends bounded default
   approved-repo arguments, displays status metadata, and never requests file

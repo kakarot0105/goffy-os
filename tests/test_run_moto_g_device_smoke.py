@@ -92,7 +92,7 @@ MAC_UI_XML = "\n".join(
         'class="android.widget.TextView" enabled="true" bounds="[60,1260][600,1300]" />',
         '  <node text="Darwin / arm64" class="android.widget.TextView" enabled="true" '
         'bounds="[60,1320][260,1360]" />',
-        '  <node text="System information output matched the registered schema." '
+        '  <node text="mac.system_info output matched the registered schema." '
         'class="android.widget.TextView" enabled="true" bounds="[60,1380][620,1420]" />',
         "</hierarchy>",
     ]
@@ -720,7 +720,7 @@ def test_command_window_requires_markers_after_matching_command() -> None:
     assert not command_window_contains(
         PHONE_UI_XML,
         "check my battery level",
-        ("VERIFIED", "Darwin", "System information output matched the registered schema."),
+        ("VERIFIED", "Darwin", "mac.system_info output matched the registered schema."),
     )
     assert timeline_command_occurrences(PHONE_UI_XML, "check my battery level") == 1
 

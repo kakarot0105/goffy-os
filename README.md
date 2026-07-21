@@ -98,8 +98,9 @@ the capability boundary.
 - Persistent, hash-chained paired-mode Hub operator audit storage with integrity
   reporting
 - Allowlisted, read-only `SAFE mac.system_info` tool
-- Optional `SAFE mac.files.list` tool for explicitly configured Mac file roots,
-  including an Android `List my Mac files` route for the default approved root
+- Optional `SAFE mac.files.list` and `SAFE mac.files.largest` tools for
+  explicitly configured Mac file roots, including Android routes for listing
+  and finding largest files in the default approved root
 - Optional `SAFE git.status` Hub/MCP tool for explicitly configured Git worktree roots,
   including an Android `Show my git status` route for the default approved repo
 - Optional, disabled-by-default `SAFE mac.clipboard.read` Hub/MCP tool for
@@ -181,11 +182,13 @@ Optional file listing is disabled until approved roots are configured:
 export GOFFY_MAC_FILES_ROOTS="$HOME/Documents/GitHub"
 ```
 
-When set, the Hub exposes `SAFE mac.files.list`. It lists bounded entries by
-root index and relative path only, hides dotfiles by default, never follows
-symlink targets in listed entries, and never exposes absolute root paths in tool
-output. Android can invoke the default approved root with `List my Mac files`
-or `Show my Mac files`; richer root/path selection remains future work.
+When set, the Hub exposes `SAFE mac.files.list` and `SAFE mac.files.largest`.
+Both use root index and relative path only, hide dotfiles by default, never
+follow symlink targets, never read file contents, and never expose absolute root
+paths in tool output. Android can invoke the default approved root with
+`List my Mac files`, `Show my Mac files`, or
+`Find the largest files on my Mac`; richer root/path selection remains future
+work.
 
 Optional Git status is disabled until approved repositories are configured:
 

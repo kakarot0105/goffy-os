@@ -9,6 +9,8 @@ import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.MacClipboardRead
+import dev.goffy.os.protocol.MacFilesLargest
+import dev.goffy.os.protocol.MacFilesLargestEntry
 import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacFilesListEntry
 import dev.goffy.os.protocol.MacSystemInfo
@@ -37,6 +39,8 @@ class GoffyTaskReducerTest {
     private val phoneTaskId = UUID.fromString("22222222-2222-4222-8222-222222222222")
     private val plan = (GoffyIntentRouter.route("Show my Mac status") as RoutingDecision.Routed).plan
     private val macFilesPlan = (GoffyIntentRouter.route("List my Mac files") as RoutingDecision.Routed).plan
+    private val largestMacFilesPlan =
+        (GoffyIntentRouter.route("Find the largest files on my Mac") as RoutingDecision.Routed).plan
     private val gitStatusPlan = (GoffyIntentRouter.route("Show my git status") as RoutingDecision.Routed).plan
     private val macClipboardPlan =
         (GoffyIntentRouter.route("Read my Mac clipboard") as RoutingDecision.Routed).plan
@@ -118,6 +122,34 @@ class GoffyTaskReducerTest {
 
         assertEquals(TaskPhase.VERIFIED, state.entries.single().phase)
         assertTrue(state.entries.single().result is MacFilesList)
+    }
+
+    @Test
+    fun largestMacFilesRequiresTypedResultAndVerification() {
+        var state = TaskTimelineState().start(taskId, largestMacFilesPlan)
+        state = state.apply(taskId, ExecutionEvent.Starting(1))
+        state = state.apply(taskId, ExecutionEvent.Ready)
+        state = state.apply(taskId, progress(largestMacFilesPlan.toolName, ExecutionTarget.MAC, "accepted", 0))
+        state = state.apply(taskId, progress(largestMacFilesPlan.toolName, ExecutionTarget.MAC, "completed", 1))
+        state = state.apply(
+            taskId,
+            ExecutionEvent.Result(
+                largestMacFilesPlan.toolName,
+                ExecutionTarget.MAC,
+                validLargestMacFiles(),
+            ),
+        )
+
+        assertEquals(TaskPhase.COMPLETED_UNVERIFIED, state.entries.single().phase)
+        assertEquals("2 largest Mac files in goffy", state.entries.single().summary)
+
+        state = state.apply(
+            taskId,
+            ExecutionEvent.Verification(true, "Schema verified", listOf("output schema")),
+        )
+
+        assertEquals(TaskPhase.VERIFIED, state.entries.single().phase)
+        assertTrue(state.entries.single().result is MacFilesLargest)
     }
 
     @Test
@@ -826,8 +858,38 @@ class GoffyTaskReducerTest {
         truncated = false,
         approvedRoots = listOf(MacFilesApprovedRoot(0, "goffy")),
         entries = listOf(
-            MacFilesListEntry("README.md", false, "file", 1024, 1784610000),
-            MacFilesListEntry("docs", false, "directory", null, 1784610001),
+            MacFilesListEntry("README.md", false, "file", 1024, 1784610000L),
+            MacFilesListEntry("docs", false, "directory", null, 1784610001L),
+        ),
+    )
+
+    private fun validLargestMacFiles(): MacFilesLargest = MacFilesLargest(
+        status = "available",
+        rootIndex = 0,
+        rootName = "goffy",
+        relativePath = "",
+        maxDepth = 4,
+        scannedEntries = 3,
+        skippedEntries = 0,
+        truncated = false,
+        approvedRoots = listOf(MacFilesApprovedRoot(0, "goffy")),
+        entries = listOf(
+            MacFilesLargestEntry(
+                relativePath = "build/output.apk",
+                pathTruncated = false,
+                name = "output.apk",
+                nameTruncated = false,
+                sizeBytes = 12_345L,
+                modifiedEpochSeconds = 1784610000L,
+            ),
+            MacFilesLargestEntry(
+                relativePath = "README.md",
+                pathTruncated = false,
+                name = "README.md",
+                nameTruncated = false,
+                sizeBytes = 1_024L,
+                modifiedEpochSeconds = 1784610001L,
+            ),
         ),
     )
 

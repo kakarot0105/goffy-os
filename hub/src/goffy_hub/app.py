@@ -30,6 +30,7 @@ from goffy_hub.tool_health import ToolHealthMonitor
 from goffy_hub.tools import (
     build_git_status_tool,
     build_mac_clipboard_read_tool,
+    build_mac_files_largest_tool,
     build_mac_files_list_tool,
     build_mac_system_tool,
 )
@@ -75,6 +76,13 @@ def build_registry(settings: HubSettings) -> ToolRegistry:
     if settings.mac_files_roots:
         registry.register(
             build_mac_files_list_tool(
+                settings.mac_files_roots,
+                settings.tool_timeout_seconds,
+                settings.tool_health_timeout_seconds,
+            )
+        )
+        registry.register(
+            build_mac_files_largest_tool(
                 settings.mac_files_roots,
                 settings.tool_timeout_seconds,
                 settings.tool_health_timeout_seconds,
@@ -474,7 +482,7 @@ async def _handle_message(
         MessageType.VERIFICATION_RESULT,
         VerificationResultPayload(
             succeeded=True,
-            summary="System information output matched the registered schema.",
+            summary=f"{result.definition.name} output matched the registered schema.",
             checks=["tool allowlist", "input schema", "output schema"],
         ),
         envelope.message_id,

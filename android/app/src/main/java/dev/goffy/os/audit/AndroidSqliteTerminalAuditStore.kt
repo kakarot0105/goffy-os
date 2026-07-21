@@ -199,9 +199,11 @@ class AndroidSqliteTerminalAuditStore(
                     "CHECK (length($COLUMN_EVENT_KINDS) <= 255), " +
                     "CHECK (($COLUMN_TOOL_NAME IS NULL AND $COLUMN_PERMISSION IS NULL) OR " +
                     "($COLUMN_TOOL_NAME IN " +
-                    "('mac.clipboard.read', 'mac.files.list', 'mac.system_info', 'git.status') AND " +
+                    "('mac.clipboard.read', 'mac.files.largest', 'mac.files.list', " +
+                    "'mac.system_info', 'git.status') AND " +
                     "$COLUMN_EXECUTION_TARGET = 'MAC' AND $COLUMN_PERMISSION = 'SAFE') OR " +
-                    "($COLUMN_TOOL_NAME IN ('phone.battery.status', 'phone.device.info') AND " +
+                    "($COLUMN_TOOL_NAME IN ('phone.battery.status', 'phone.device.info', " +
+                    "'phone.ocr.read', 'phone.qr.read') AND " +
                     "$COLUMN_EXECUTION_TARGET = 'PHONE' AND $COLUMN_PERMISSION = 'SAFE') OR " +
                     "($COLUMN_TOOL_NAME IN " +
                     "('phone.flashlight.set', 'phone.note.create', 'phone.timer.create') AND " +
@@ -214,7 +216,7 @@ class AndroidSqliteTerminalAuditStore(
 
     private companion object {
         const val DATABASE_NAME = "goffy_terminal_audit.db"
-        const val DATABASE_VERSION = 3
+        const val DATABASE_VERSION = 4
         const val TABLE_AUDIT = "terminal_audit"
         const val TABLE_AUDIT_V1 = "terminal_audit_v1"
         const val COLUMN_SCHEMA_VERSION = "schema_version"

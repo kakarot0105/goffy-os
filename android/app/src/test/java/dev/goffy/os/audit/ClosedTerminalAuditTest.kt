@@ -10,6 +10,7 @@ import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
+import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
@@ -235,6 +236,40 @@ class ClosedTerminalAuditTest {
         assertEquals(null, restored.result)
         assertFalse(restored.approvalGranted)
         assertFalse(restored.toString().contains(secretPath))
+    }
+
+    @Test
+    fun largestMacFilesAuditRoundTripsAsDisplayOnlySafeMacTask() {
+        val secretPath = "private-plan.txt"
+        val entry = TaskTimelineEntry(
+            id = UUID.fromString("55555555-5555-4555-8555-555555555555"),
+            command = "Find the largest files on my Mac",
+            executionTarget = ExecutionTarget.MAC,
+            toolName = MAC_FILES_LARGEST_TOOL,
+            phase = TaskPhase.VERIFIED,
+            summary = "Largest files include $secretPath",
+            events = listOf(
+                TaskTimelineEvent(TaskEventKind.OBSERVE, "Observed command"),
+                TaskTimelineEvent(TaskEventKind.RESULT, "Returned bounded file metadata"),
+                TaskTimelineEvent(TaskEventKind.VERIFY, "Verified output schema"),
+            ),
+            result = null,
+            permission = PermissionLevel.SAFE,
+            approvalGranted = false,
+        )
+
+        val record = entry.toClosedTerminalAuditRecord(recordedAtEpochMillis = 1_720_000_000_000)
+
+        assertNotNull(record)
+        assertEquals(MAC_FILES_LARGEST_TOOL, record?.toolName)
+        assertEquals(AuditPermission.SAFE, record?.permission)
+        assertEquals(AuditApprovalOutcome.NOT_REQUIRED, record?.approvalOutcome)
+        assertFalse(record.toString().contains(secretPath))
+
+        val restored = requireNotNull(record).toTimelineEntry()
+        assertEquals("Recorded largest Mac files task", restored.command)
+        assertEquals(MAC_FILES_LARGEST_TOOL, restored.toolName)
+        assertEquals(null, restored.result)
     }
 
     @Test

@@ -53,6 +53,8 @@ import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacFilesApprovedRoot
+import dev.goffy.os.protocol.MacFilesLargest
+import dev.goffy.os.protocol.MacFilesLargestEntry
 import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacFilesListEntry
 import dev.goffy.os.protocol.MacSystemInfo
@@ -149,6 +151,26 @@ class GoffyViewModelTest {
         assertTrue(gateway.requests.single().encodedMessage.contains("\"toolName\":\"mac.files.list\""))
         assertTrue(gateway.requests.single().encodedMessage.contains("\"rootIndex\":0"))
         assertTrue(gateway.requests.single().encodedMessage.contains("\"maxEntries\":25"))
+        assertFalse(gateway.requests.single().encodedMessage.contains("private-plan"))
+    }
+
+    @Test
+    fun largestMacFilesCommandSendsTypedDefaultScanArguments() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf(*successfulLargestMacFilesEvents().toTypedArray()) }
+        val viewModel = createViewModel(gateway)
+
+        assertTrue(viewModel.configureHub(endpoint, token))
+        viewModel.submitCommand("Find the largest files on my Mac")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals("goffy", (entry.result as MacFilesLargest).rootName)
+        assertEquals(1, gateway.requests.size)
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"toolName\":\"mac.files.largest\""))
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"rootIndex\":0"))
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"maxEntries\":10"))
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"maxDepth\":4"))
         assertFalse(gateway.requests.single().encodedMessage.contains("private-plan"))
     }
 
@@ -1634,7 +1656,48 @@ class GoffyViewModelTest {
                 truncated = false,
                 approvedRoots = listOf(MacFilesApprovedRoot(0, "goffy")),
                 entries = listOf(
-                    MacFilesListEntry("README.md", false, "file", 1024, 1784610000),
+                    MacFilesListEntry("README.md", false, "file", 1024, 1784610000L),
+                ),
+            ),
+        ),
+        ExecutionEvent.Verification(
+            succeeded = true,
+            summary = "Verified",
+            checks = listOf("output schema"),
+        ),
+    )
+
+    private fun successfulLargestMacFilesEvents(): List<ExecutionEvent> = listOf(
+        ExecutionEvent.Starting(1),
+        ExecutionEvent.Ready,
+        ExecutionEvent.Progress(
+            ToolProgress("mac.files.largest", ExecutionTarget.MAC, "accepted", 0, "Accepted"),
+        ),
+        ExecutionEvent.Progress(
+            ToolProgress("mac.files.largest", ExecutionTarget.MAC, "completed", 1, "Completed"),
+        ),
+        ExecutionEvent.Result(
+            toolName = "mac.files.largest",
+            executionTarget = ExecutionTarget.MAC,
+            content = MacFilesLargest(
+                status = "available",
+                rootIndex = 0,
+                rootName = "goffy",
+                relativePath = "",
+                maxDepth = 4,
+                scannedEntries = 2,
+                skippedEntries = 0,
+                truncated = false,
+                approvedRoots = listOf(MacFilesApprovedRoot(0, "goffy")),
+                entries = listOf(
+                    MacFilesLargestEntry(
+                        relativePath = "build/output.apk",
+                        pathTruncated = false,
+                        name = "output.apk",
+                        nameTruncated = false,
+                        sizeBytes = 12_345L,
+                        modifiedEpochSeconds = 1784610000L,
+                    ),
                 ),
             ),
         ),

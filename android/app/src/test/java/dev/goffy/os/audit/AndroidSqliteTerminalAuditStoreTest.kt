@@ -8,7 +8,10 @@ import dev.goffy.os.agent.TaskEventKind
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GOFFY_PROTOCOL_VERSION
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
+import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
+import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
+import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -180,6 +183,42 @@ class AndroidSqliteTerminalAuditStoreTest {
     }
 
     @Test
+    fun databaseAcceptsLargestMacFilesSafeMetadata() = runTest {
+        val application = RuntimeEnvironment.getApplication()
+        val databaseName = uniqueDatabaseName()
+        application.deleteDatabase(databaseName)
+        val largestFilesRecord = record(index = 1, recordedAtEpochMillis = 100).copy(
+            executionTarget = ExecutionTarget.MAC,
+            toolName = MAC_FILES_LARGEST_TOOL,
+            permission = AuditPermission.SAFE,
+        )
+
+        AndroidSqliteTerminalAuditStore(application, databaseName).useStore { store ->
+            assertEquals(largestFilesRecord, store.upsert(largestFilesRecord))
+            assertEquals(listOf(largestFilesRecord), store.load().records)
+        }
+    }
+
+    @Test
+    fun databaseAcceptsForegroundQrAndOcrSafeMetadata() = runTest {
+        val application = RuntimeEnvironment.getApplication()
+        val databaseName = uniqueDatabaseName()
+        application.deleteDatabase(databaseName)
+        val qrRecord = record(index = 1, recordedAtEpochMillis = 100).copy(
+            toolName = PHONE_QR_READ_TOOL,
+        )
+        val ocrRecord = record(index = 2, recordedAtEpochMillis = 200).copy(
+            toolName = PHONE_OCR_READ_TOOL,
+        )
+
+        AndroidSqliteTerminalAuditStore(application, databaseName).useStore { store ->
+            assertEquals(qrRecord, store.upsert(qrRecord))
+            assertEquals(ocrRecord, store.upsert(ocrRecord))
+            assertEquals(listOf(qrRecord, ocrRecord), store.load().records)
+        }
+    }
+
+    @Test
     fun typedCompatibilityDiscardsUnknownProtocolWithoutBlockingCurrentWrites() = runTest {
         val application = RuntimeEnvironment.getApplication()
         val databaseName = uniqueDatabaseName()
@@ -249,7 +288,7 @@ class AndroidSqliteTerminalAuditStoreTest {
         SQLiteDatabase.openDatabase(databasePath, null, SQLiteDatabase.OPEN_READWRITE).use { database ->
             database.rawQuery("PRAGMA user_version", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(3, cursor.getInt(0))
+                assertEquals(4, cursor.getInt(0))
             }
             database.insertOrThrow(
                 "terminal_audit",

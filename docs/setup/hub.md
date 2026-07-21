@@ -212,8 +212,9 @@ network health probe or busy polling is used by the current `mac.system_info` to
 
 ## Approved Mac File Roots
 
-`mac.files.list` is disabled by default. Enable it only for directories the
-operator is comfortable exposing through SAFE, read-only listing:
+`mac.files.list` and `mac.files.largest` are disabled by default. Enable them
+only for directories the operator is comfortable exposing through SAFE,
+read-only metadata:
 
 ```bash
 export GOFFY_MAC_FILES_ROOTS="$HOME/Documents/GitHub,$HOME/Desktop/goffy-lab"
@@ -221,15 +222,18 @@ export GOFFY_MAC_FILES_ROOTS="$HOME/Documents/GitHub,$HOME/Desktop/goffy-lab"
 
 Each entry must be an existing absolute directory. The Hub resolves and dedupes
 the roots at startup, registers the tool only when at least one root is
-configured, and marks the tool unavailable if a configured root later disappears.
-Tool input uses `rootIndex`, `relativePath`, `maxEntries`, and `includeHidden`.
-Output contains root indices/names, bounded entry metadata, and no absolute root
-paths. Dotfiles are hidden by default, symlinks are reported as `symlink`
-without following their targets, and traversal outside the approved root is
-rejected. This tool does not read file contents, create files, move files, delete
-files, or execute shell commands. Android currently invokes only the default
-approved root through `List my Mac files` or `Show my Mac files`; root/path
-selection needs a separate UX and policy review.
+configured, and marks the tools unavailable if a configured root later
+disappears. `mac.files.list` input uses `rootIndex`, `relativePath`,
+`maxEntries`, and `includeHidden`. `mac.files.largest` also accepts a bounded
+`maxDepth` and scans at most 5,000 entries before reporting truncation. Output
+contains root indices/names, bounded relative metadata, and no absolute root
+paths. Dotfiles are hidden by default, symlinks are reported or skipped without
+following their targets, and traversal outside the approved root is rejected.
+These tools do not read file contents, create files, move files, delete files,
+or execute shell commands. Android currently invokes only the default approved
+root through `List my Mac files`, `Show my Mac files`, or
+`Find the largest files on my Mac`; root/path selection needs a separate UX and
+policy review.
 
 ## Approved Git Repository Roots
 

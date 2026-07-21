@@ -184,15 +184,27 @@ async def test_official_client_lists_approved_mac_file_root(tmp_path) -> None:
             initialization = await session.initialize()
             listed = await session.list_tools()
             result = await session.call_tool("mac.files.list", {"rootIndex": 0})
+            largest = await session.call_tool("mac.files.largest", {"rootIndex": 0})
 
     assert initialization.protocolVersion == MCP_PROTOCOL_VERSION
-    assert sorted(tool.name for tool in listed.tools) == ["mac.files.list", "mac.system_info"]
+    assert sorted(tool.name for tool in listed.tools) == [
+        "mac.files.largest",
+        "mac.files.list",
+        "mac.system_info",
+    ]
     assert result.isError is False
     assert result.structuredContent is not None
     assert result.structuredContent["rootIndex"] == 0
     assert result.structuredContent["approvedRoots"] == [{"rootIndex": 0, "name": tmp_path.name}]
     assert [entry["name"] for entry in result.structuredContent["entries"]] == ["visible.txt"]
     assert str(tmp_path) not in json.dumps(result.structuredContent)
+    assert largest.isError is False
+    assert largest.structuredContent is not None
+    assert largest.structuredContent["rootIndex"] == 0
+    assert [entry["relativePath"] for entry in largest.structuredContent["entries"]] == [
+        "visible.txt"
+    ]
+    assert str(tmp_path) not in json.dumps(largest.structuredContent)
 
 
 @pytest.mark.asyncio

@@ -7,7 +7,9 @@ import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatusArguments
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
+import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
+import dev.goffy.os.protocol.MacFilesLargestArguments
 import dev.goffy.os.protocol.MacFilesListArguments
 import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
@@ -51,6 +53,21 @@ class GoffyIntentRouterTest {
         assertEquals(MAC_FILES_LIST_TOOL, plan.toolName)
         assertEquals(MacFilesListArguments(rootIndex = 0), plan.arguments)
         assertEquals(3, plan.successCriteria.size)
+    }
+
+    @Test
+    fun routesLargestMacFilesToSafeMacTool() {
+        val decision = GoffyIntentRouter.route("Find the largest files on my Mac")
+
+        assertTrue(decision is RoutingDecision.Routed)
+        val plan = (decision as RoutingDecision.Routed).plan
+        assertEquals(ExecutionTarget.MAC, plan.executionTarget)
+        assertEquals(PermissionLevel.SAFE, plan.permission)
+        assertEquals(MAC_FILES_LARGEST_TOOL, plan.toolName)
+        assertEquals(MacFilesLargestArguments(rootIndex = 0), plan.arguments)
+        assertEquals(3, plan.successCriteria.size)
+        assertTrue(GoffyIntentRouter.route("Show me largest files on my Mac") is RoutingDecision.Routed)
+        assertTrue(GoffyIntentRouter.route("list the largest files on my mac?") is RoutingDecision.Routed)
     }
 
     @Test

@@ -96,7 +96,7 @@ class OkHttpHubGatewayTest {
             assertEquals(
                 ExecutionEvent.Verification(
                     succeeded = true,
-                    summary = "System information output matched the registered schema.",
+                    summary = "mac.system_info output matched the registered schema.",
                     checks = listOf("tool allowlist", "input schema", "output schema"),
                 ),
                 events[5],
@@ -490,7 +490,7 @@ class OkHttpHubGatewayTest {
                 messageType = "VerificationResult",
                 correlationId = correlationId,
                 payload =
-                    """{"succeeded":true,"summary":"System information output matched the registered schema.","checks":["tool allowlist","input schema","output schema"]}""",
+                    """{"succeeded":true,"summary":"mac.system_info output matched the registered schema.","checks":["tool allowlist","input schema","output schema"]}""",
             )
 
         private fun toolErrorEnvelope(correlationId: UUID): String =

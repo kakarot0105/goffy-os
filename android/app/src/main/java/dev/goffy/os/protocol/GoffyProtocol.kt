@@ -13,11 +13,13 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 
 const val GOFFY_PROTOCOL_VERSION = "0.2.0"
 const val MCP_PROTOCOL_VERSION = "2025-11-25"
 const val MAC_SYSTEM_INFO_TOOL_VERSION = "1.0.0"
+const val MAC_FILES_LARGEST_TOOL_VERSION = "1.0.0"
 const val MAC_FILES_LIST_TOOL_VERSION = "1.0.0"
 const val MAC_CLIPBOARD_READ_TOOL_VERSION = "1.0.0"
 const val GIT_STATUS_TOOL_VERSION = "1.0.0"
@@ -94,6 +96,14 @@ data class MacFilesListArguments(
     val includeHidden: Boolean = false,
 ) : ToolArguments
 
+data class MacFilesLargestArguments(
+    val rootIndex: Int = 0,
+    val relativePath: String = "",
+    val maxEntries: Int = DEFAULT_MAC_FILES_LARGEST_ENTRIES,
+    val maxDepth: Int = DEFAULT_MAC_FILES_LARGEST_DEPTH,
+    val includeHidden: Boolean = false,
+) : ToolArguments
+
 data class GitStatusArguments(
     val repoIndex: Int = 0,
     val maxChanges: Int = DEFAULT_GIT_STATUS_CHANGES,
@@ -129,7 +139,7 @@ data class MacFilesListEntry(
     val nameTruncated: Boolean,
     val kind: String,
     val sizeBytes: Int?,
-    val modifiedEpochSeconds: Int?,
+    val modifiedEpochSeconds: Long?,
 )
 
 data class MacFilesList(
@@ -140,6 +150,28 @@ data class MacFilesList(
     val truncated: Boolean,
     val approvedRoots: List<MacFilesApprovedRoot>,
     val entries: List<MacFilesListEntry>,
+) : ToolResultContent
+
+data class MacFilesLargestEntry(
+    val relativePath: String,
+    val pathTruncated: Boolean,
+    val name: String,
+    val nameTruncated: Boolean,
+    val sizeBytes: Long,
+    val modifiedEpochSeconds: Long?,
+)
+
+data class MacFilesLargest(
+    val status: String,
+    val rootIndex: Int,
+    val rootName: String,
+    val relativePath: String,
+    val maxDepth: Int,
+    val scannedEntries: Int,
+    val skippedEntries: Int,
+    val truncated: Boolean,
+    val approvedRoots: List<MacFilesApprovedRoot>,
+    val entries: List<MacFilesLargestEntry>,
 ) : ToolResultContent
 
 data class GitStatusApprovedRepo(
@@ -337,6 +369,20 @@ class GoffyProtocolCodec(
                 }
                 JsonObject(emptyMap())
             }
+            MAC_FILES_LARGEST_TOOL -> {
+                val value = arguments as? MacFilesLargestArguments
+                    ?: throw ProtocolException("mac.files.largest requires typed arguments")
+                if (!value.matchesToolContract()) {
+                    throw ProtocolException("mac.files.largest arguments failed local policy")
+                }
+                buildJsonObject {
+                    put("rootIndex", value.rootIndex)
+                    put("relativePath", value.relativePath)
+                    put("maxEntries", value.maxEntries)
+                    put("maxDepth", value.maxDepth)
+                    put("includeHidden", value.includeHidden)
+                }
+            }
             MAC_FILES_LIST_TOOL -> {
                 val value = arguments as? MacFilesListArguments
                     ?: throw ProtocolException("mac.files.list requires typed arguments")
@@ -479,6 +525,10 @@ class GoffyProtocolCodec(
                 validateSystemInfoInputSchema(tool.requireObject("inputSchema"))
                 validateSystemInfoOutputSchema(tool.requireObject("outputSchema"))
             }
+            MAC_FILES_LARGEST_TOOL -> {
+                validateMacFilesLargestInputSchema(tool.requireObject("inputSchema"))
+                validateMacFilesLargestOutputSchema(tool.requireObject("outputSchema"))
+            }
             MAC_FILES_LIST_TOOL -> {
                 validateMacFilesListInputSchema(tool.requireObject("inputSchema"))
                 validateMacFilesListOutputSchema(tool.requireObject("outputSchema"))
@@ -500,6 +550,7 @@ class GoffyProtocolCodec(
         val toolVersion = metadata.requireString("dev.goffy/toolVersion")
         val expectedToolVersion = when (toolName) {
             MAC_SYSTEM_INFO_TOOL -> MAC_SYSTEM_INFO_TOOL_VERSION
+            MAC_FILES_LARGEST_TOOL -> MAC_FILES_LARGEST_TOOL_VERSION
             MAC_FILES_LIST_TOOL -> MAC_FILES_LIST_TOOL_VERSION
             MAC_CLIPBOARD_READ_TOOL -> MAC_CLIPBOARD_READ_TOOL_VERSION
             GIT_STATUS_TOOL -> GIT_STATUS_TOOL_VERSION
@@ -550,6 +601,108 @@ class GoffyProtocolCodec(
             }
         }
         schema.requireArray("required").requireExactStrings(SYSTEM_INFO_KEYS, "required")
+    }
+
+    private fun validateMacFilesLargestInputSchema(schema: JsonObject) {
+        schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS)
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(MAC_FILES_LARGEST_INPUT_KEYS)
+        properties.requireObject("rootIndex").also { rootIndex ->
+            rootIndex.requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS + "exclusiveMaximum" + "default")
+            rootIndex.requireType("integer")
+            rootIndex.requireInt("minimum").requireExactValue(0, "rootIndex minimum")
+            rootIndex.requireInt("exclusiveMaximum").requireExactValue(
+                MAX_MAC_FILES_APPROVED_ROOTS,
+                "rootIndex maximum",
+            )
+        }
+        properties.requireObject("relativePath").also { relativePath ->
+            relativePath.requireKeys(STRING_SCHEMA_KEYS + "maxLength" + "default")
+            relativePath.requireType("string")
+            relativePath.requireInt("maxLength").requireExactValue(
+                MAX_MAC_FILES_RELATIVE_PATH_LENGTH,
+                "relativePath maxLength",
+            )
+        }
+        properties.requireObject("maxEntries").also { maxEntries ->
+            maxEntries.requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS + "maximum" + "default")
+            maxEntries.requireType("integer")
+            maxEntries.requireInt("minimum").requireExactValue(1, "maxEntries minimum")
+            maxEntries.requireInt("maximum").requireExactValue(
+                MAX_MAC_FILES_LARGEST_ENTRIES,
+                "maxEntries maximum",
+            )
+            maxEntries.requireInt("default").requireExactValue(
+                DEFAULT_MAC_FILES_LARGEST_ENTRIES,
+                "maxEntries default",
+            )
+        }
+        properties.requireObject("maxDepth").also { maxDepth ->
+            maxDepth.requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS + "maximum" + "default")
+            maxDepth.requireType("integer")
+            maxDepth.requireInt("minimum").requireExactValue(0, "maxDepth minimum")
+            maxDepth.requireInt("maximum").requireExactValue(
+                MAX_MAC_FILES_LARGEST_DEPTH,
+                "maxDepth maximum",
+            )
+            maxDepth.requireInt("default").requireExactValue(
+                DEFAULT_MAC_FILES_LARGEST_DEPTH,
+                "maxDepth default",
+            )
+        }
+        properties.requireObject("includeHidden").also { includeHidden ->
+            includeHidden.requireKeys(BOOLEAN_SCHEMA_KEYS + "default")
+            includeHidden.requireType("boolean")
+        }
+    }
+
+    private fun validateMacFilesLargestOutputSchema(schema: JsonObject) {
+        schema.requireKeys(OUTPUT_SCHEMA_KEYS + "\$defs")
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(MAC_FILES_LARGEST_OUTPUT_KEYS)
+        schema.requireArray("required").requireExactStrings(MAC_FILES_LARGEST_OUTPUT_KEYS, "required")
+
+        properties.requireObject("approvedRoots").also { approvedRoots ->
+            approvedRoots.requireKeys(ARRAY_REF_SCHEMA_KEYS + "maxItems")
+            approvedRoots.requireType("array")
+            approvedRoots.requireInt("maxItems").requireExactValue(
+                MAX_MAC_FILES_APPROVED_ROOTS,
+                "approvedRoots maxItems",
+            )
+            approvedRoots.requireObject("items").requireString("\$ref").requireExactString(
+                "#/\$defs/MacFilesApprovedRootOutput",
+                "approvedRoots ref",
+            )
+        }
+        properties.requireObject("entries").also { entries ->
+            entries.requireKeys(ARRAY_REF_SCHEMA_KEYS + "maxItems")
+            entries.requireType("array")
+            entries.requireInt("maxItems").requireExactValue(
+                MAX_MAC_FILES_LARGEST_ENTRIES,
+                "entries maxItems",
+            )
+            entries.requireObject("items").requireString("\$ref").requireExactString(
+                "#/\$defs/MacFilesLargestEntryOutput",
+                "entries ref",
+            )
+        }
+        setOf("status", "rootName", "relativePath").forEach { field ->
+            properties.requireObject(field).requireTypeOnly("string")
+        }
+        setOf("rootIndex", "maxDepth").forEach { field ->
+            properties.requireObject(field).requireTypeOnly("integer")
+        }
+        setOf("scannedEntries", "skippedEntries").forEach { field ->
+            properties.requireObject(field).validateNonNegativeIntegerSchema(field)
+        }
+        properties.requireObject("truncated").requireTypeOnly("boolean")
+
+        val definitions = schema.requireObject("\$defs")
+        definitions.requireKeys(MAC_FILES_LARGEST_DEFINITION_KEYS)
+        validateMacFilesApprovedRootDefinition(definitions.requireObject("MacFilesApprovedRootOutput"))
+        validateMacFilesLargestEntryDefinition(definitions.requireObject("MacFilesLargestEntryOutput"))
     }
 
     private fun validateMacFilesListInputSchema(schema: JsonObject) {
@@ -630,6 +783,23 @@ class GoffyProtocolCodec(
         definitions.requireKeys(MAC_FILES_LIST_DEFINITION_KEYS)
         validateMacFilesApprovedRootDefinition(definitions.requireObject("MacFilesApprovedRootOutput"))
         validateMacFilesEntryDefinition(definitions.requireObject("MacFilesListEntryOutput"))
+    }
+
+    private fun validateMacFilesLargestEntryDefinition(definition: JsonObject) {
+        definition.requireKeys(OBJECT_DEFINITION_KEYS)
+        validateObjectSchemaRootWithoutDialect(definition)
+        val properties = definition.requireObject("properties")
+        properties.requireKeys(MAC_FILES_LARGEST_ENTRY_KEYS)
+        properties.requireObject("relativePath").requireTypeOnly("string")
+        properties.requireObject("pathTruncated").requireTypeOnly("boolean")
+        properties.requireObject("name").requireTypeOnly("string")
+        properties.requireObject("nameTruncated").requireTypeOnly("boolean")
+        properties.requireObject("sizeBytes").validateNonNegativeIntegerSchema("sizeBytes")
+        properties.requireObject("modifiedEpochSeconds").validateNullableIntegerSchema()
+        definition.requireArray("required").requireExactStrings(
+            MAC_FILES_LARGEST_ENTRY_KEYS,
+            "largest file entry required",
+        )
     }
 
     private fun validateMacFilesApprovedRootDefinition(definition: JsonObject) {
@@ -939,6 +1109,12 @@ class GoffyProtocolCodec(
                     architecture = content.requireBoundedString("architecture", 1, 128),
                 )
             }
+            MAC_FILES_LARGEST_TOOL -> {
+                if (target != ExecutionTarget.MAC) {
+                    throw ProtocolException("mac.files.largest returned an unexpected execution target")
+                }
+                decodeMacFilesLargest(content)
+            }
             MAC_FILES_LIST_TOOL -> {
                 if (target != ExecutionTarget.MAC) {
                     throw ProtocolException("mac.files.list returned an unexpected execution target")
@@ -975,6 +1151,75 @@ class GoffyProtocolCodec(
         )
     }
 
+    private fun decodeMacFilesLargest(content: JsonObject): MacFilesLargest {
+        content.requireKeys(MAC_FILES_LARGEST_OUTPUT_KEYS)
+        val approvedRoots = content.requireArray("approvedRoots").boundedObjects(
+            maximum = MAX_MAC_FILES_APPROVED_ROOTS,
+            field = "approvedRoots",
+        ) { root ->
+            root.requireKeys(MAC_FILES_APPROVED_ROOT_KEYS)
+            MacFilesApprovedRoot(
+                rootIndex = root.requireBoundedInt("rootIndex", 0, MAX_MAC_FILES_ROOT_INDEX),
+                name = root.requireBoundedString("name", 1, MAX_MAC_FILES_ROOT_NAME_LENGTH),
+            )
+        }
+        val entries = content.requireArray("entries").boundedObjects(
+            maximum = MAX_MAC_FILES_LARGEST_ENTRIES,
+            field = "entries",
+        ) { entry ->
+            entry.requireKeys(MAC_FILES_LARGEST_ENTRY_KEYS)
+            MacFilesLargestEntry(
+                relativePath = entry.requireBoundedString(
+                    "relativePath",
+                    1,
+                    MAX_MAC_FILES_LARGEST_PATH_LENGTH,
+                ),
+                pathTruncated = entry.requireBoolean("pathTruncated"),
+                name = entry.requireBoundedString("name", 1, MAX_MAC_FILES_ENTRY_NAME_LENGTH),
+                nameTruncated = entry.requireBoolean("nameTruncated"),
+                sizeBytes = entry.requireBoundedLong(
+                    "sizeBytes",
+                    0L,
+                    MAX_MAC_FILES_LARGEST_FILE_SIZE_BYTES,
+                ),
+                modifiedEpochSeconds = entry.requireNullableLong("modifiedEpochSeconds")
+                    ?.also { modified ->
+                        if (modified < 0L) {
+                            throw ProtocolException("modifiedEpochSeconds cannot be negative")
+                        }
+                    },
+            )
+        }
+        val result = MacFilesLargest(
+            status = content.requireBoundedString("status", 1, 64),
+            rootIndex = content.requireBoundedInt("rootIndex", 0, MAX_MAC_FILES_ROOT_INDEX),
+            rootName = content.requireBoundedString("rootName", 1, MAX_MAC_FILES_ROOT_NAME_LENGTH),
+            relativePath = content.requireBoundedString(
+                "relativePath",
+                0,
+                MAX_MAC_FILES_RELATIVE_PATH_LENGTH,
+            ),
+            maxDepth = content.requireBoundedInt("maxDepth", 0, MAX_MAC_FILES_LARGEST_DEPTH),
+            scannedEntries = content.requireBoundedInt(
+                "scannedEntries",
+                0,
+                MAX_MAC_FILES_LARGEST_SCANNED_ENTRIES,
+            ),
+            skippedEntries = content.requireBoundedInt(
+                "skippedEntries",
+                0,
+                MAX_MAC_FILES_LARGEST_SCANNED_ENTRIES,
+            ),
+            truncated = content.requireBoolean("truncated"),
+            approvedRoots = approvedRoots,
+            entries = entries,
+        )
+        if (!result.matchesToolContract()) {
+            throw ProtocolException("largest files result failed local policy")
+        }
+        return result
+    }
+
     private fun decodeMacFilesList(content: JsonObject): MacFilesList {
         content.requireKeys(MAC_FILES_LIST_OUTPUT_KEYS)
         val approvedRoots = content.requireArray("approvedRoots").boundedObjects(
@@ -1003,9 +1248,9 @@ class GoffyProtocolCodec(
                 sizeBytes = entry.requireNullableInt("sizeBytes")?.also { size ->
                     if (size < 0) throw ProtocolException("sizeBytes cannot be negative")
                 },
-                modifiedEpochSeconds = entry.requireNullableInt("modifiedEpochSeconds")
+                modifiedEpochSeconds = entry.requireNullableLong("modifiedEpochSeconds")
                     ?.also { modified ->
-                        if (modified < 0) {
+                        if (modified < 0L) {
                             throw ProtocolException("modifiedEpochSeconds cannot be negative")
                         }
                     },
@@ -1216,6 +1461,16 @@ private fun JsonObject.requireNullableInt(key: String): Int? {
     return (value as? JsonPrimitive)?.intOrNull ?: throw ProtocolException("$key must be an integer or null")
 }
 
+private fun JsonObject.requireNullableLong(key: String): Long? {
+    val value = this[key] ?: return null
+    if (value === JsonNull) return null
+    return (value as? JsonPrimitive)?.longOrNull
+        ?: throw ProtocolException("$key must be an integer or null")
+}
+
+private fun JsonObject.requireLong(key: String): Long = (this[key] as? JsonPrimitive)?.longOrNull
+    ?: throw ProtocolException("$key must be an integer")
+
 private fun JsonObject.requireNullableBoundedString(key: String, maximum: Int): String? {
     val value = requireNullableString(key) ?: return null
     requireBounded(key, value, 1, maximum)
@@ -1358,6 +1613,14 @@ private fun JsonObject.requireBoundedInt(key: String, minimum: Int, maximum: Int
     return value
 }
 
+private fun JsonObject.requireBoundedLong(key: String, minimum: Long, maximum: Long): Long {
+    val value = requireLong(key)
+    if (value !in minimum..maximum) {
+        throw ProtocolException("$key is outside the supported range")
+    }
+    return value
+}
+
 private fun <T> JsonArray.boundedObjects(
     maximum: Int,
     field: String,
@@ -1415,6 +1678,37 @@ private val MAC_FILES_LIST_INPUT_KEYS = setOf(
     "relativePath",
     "maxEntries",
     "includeHidden",
+)
+private val MAC_FILES_LARGEST_INPUT_KEYS = setOf(
+    "rootIndex",
+    "relativePath",
+    "maxEntries",
+    "maxDepth",
+    "includeHidden",
+)
+private val MAC_FILES_LARGEST_OUTPUT_KEYS = setOf(
+    "status",
+    "rootIndex",
+    "rootName",
+    "relativePath",
+    "maxDepth",
+    "scannedEntries",
+    "skippedEntries",
+    "truncated",
+    "approvedRoots",
+    "entries",
+)
+private val MAC_FILES_LARGEST_DEFINITION_KEYS = setOf(
+    "MacFilesApprovedRootOutput",
+    "MacFilesLargestEntryOutput",
+)
+private val MAC_FILES_LARGEST_ENTRY_KEYS = setOf(
+    "relativePath",
+    "pathTruncated",
+    "name",
+    "nameTruncated",
+    "sizeBytes",
+    "modifiedEpochSeconds",
 )
 private val MAC_FILES_LIST_OUTPUT_KEYS = setOf(
     "status",

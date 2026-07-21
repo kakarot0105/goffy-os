@@ -32,7 +32,7 @@ def test_health_is_typed_and_minimal(client: TestClient) -> None:
     assert cast(FastAPI, client.app).version == "0.2.0"
 
 
-def test_health_counts_optional_mac_file_tool_when_roots_are_configured(tmp_path: Path) -> None:
+def test_health_counts_optional_mac_file_tools_when_roots_are_configured(tmp_path: Path) -> None:
     app = create_app(
         HubSettings(
             auth_token=SecretStr("test-token-that-is-long-enough"),
@@ -45,7 +45,7 @@ def test_health_counts_optional_mac_file_tool_when_roots_are_configured(tmp_path
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["healthyToolCount"] == 2
+    assert response.json()["healthyToolCount"] == 3
     assert response.json()["unavailableToolCount"] == 0
 
 

@@ -6,8 +6,8 @@ Android app/default-launcher layer remains the safe bootstrap and fallback while
 ROM feasibility is proven. Across both forms, GOFFY separates intent, policy,
 transport, and capability execution so no model or UI can directly acquire
 ambient authority. The current runtime has five offline PHONE tools, one default
-authenticated MAC tool, optional approved-root MAC file listing, optional Git
-status, optional Mac clipboard text read, and a redacted Android-local audit
+authenticated MAC tool, optional approved-root MAC file metadata tools, optional
+Git status, optional Mac clipboard text read, and a redacted Android-local audit
 trail for terminal tasks, not a general command channel.
 
 ```text
@@ -27,6 +27,7 @@ deterministic router
                          |            `-> invoke only after compatibility gate
                          `--------------> FastAPI Hub -> SAFE mac.system_info
                                                       -> optional SAFE mac.files.list
+                                                      -> optional SAFE mac.files.largest
                                                       -> optional SAFE git.status
                                                       -> optional SAFE mac.clipboard.read
 
@@ -118,12 +119,16 @@ approval state, active work, and execution authority are not revived.
     It returns bounded directory metadata by root index and relative path,
     hides dotfiles by default, rejects traversal outside the resolved root, and
     reports symlinks without following target paths.
-32. `git.status` exists only when explicit approved Git worktree roots are
+32. `mac.files.largest` exists only when explicit approved roots are configured.
+    It scans bounded metadata under an approved root, skips symlinks, reports
+    top regular files by relative path and size, and stops at fixed result,
+    depth, and scan-count limits.
+33. `git.status` exists only when explicit approved Git worktree roots are
     configured. It accepts repo index and bounded count only, runs one fixed
     `git status --porcelain=v2` command with `shell=False`, and returns status
     metadata without absolute roots, file contents, diffs, fetch, commit, or
     push authority.
-33. `mac.clipboard.read` exists only when the optional macOS provider is
+34. `mac.clipboard.read` exists only when the optional macOS provider is
     installed and `GOFFY_MAC_CLIPBOARD_READ_ENABLED=true`. It reads bounded
     plaintext only on explicit invocation, does not read clipboard content during
     health checks, rejects plaintext containing `file://`, and exposes no binary

@@ -138,6 +138,9 @@
    - [x] Optional approved-root `mac.files.list` Hub/MCP tool
    - [x] Android route, typed codec, timeline, speech, and audit handling for
      default approved-root `mac.files.list`
+   - [x] Optional approved-root `mac.files.largest` Hub/MCP tool
+   - [x] Android route, typed codec, timeline, speech, and audit handling for
+     default approved-root `mac.files.largest`
    - [x] Optional approved-repo `git.status` Hub/MCP tool
    - [x] Android route, typed codec, timeline, speech, and audit handling for
      default approved-repo `git.status`

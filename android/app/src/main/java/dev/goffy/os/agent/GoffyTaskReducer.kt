@@ -5,8 +5,10 @@ import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
+import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MacClipboardRead
+import dev.goffy.os.protocol.MacFilesLargest
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.MacFilesList
@@ -503,6 +505,9 @@ data class TaskTimelineState(
         MAC_CLIPBOARD_READ_TOOL -> executionTarget == ExecutionTarget.MAC &&
             content is MacClipboardRead &&
             content.matchesToolContract()
+        MAC_FILES_LARGEST_TOOL -> executionTarget == ExecutionTarget.MAC &&
+            content is MacFilesLargest &&
+            content.matchesToolContract()
         MAC_FILES_LIST_TOOL -> executionTarget == ExecutionTarget.MAC &&
             content is MacFilesList &&
             content.matchesToolContract()
@@ -622,6 +627,7 @@ private fun Float.displayConfidence(): String = String.format(Locale.US, "%.2f",
 private fun ToolResultContent.summaryText(): String = when (this) {
     is GitStatus -> gitStatusSummary()
     is MacClipboardRead -> macClipboardSummary()
+    is MacFilesLargest -> largestMacFilesSummary()
     is MacFilesList -> macFilesSummary()
     is MacSystemInfo -> "$operatingSystem $architecture: $status"
     is PhoneBatteryStatus -> "Battery $levelPercent%: ${if (charging) "charging" else "not charging"}"
@@ -676,6 +682,12 @@ private fun MacFilesList.macFilesSummary(): String {
     val pathLabel = relativePath.ifBlank { rootName }
     val truncatedLabel = if (truncated) " (truncated)" else ""
     return "${entries.size} Mac file entries in $pathLabel$truncatedLabel"
+}
+
+private fun MacFilesLargest.largestMacFilesSummary(): String {
+    val pathLabel = relativePath.ifBlank { rootName }
+    val truncatedLabel = if (truncated) " (truncated)" else ""
+    return "${entries.size} largest Mac files in $pathLabel$truncatedLabel"
 }
 
 private fun PhoneDeviceInfo.deviceInfoSummary(): String {

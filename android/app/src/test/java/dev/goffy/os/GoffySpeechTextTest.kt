@@ -9,10 +9,13 @@ import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
+import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LIST_TOOL
 import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.MacClipboardRead
 import dev.goffy.os.protocol.MacFilesApprovedRoot
+import dev.goffy.os.protocol.MacFilesLargest
+import dev.goffy.os.protocol.MacFilesLargestEntry
 import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacFilesListEntry
 import dev.goffy.os.protocol.MacSystemInfo
@@ -103,7 +106,48 @@ class GoffySpeechTextTest {
                             truncated = false,
                             approvedRoots = listOf(MacFilesApprovedRoot(0, "goffy")),
                             entries = listOf(
-                                MacFilesListEntry("private-plan.txt", false, "file", 42, 1),
+                                MacFilesListEntry("private-plan.txt", false, "file", 42, 1L),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val speechText = requireNotNull(state.latestSpeakableText())
+
+        assertTrue(speechText.contains("1 entries"))
+        assertFalse(speechText.contains("private-plan.txt"))
+    }
+
+    @Test
+    fun largestMacFilePathsAreNotReadAloud() {
+        val state = GoffyUiState(
+            hubEndpoint = endpoint,
+            timeline = TaskTimelineState(
+                entries = listOf(
+                    entry(
+                        toolName = MAC_FILES_LARGEST_TOOL,
+                        target = ExecutionTarget.MAC,
+                        result = MacFilesLargest(
+                            status = "available",
+                            rootIndex = 0,
+                            rootName = "goffy",
+                            relativePath = "",
+                            maxDepth = 4,
+                            scannedEntries = 2,
+                            skippedEntries = 0,
+                            truncated = false,
+                            approvedRoots = listOf(MacFilesApprovedRoot(0, "goffy")),
+                            entries = listOf(
+                                MacFilesLargestEntry(
+                                    relativePath = "private-plan.txt",
+                                    pathTruncated = false,
+                                    name = "private-plan.txt",
+                                    nameTruncated = false,
+                                    sizeBytes = 42,
+                                    modifiedEpochSeconds = 1L,
+                                ),
                             ),
                         ),
                     ),

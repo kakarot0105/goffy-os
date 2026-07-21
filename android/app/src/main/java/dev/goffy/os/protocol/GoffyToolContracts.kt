@@ -44,6 +44,36 @@ fun MacFilesListArguments.matchesToolContract(): Boolean =
         relativePath.isSafeMacFilesRelativePath() &&
         maxEntries in 1..MAX_MAC_FILES_LIST_ENTRIES
 
+fun MacFilesLargestArguments.matchesToolContract(): Boolean =
+    rootIndex in 0..MAX_MAC_FILES_ROOT_INDEX &&
+        relativePath.isSafeMacFilesRelativePath() &&
+        maxEntries in 1..MAX_MAC_FILES_LARGEST_ENTRIES &&
+        maxDepth in 0..MAX_MAC_FILES_LARGEST_DEPTH
+
+fun MacFilesLargest.matchesToolContract(): Boolean =
+    status.isSafeDisplayField(64) &&
+        rootIndex in 0..MAX_MAC_FILES_ROOT_INDEX &&
+        rootName.isSafeDisplayField(MAX_MAC_FILES_ROOT_NAME_LENGTH) &&
+        relativePath.isSafeMacFilesRelativePath() &&
+        maxDepth in 0..MAX_MAC_FILES_LARGEST_DEPTH &&
+        scannedEntries in 0..MAX_MAC_FILES_LARGEST_SCANNED_ENTRIES &&
+        skippedEntries in 0..MAX_MAC_FILES_LARGEST_SCANNED_ENTRIES &&
+        approvedRoots.size <= MAX_MAC_FILES_APPROVED_ROOTS &&
+        approvedRoots.any { root -> root.rootIndex == rootIndex && root.name == rootName } &&
+        approvedRoots.all { root ->
+            root.rootIndex in 0..MAX_MAC_FILES_ROOT_INDEX &&
+                root.name.isSafeDisplayField(MAX_MAC_FILES_ROOT_NAME_LENGTH)
+        } &&
+        entries.size <= MAX_MAC_FILES_LARGEST_ENTRIES &&
+        entries.all(MacFilesLargestEntry::matchesToolContract) &&
+        entries.zipWithNext().all { (first, second) -> first.sizeBytes >= second.sizeBytes }
+
+fun MacFilesLargestEntry.matchesToolContract(): Boolean =
+    relativePath.isSafeMacFilesOutputPath(MAX_MAC_FILES_LARGEST_PATH_LENGTH) &&
+        name.isSafeDisplayField(MAX_MAC_FILES_ENTRY_NAME_LENGTH) &&
+        sizeBytes in 0..MAX_MAC_FILES_LARGEST_FILE_SIZE_BYTES &&
+        (modifiedEpochSeconds == null || modifiedEpochSeconds >= 0L)
+
 fun MacFilesList.matchesToolContract(): Boolean =
     status.isSafeDisplayField(64) &&
         rootIndex in 0..MAX_MAC_FILES_ROOT_INDEX &&
@@ -62,7 +92,7 @@ fun MacFilesListEntry.matchesToolContract(): Boolean =
     name.isSafeDisplayField(MAX_MAC_FILES_ENTRY_NAME_LENGTH) &&
         kind in MAC_FILES_ENTRY_KINDS &&
         (sizeBytes == null || sizeBytes >= 0) &&
-        (modifiedEpochSeconds == null || modifiedEpochSeconds >= 0)
+        (modifiedEpochSeconds == null || modifiedEpochSeconds >= 0L)
 
 fun GitStatusArguments.matchesToolContract(): Boolean =
     repoIndex in 0..MAX_GIT_STATUS_REPO_INDEX &&
@@ -169,6 +199,16 @@ private fun String.isSafeMacFilesRelativePath(): Boolean =
         } &&
         split("/").none { part -> part == ".." }
 
+private fun String.isSafeMacFilesOutputPath(maximum: Int): Boolean =
+    isNotBlank() &&
+        length <= maximum &&
+        !startsWith("/") &&
+        none { character ->
+            character.isISOControl() ||
+                Character.getType(character) == Character.FORMAT.toInt()
+        } &&
+        split("/").none { part -> part.isBlank() || part == "." || part == ".." }
+
 private fun String.isSafeGitStatusPath(): Boolean =
     isNotBlank() &&
         length <= MAX_GIT_STATUS_PATH_LENGTH &&
@@ -224,10 +264,17 @@ private const val MAX_ANDROID_RELEASE_LENGTH = 64
 private const val MIN_SUPPORTED_SDK = 26
 private const val MAX_REASONABLE_SDK = 10_000
 const val DEFAULT_MAC_FILES_LIST_ENTRIES = 25
+const val DEFAULT_MAC_FILES_LARGEST_ENTRIES = 10
+const val DEFAULT_MAC_FILES_LARGEST_DEPTH = 4
 const val MAX_MAC_FILES_APPROVED_ROOTS = 8
 const val MAX_MAC_FILES_ROOT_INDEX = MAX_MAC_FILES_APPROVED_ROOTS - 1
 const val MAX_MAC_FILES_LIST_ENTRIES = 32
+const val MAX_MAC_FILES_LARGEST_ENTRIES = 25
+const val MAX_MAC_FILES_LARGEST_DEPTH = 8
+const val MAX_MAC_FILES_LARGEST_SCANNED_ENTRIES = 5_000
+const val MAX_MAC_FILES_LARGEST_FILE_SIZE_BYTES = Long.MAX_VALUE
 const val MAX_MAC_FILES_RELATIVE_PATH_LENGTH = 512
+const val MAX_MAC_FILES_LARGEST_PATH_LENGTH = 192
 const val MAX_MAC_FILES_ROOT_NAME_LENGTH = 64
 const val MAX_MAC_FILES_ENTRY_NAME_LENGTH = 96
 val MAC_FILES_ENTRY_KINDS = setOf("file", "directory", "symlink", "other")

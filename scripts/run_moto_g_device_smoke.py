@@ -450,7 +450,7 @@ def build_report(
                 expected_markers=(
                     "VERIFIED",
                     "Darwin",
-                    "System information output matched the registered schema.",
+                    "mac.system_info output matched the registered schema.",
                 ),
                 step_name="MAC command smoke",
                 artifact_prefix="mac-command",

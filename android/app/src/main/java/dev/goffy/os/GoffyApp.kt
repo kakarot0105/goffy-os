@@ -74,6 +74,7 @@ import dev.goffy.os.qr.ForegroundQrScanner
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.MacClipboardRead
+import dev.goffy.os.protocol.MacFilesLargest
 import dev.goffy.os.protocol.MacFilesList
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
@@ -1720,6 +1721,30 @@ private fun TaskResult(result: ToolResultContent) {
                 )
             }
         }
+        is MacFilesLargest -> {
+            Text(
+                text = "LARGEST / ${result.rootIndex} / ${result.rootName}",
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = "${result.entries.size} files / scanned ${result.scannedEntries}" +
+                    if (result.truncated) " / truncated" else "",
+                color = Signal,
+                fontSize = 11.sp,
+            )
+            result.entries.take(5).forEach { entry ->
+                Text(
+                    text = "${entry.sizeBytes.toReadableFileSize()} / ${entry.relativePath}",
+                    color = Mist,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         is MacClipboardRead -> {
             Text(
                 text = "MAC CLIPBOARD / ${result.status.uppercase()}",
@@ -1928,6 +1953,21 @@ private fun goffyTextFieldColors() = OutlinedTextFieldDefaults.colors(
     disabledBorderColor = Line.copy(alpha = 0.5f),
     disabledTextColor = Mist,
 )
+
+private fun Long.toReadableFileSize(): String {
+    val units = listOf("B", "KB", "MB", "GB", "TB")
+    var value = toDouble()
+    var unitIndex = 0
+    while (value >= 1024.0 && unitIndex < units.lastIndex) {
+        value /= 1024.0
+        unitIndex += 1
+    }
+    return if (unitIndex == 0) {
+        "${this}B"
+    } else {
+        String.format(java.util.Locale.US, "%.1f%s", value, units[unitIndex])
+    }
+}
 
 private const val MAX_COMMAND_LENGTH = 2_000
 private const val MAX_ENDPOINT_LENGTH = 2_048
