@@ -4,13 +4,15 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass
 from uuid import UUID
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic.alias_generators import to_camel
 
-from goffy_hub.auth import SAFE_TOOL_SCOPE, CredentialAuthenticator
+from goffy_hub.approval import ApprovalArtifactStore, ApprovalValidationError
+from goffy_hub.auth import SAFE_TOOL_SCOPE, AuthenticatedPrincipal, CredentialAuthenticator
 from goffy_hub.connections import WebSocketConnectionRegistry
 from goffy_hub.credentials import CredentialStore
 from goffy_hub.identity import HubIdentityStore
@@ -20,6 +22,7 @@ from goffy_hub.operator_audit_api import build_operator_audit_router
 from goffy_hub.pairing import PairingService
 from goffy_hub.pairing_api import build_pairing_router
 from goffy_hub.registry import (
+    PreparedToolInvocation,
     ToolArgumentsError,
     ToolExecutionError,
     ToolNotFoundError,
@@ -41,6 +44,7 @@ from goffy_hub.tools.mac_processes import is_mac_processes_supported
 from goffy_protocol import (
     MCP_PROTOCOL_VERSION,
     PROTOCOL_VERSION,
+    ApprovalResponsePayload,
     CapabilityDiscoveryRequestPayload,
     CapabilityDiscoveryResponsePayload,
     MessageEnvelope,
@@ -57,7 +61,18 @@ from goffy_protocol import (
 LOGGER = logging.getLogger(__name__)
 SendEvent = Callable[[MessageType, BaseModel, UUID | None], Awaitable[bool]]
 MAX_MESSAGES_PER_CONNECTION = 64
+# Keep false until Android can attach non-forgeable, device-bound proof that the
+# ApprovalResponse came from a visible user approval on the paired phone.
+WEBSOCKET_CONFIRM_APPROVAL_PROOF_ENABLED = False
 WEBSOCKET_TOOL_PERMISSIONS = frozenset({PermissionLevel.SAFE})
+
+
+@dataclass(frozen=True, slots=True)
+class PendingConfirmInvocation:
+    original_message_id: UUID
+    invocation: ToolInvocationPayload
+    prepared: PreparedToolInvocation
+    principal_key: str
 
 
 class HealthResponse(BaseModel):
@@ -159,6 +174,7 @@ def create_app(
         max_events=resolved_settings.operator_audit_max_events,
         database_path=resolved_settings.resolved_operator_audit_path,
     )
+    approval_store = ApprovalArtifactStore()
     pairing_service = (
         PairingService(
             credential_store,
@@ -199,6 +215,7 @@ def create_app(
     app.state.tool_health_monitor = tool_health_monitor
     app.state.authenticator = authenticator
     app.state.operator_audit_log = operator_audit_log
+    app.state.approval_store = approval_store
     app.state.credential_store = credential_store
     app.state.hub_identity_store = hub_identity_store
     app.state.hub_identity = hub_identity
@@ -291,6 +308,8 @@ def create_app(
                 return
         discovered_tools: set[str] = set()
         seen_message_ids: set[UUID] = set()
+        pending_confirm_invocations: dict[UUID, PendingConfirmInvocation] = {}
+        principal_key = _principal_key(principal)
         outbound_closed = False
 
         async def send_event(
@@ -325,6 +344,9 @@ def create_app(
                 await _handle_message(
                     raw_message,
                     registry,
+                    approval_store,
+                    pending_confirm_invocations,
+                    principal_key,
                     discovered_tools,
                     seen_message_ids,
                     send_event,
@@ -342,9 +364,18 @@ def create_app(
     return app
 
 
+def _principal_key(principal: AuthenticatedPrincipal) -> str:
+    if principal.credential_id is not None:
+        return f"{principal.kind.value}:{principal.credential_id}"
+    return f"{principal.kind.value}:{principal.client_id}"
+
+
 async def _handle_message(
     raw_message: str,
     registry: ToolRegistry,
+    approval_store: ApprovalArtifactStore,
+    pending_confirm_invocations: dict[UUID, PendingConfirmInvocation],
+    principal_key: str,
     discovered_tools: set[str],
     seen_message_ids: set[UUID],
     send_event: SendEvent,
@@ -380,6 +411,39 @@ async def _handle_message(
         )
         return
     seen_message_ids.add(envelope.message_id)
+
+    if envelope.message_type is MessageType.APPROVAL_RESPONSE:
+        discovered_tools.clear()
+        if not WEBSOCKET_CONFIRM_APPROVAL_PROOF_ENABLED:
+            await _send_error(
+                send_event,
+                code="approval_unavailable",
+                message=(
+                    "CONFIRM WebSocket approvals require device-bound proof and are not enabled."
+                ),
+                correlation_id=envelope.message_id,
+            )
+            return
+        try:
+            approval_response = ApprovalResponsePayload.model_validate(envelope.payload)
+        except ValidationError:
+            await _send_error(
+                send_event,
+                code="invalid_approval_response",
+                message="Approval response payload is invalid.",
+                correlation_id=envelope.message_id,
+            )
+            return
+        await _handle_approval_response(
+            approval_response,
+            registry,
+            approval_store,
+            pending_confirm_invocations,
+            principal_key,
+            send_event,
+            fallback_correlation_id=envelope.message_id,
+        )
+        return
 
     if envelope.message_type is MessageType.CAPABILITY_DISCOVERY_REQUEST:
         discovered_tools.clear()
@@ -417,7 +481,8 @@ async def _handle_message(
             send_event,
             code="unsupported_message_type",
             message=(
-                "This Hub endpoint accepts capability discovery and tool invocation messages only."
+                "This Hub endpoint accepts capability discovery, approval response, "
+                "and tool invocation messages only."
             ),
             correlation_id=envelope.message_id,
         )
@@ -471,7 +536,120 @@ async def _handle_message(
             correlation_id=envelope.message_id,
         )
         return
+    if prepared.definition.permission is PermissionLevel.CONFIRM:
+        if not WEBSOCKET_CONFIRM_APPROVAL_PROOF_ENABLED:
+            await _send_error(
+                send_event,
+                code="tool_not_found",
+                message="The requested tool is unavailable or unauthorized.",
+                correlation_id=envelope.message_id,
+            )
+            return
+        try:
+            approval = approval_store.issue(
+                principal_key=principal_key,
+                invocation=invocation,
+            )
+        except ApprovalValidationError as error:
+            await _send_error(
+                send_event,
+                code=error.code,
+                message=error.message,
+                correlation_id=envelope.message_id,
+            )
+            return
+        pending_confirm_invocations[approval.approval_id] = PendingConfirmInvocation(
+            original_message_id=envelope.message_id,
+            invocation=invocation,
+            prepared=prepared,
+            principal_key=principal_key,
+        )
+        if not await send_event(
+            MessageType.APPROVAL_REQUEST,
+            approval.to_payload(),
+            envelope.message_id,
+        ):
+            pending_confirm_invocations.pop(approval.approval_id, None)
+            approval_store.discard(approval.approval_id)
+        return
+    if invocation.task_id is not None:
+        await _send_error(
+            send_event,
+            code="approval_unexpected",
+            message="Approval task IDs are accepted only for CONFIRM tools.",
+            correlation_id=envelope.message_id,
+        )
+        return
 
+    await _execute_prepared_invocation(
+        registry,
+        invocation,
+        prepared,
+        send_event,
+        correlation_id=envelope.message_id,
+    )
+
+
+async def _handle_approval_response(
+    approval_response: ApprovalResponsePayload,
+    registry: ToolRegistry,
+    approval_store: ApprovalArtifactStore,
+    pending_confirm_invocations: dict[UUID, PendingConfirmInvocation],
+    principal_key: str,
+    send_event: SendEvent,
+    *,
+    fallback_correlation_id: UUID,
+) -> None:
+    pending = pending_confirm_invocations.pop(approval_response.approval_id, None)
+    correlation_id = pending.original_message_id if pending is not None else fallback_correlation_id
+    if pending is None:
+        await _send_error(
+            send_event,
+            code="approval_invalid",
+            message="Approval request is unknown or already consumed.",
+            correlation_id=correlation_id,
+        )
+        return
+    if pending.principal_key != principal_key:
+        await _send_error(
+            send_event,
+            code="approval_invalid",
+            message="Approval request does not match this principal.",
+            correlation_id=correlation_id,
+        )
+        return
+    try:
+        approval_store.consume(
+            principal_key=principal_key,
+            response=approval_response,
+            invocation=pending.invocation,
+        )
+    except ApprovalValidationError as error:
+        await _send_error(
+            send_event,
+            code=error.code,
+            message=error.message,
+            correlation_id=correlation_id,
+        )
+        return
+
+    await _execute_prepared_invocation(
+        registry,
+        pending.invocation,
+        pending.prepared,
+        send_event,
+        correlation_id=correlation_id,
+    )
+
+
+async def _execute_prepared_invocation(
+    registry: ToolRegistry,
+    invocation: ToolInvocationPayload,
+    prepared: PreparedToolInvocation,
+    send_event: SendEvent,
+    *,
+    correlation_id: UUID,
+) -> None:
     if not await send_event(
         MessageType.TOOL_PROGRESS,
         ToolProgressPayload(
@@ -481,7 +659,7 @@ async def _handle_message(
             sequence=0,
             message="Invocation accepted by the Hub.",
         ),
-        envelope.message_id,
+        correlation_id,
     ):
         return
 
@@ -493,7 +671,7 @@ async def _handle_message(
             send_event,
             code="tool_execution_failed",
             message="The tool failed without a verified state change.",
-            correlation_id=envelope.message_id,
+            correlation_id=correlation_id,
         )
         return
 
@@ -506,7 +684,7 @@ async def _handle_message(
             sequence=1,
             message="Tool returned schema-valid structured output.",
         ),
-        envelope.message_id,
+        correlation_id,
     ):
         return
     if not await send_event(
@@ -516,7 +694,7 @@ async def _handle_message(
             execution_target=result.definition.execution_target,
             structured_content=result.structured_content,
         ),
-        envelope.message_id,
+        correlation_id,
     ):
         return
     await send_event(
@@ -526,7 +704,7 @@ async def _handle_message(
             summary=f"{result.definition.name} output matched the registered schema.",
             checks=["tool allowlist", "input schema", "output schema"],
         ),
-        envelope.message_id,
+        correlation_id,
     )
 
 

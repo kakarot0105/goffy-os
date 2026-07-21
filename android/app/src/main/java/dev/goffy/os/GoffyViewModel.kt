@@ -64,6 +64,7 @@ import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
 import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import dev.goffy.os.protocol.PermissionLevel
+import dev.goffy.os.protocol.ToolApprovalGrant
 import dev.goffy.os.protocol.ToolProgress
 import java.time.Instant
 import java.util.UUID
@@ -1180,7 +1181,8 @@ class GoffyViewModel internal constructor(
         pendingExecution = null
         approvalExpiryJob?.cancel()
         approvalExpiryJob = null
-        mutableUiState.value = mutableUiState.value.grantApproval(taskId, nowMillis())
+        val approvedAtEpochMillis = nowMillis()
+        mutableUiState.value = mutableUiState.value.grantApproval(taskId, approvedAtEpochMillis)
         when (pending.plan.executionTarget) {
             ExecutionTarget.PHONE -> collectTask(
                 taskId,
@@ -1213,7 +1215,11 @@ class GoffyViewModel internal constructor(
                     deviceId,
                     pending.plan.toolName,
                     pending.plan.arguments,
-                    expiresAtEpochMillis = pending.expiresAtEpochMillis,
+                    approvalGrant = ToolApprovalGrant(
+                        taskId = taskId,
+                        issuedAtEpochMillis = approvedAtEpochMillis,
+                        expiresAtEpochMillis = pending.expiresAtEpochMillis,
+                    ),
                 )
                 collectTask(taskId, gateway.invoke(config, request))
             }

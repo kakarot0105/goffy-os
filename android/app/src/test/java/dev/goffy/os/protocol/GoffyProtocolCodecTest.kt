@@ -118,6 +118,95 @@ class GoffyProtocolCodecTest {
     }
 
     @Test
+    fun createsConfirmMacAppsOpenInvocationWithTaskBoundApprovalState() {
+        val taskId = UUID.fromString("33333333-3333-4333-8333-333333333333")
+        val request = codec.createToolInvocation(
+            "android-test",
+            "mac.apps.open",
+            MacAppsOpenArguments(displayName = "Safari"),
+            approvalGrant = ToolApprovalGrant(
+                taskId = taskId,
+                issuedAtEpochMillis = 1_784_300_400_000,
+                expiresAtEpochMillis = 1_784_300_460_000,
+            ),
+        )
+
+        assertEquals(messageId, request.messageId)
+        assertEquals("mac.apps.open", request.toolName)
+        assertEquals(1_784_300_460_000, request.expiresAtEpochMillis)
+        assertEquals(taskId, request.approvedTaskId)
+        assertEquals(
+            "48bcd955f3fdbcaddfc3844e3a9bdc8a9a3791bab296bec333e8e7231244793e",
+            request.approvedArgumentsSha256,
+        )
+        assertEquals(
+            "{\"protocolVersion\":\"0.2.0\",\"messageId\":\"11111111-1111-4111-8111-111111111111\"," +
+                "\"timestamp\":\"2026-07-13T16:00:00Z\",\"deviceId\":\"android-test\"," +
+                "\"messageType\":\"ToolInvocation\",\"payload\":{\"toolName\":\"mac.apps.open\"," +
+                "\"arguments\":{\"displayName\":\"Safari\"}," +
+                "\"taskId\":\"33333333-3333-4333-8333-333333333333\"},\"correlationId\":null}",
+            request.encodedMessage,
+        )
+    }
+
+    @Test
+    fun decodesHubApprovalRequestAndCreatesApprovalResponse() {
+        val taskId = UUID.fromString("33333333-3333-4333-8333-333333333333")
+        val responseMessageId = UUID.fromString("44444444-4444-4444-8444-444444444444")
+        val approvalId = UUID.fromString("55555555-5555-4555-8555-555555555555")
+        val ids = ArrayDeque(listOf(messageId, discoveryMessageId, responseMessageId))
+        val localCodec = GoffyProtocolCodec(
+            now = { Instant.parse("2026-07-13T16:00:00Z") },
+            nextMessageId = { ids.removeFirst() },
+        )
+        val request = localCodec.createToolInvocation(
+            "android-test",
+            "mac.apps.open",
+            MacAppsOpenArguments(displayName = "Safari"),
+            approvalGrant = ToolApprovalGrant(
+                taskId = taskId,
+                issuedAtEpochMillis = 1_784_300_400_000,
+                expiresAtEpochMillis = 1_784_300_460_000,
+            ),
+        )
+        val rawApprovalRequest =
+            "{\"protocolVersion\":\"0.2.0\",\"messageId\":\"66666666-6666-4666-8666-666666666666\"," +
+                "\"timestamp\":\"2026-07-13T16:00:01Z\",\"deviceId\":\"goffy-hub\"," +
+                "\"messageType\":\"ApprovalRequest\",\"payload\":{\"schemaVersion\":\"goffy.approval.v1\"," +
+                "\"approvalId\":\"55555555-5555-4555-8555-555555555555\"," +
+                "\"taskId\":\"33333333-3333-4333-8333-333333333333\"," +
+                "\"toolName\":\"mac.apps.open\"," +
+                "\"argumentsSha256\":\"48bcd955f3fdbcaddfc3844e3a9bdc8a9a3791bab296bec333e8e7231244793e\"," +
+                "\"issuedAtEpochMillis\":1784300401000," +
+                "\"expiresAtEpochMillis\":1784300461000}," +
+                "\"correlationId\":\"11111111-1111-4111-8111-111111111111\"}"
+
+        val approval = checkNotNull(
+            localCodec.decodeApprovalRequestOrNull(
+                rawMessage = rawApprovalRequest,
+                expectedCorrelationId = request.messageId,
+                expectedToolName = request.toolName,
+                expectedTaskId = request.approvedTaskId,
+                expectedArgumentsSha256 = request.approvedArgumentsSha256,
+            ),
+        )
+
+        assertEquals(approvalId, approval.approvalId)
+        assertEquals(taskId, approval.taskId)
+        assertEquals(1_784_300_401_000, approval.issuedAtEpochMillis)
+        assertEquals(1_784_300_461_000, approval.expiresAtEpochMillis)
+        assertEquals(
+            "{\"protocolVersion\":\"0.2.0\",\"messageId\":\"44444444-4444-4444-8444-444444444444\"," +
+                "\"timestamp\":\"2026-07-13T16:00:00Z\",\"deviceId\":\"android-test\"," +
+                "\"messageType\":\"ApprovalResponse\",\"payload\":{\"schemaVersion\":\"goffy.approval.v1\"," +
+                "\"approvalId\":\"55555555-5555-4555-8555-555555555555\"," +
+                "\"taskId\":\"33333333-3333-4333-8333-333333333333\"," +
+                "\"approved\":true},\"correlationId\":\"11111111-1111-4111-8111-111111111111\"}",
+            localCodec.createApprovalResponse("android-test", request.messageId, approval),
+        )
+    }
+
+    @Test
     fun createsVersionedMacFilesLargestInvocationWithTypedArguments() {
         val request = codec.createToolInvocation(
             "android-test",

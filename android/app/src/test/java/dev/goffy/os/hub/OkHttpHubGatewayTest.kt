@@ -201,6 +201,260 @@ class OkHttpHubGatewayTest {
     }
 
     @Test
+    fun answersHubApprovalRequestBeforeStreamingConfirmResult() = runTest {
+        val taskId = UUID.fromString("33333333-3333-4333-8333-333333333333")
+        val approvalId = UUID.fromString("44444444-4444-4444-8444-444444444444")
+        val argumentsHash = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        val approvedRequest = TEST_REQUEST.copy(
+            expiresAtEpochMillis = 2_000L,
+            approvedTaskId = taskId,
+            approvedArgumentsSha256 = argumentsHash,
+        )
+        MockWebServer().use { server ->
+            val approvalResponses = AtomicInteger(0)
+            server.start()
+            server.enqueue(
+                MockResponse.Builder()
+                    .webSocketUpgrade(
+                        object : ClosingServerListener() {
+                            override fun onMessage(webSocket: WebSocket, text: String) {
+                                when {
+                                    text.contains("\"messageType\":\"CapabilityDiscoveryRequest\"") ->
+                                        webSocket.send(capabilityEnvelope(TEST_REQUEST.discoveryMessageId))
+                                    text.contains("\"messageType\":\"ToolInvocation\"") ->
+                                        webSocket.send(
+                                            approvalRequestEnvelope(
+                                                correlationId = TEST_REQUEST.messageId,
+                                                approvalId = approvalId,
+                                                taskId = taskId,
+                                                argumentsSha256 = argumentsHash,
+                                            ),
+                                        )
+                                    text.contains("\"messageType\":\"ApprovalResponse\"") -> {
+                                        approvalResponses.incrementAndGet()
+                                        assertTrue(text.contains("\"approvalId\":\"$approvalId\""))
+                                        assertTrue(text.contains("\"taskId\":\"$taskId\""))
+                                        assertTrue(text.contains("\"approved\":true"))
+                                        assertTrue(text.contains("\"correlationId\":\"${TEST_REQUEST.messageId}\""))
+                                        webSocket.send(
+                                            progressEnvelope(
+                                                TEST_REQUEST.messageId,
+                                                0,
+                                                "accepted",
+                                                "Invocation accepted by the Hub.",
+                                            ),
+                                        )
+                                        webSocket.send(
+                                            progressEnvelope(
+                                                TEST_REQUEST.messageId,
+                                                1,
+                                                "completed",
+                                                "Tool returned schema-valid structured output.",
+                                            ),
+                                        )
+                                        webSocket.send(resultEnvelope(TEST_REQUEST.messageId))
+                                        webSocket.send(verificationEnvelope(TEST_REQUEST.messageId))
+                                    }
+                                    else -> error("unexpected client message")
+                                }
+                            }
+                        },
+                    )
+                    .build(),
+            )
+
+            val client = okhttp3.OkHttpClient()
+            val gateway = OkHttpHubGateway(client, nowMillis = { 1_000L })
+            val events = try {
+                gateway.invoke(loopbackConfig(server), approvedRequest).toList()
+            } finally {
+                gateway.close()
+                client.dispatcher.executorService.shutdown()
+                client.connectionPool.evictAll()
+            }
+
+            assertEquals(1, approvalResponses.get())
+            assertEquals(ExecutionEvent.Ready, events[1])
+            assertTrue(events[2] is ExecutionEvent.Progress)
+            assertTrue(events.last() is ExecutionEvent.Verification)
+        }
+    }
+
+    @Test
+    fun approvalRequestAfterLocalDeadlineFailsClosed() = runTest {
+        val taskId = UUID.fromString("33333333-3333-4333-8333-333333333333")
+        val approvalId = UUID.fromString("44444444-4444-4444-8444-444444444444")
+        val argumentsHash = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        val approvedRequest = TEST_REQUEST.copy(
+            expiresAtEpochMillis = 2_000L,
+            approvedTaskId = taskId,
+            approvedArgumentsSha256 = argumentsHash,
+        )
+        MockWebServer().use { server ->
+            val approvalResponses = AtomicInteger(0)
+            val now = AtomicInteger(1_000)
+            server.start()
+            server.enqueue(
+                MockResponse.Builder()
+                    .webSocketUpgrade(
+                        object : ClosingServerListener() {
+                            override fun onMessage(webSocket: WebSocket, text: String) {
+                                when {
+                                    text.contains("\"messageType\":\"CapabilityDiscoveryRequest\"") ->
+                                        webSocket.send(capabilityEnvelope(TEST_REQUEST.discoveryMessageId))
+                                    text.contains("\"messageType\":\"ToolInvocation\"") -> {
+                                        now.set(2_000)
+                                        webSocket.send(
+                                            approvalRequestEnvelope(
+                                                correlationId = TEST_REQUEST.messageId,
+                                                approvalId = approvalId,
+                                                taskId = taskId,
+                                                argumentsSha256 = argumentsHash,
+                                            ),
+                                        )
+                                    }
+                                    text.contains("\"messageType\":\"ApprovalResponse\"") ->
+                                        approvalResponses.incrementAndGet()
+                                    else -> error("unexpected client message")
+                                }
+                            }
+                        },
+                    )
+                    .build(),
+            )
+
+            val client = okhttp3.OkHttpClient()
+            val gateway = OkHttpHubGateway(client, nowMillis = { now.get().toLong() })
+            val events = try {
+                gateway.invoke(loopbackConfig(server), approvedRequest).toList()
+            } finally {
+                gateway.close()
+                client.dispatcher.executorService.shutdown()
+                client.connectionPool.evictAll()
+            }
+
+            assertEquals(0, approvalResponses.get())
+            assertEquals(ExecutionEvent.Ready, events[1])
+            assertEquals("approval_expired", (events.last() as ExecutionEvent.Error).code)
+        }
+    }
+
+    @Test
+    fun approvalRequestCannotExtendLocalApprovalDeadline() = runTest {
+        val taskId = UUID.fromString("33333333-3333-4333-8333-333333333333")
+        val approvalId = UUID.fromString("44444444-4444-4444-8444-444444444444")
+        val argumentsHash = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        val approvedRequest = TEST_REQUEST.copy(
+            expiresAtEpochMillis = 2_000L,
+            approvedTaskId = taskId,
+            approvedArgumentsSha256 = argumentsHash,
+        )
+        MockWebServer().use { server ->
+            val approvalResponses = AtomicInteger(0)
+            server.start()
+            server.enqueue(
+                MockResponse.Builder()
+                    .webSocketUpgrade(
+                        object : ClosingServerListener() {
+                            override fun onMessage(webSocket: WebSocket, text: String) {
+                                when {
+                                    text.contains("\"messageType\":\"CapabilityDiscoveryRequest\"") ->
+                                        webSocket.send(capabilityEnvelope(TEST_REQUEST.discoveryMessageId))
+                                    text.contains("\"messageType\":\"ToolInvocation\"") ->
+                                        webSocket.send(
+                                            approvalRequestEnvelope(
+                                                correlationId = TEST_REQUEST.messageId,
+                                                approvalId = approvalId,
+                                                taskId = taskId,
+                                                argumentsSha256 = argumentsHash,
+                                                expiresAtEpochMillis = 60_000,
+                                            ),
+                                        )
+                                    text.contains("\"messageType\":\"ApprovalResponse\"") ->
+                                        approvalResponses.incrementAndGet()
+                                    else -> error("unexpected client message")
+                                }
+                            }
+                        },
+                    )
+                    .build(),
+            )
+
+            val client = okhttp3.OkHttpClient()
+            val gateway = OkHttpHubGateway(client, nowMillis = { 1_000L })
+            val events = try {
+                gateway.invoke(loopbackConfig(server), approvedRequest).toList()
+            } finally {
+                gateway.close()
+                client.dispatcher.executorService.shutdown()
+                client.connectionPool.evictAll()
+            }
+
+            assertEquals(0, approvalResponses.get())
+            assertEquals(ExecutionEvent.Ready, events[1])
+            assertEquals("protocol_error", (events.last() as ExecutionEvent.Error).code)
+        }
+    }
+
+    @Test
+    fun approvalRequestIssuedTooFarInFutureFailsClosed() = runTest {
+        val taskId = UUID.fromString("33333333-3333-4333-8333-333333333333")
+        val approvalId = UUID.fromString("44444444-4444-4444-8444-444444444444")
+        val argumentsHash = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        val approvedRequest = TEST_REQUEST.copy(
+            expiresAtEpochMillis = 20_000L,
+            approvedTaskId = taskId,
+            approvedArgumentsSha256 = argumentsHash,
+        )
+        MockWebServer().use { server ->
+            val approvalResponses = AtomicInteger(0)
+            server.start()
+            server.enqueue(
+                MockResponse.Builder()
+                    .webSocketUpgrade(
+                        object : ClosingServerListener() {
+                            override fun onMessage(webSocket: WebSocket, text: String) {
+                                when {
+                                    text.contains("\"messageType\":\"CapabilityDiscoveryRequest\"") ->
+                                        webSocket.send(capabilityEnvelope(TEST_REQUEST.discoveryMessageId))
+                                    text.contains("\"messageType\":\"ToolInvocation\"") ->
+                                        webSocket.send(
+                                            approvalRequestEnvelope(
+                                                correlationId = TEST_REQUEST.messageId,
+                                                approvalId = approvalId,
+                                                taskId = taskId,
+                                                argumentsSha256 = argumentsHash,
+                                                issuedAtEpochMillis = 10_000,
+                                                expiresAtEpochMillis = 11_000,
+                                            ),
+                                        )
+                                    text.contains("\"messageType\":\"ApprovalResponse\"") ->
+                                        approvalResponses.incrementAndGet()
+                                    else -> error("unexpected client message")
+                                }
+                            }
+                        },
+                    )
+                    .build(),
+            )
+
+            val client = okhttp3.OkHttpClient()
+            val gateway = OkHttpHubGateway(client, nowMillis = { 1_000L })
+            val events = try {
+                gateway.invoke(loopbackConfig(server), approvedRequest).toList()
+            } finally {
+                gateway.close()
+                client.dispatcher.executorService.shutdown()
+                client.connectionPool.evictAll()
+            }
+
+            assertEquals(0, approvalResponses.get())
+            assertEquals(ExecutionEvent.Ready, events[1])
+            assertEquals("protocol_error", (events.last() as ExecutionEvent.Error).code)
+        }
+    }
+
+    @Test
     fun missingCapabilityFailsBeforeReadyOrInvocation() = runTest {
         MockWebServer().use { server ->
             val invocations = AtomicInteger(0)
@@ -717,6 +971,22 @@ class OkHttpHubGatewayTest {
                 correlationId = correlationId,
                 payload =
                     """{"code":"tool_not_found","message":"The requested tool is unavailable or unauthorized.","retryable":false}""",
+            )
+
+        private fun approvalRequestEnvelope(
+            correlationId: UUID,
+            approvalId: UUID,
+            taskId: UUID,
+            argumentsSha256: String,
+            issuedAtEpochMillis: Long = 1_000,
+            expiresAtEpochMillis: Long = 2_000,
+        ): String =
+            eventEnvelope(
+                messageId = "99999999-9999-4999-8999-999999999999",
+                messageType = "ApprovalRequest",
+                correlationId = correlationId,
+                payload =
+                    """{"schemaVersion":"goffy.approval.v1","approvalId":"$approvalId","taskId":"$taskId","toolName":"mac.system_info","argumentsSha256":"$argumentsSha256","issuedAtEpochMillis":$issuedAtEpochMillis,"expiresAtEpochMillis":$expiresAtEpochMillis}""",
             )
 
         private fun capabilityEnvelope(correlationId: UUID, tools: String = capabilityTool()): String =

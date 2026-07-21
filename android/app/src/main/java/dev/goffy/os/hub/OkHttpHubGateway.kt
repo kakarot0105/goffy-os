@@ -299,6 +299,85 @@ class OkHttpHubGateway private constructor(
                     return
                 }
 
+                val approvalRequest = try {
+                    codec.decodeApprovalRequestOrNull(
+                        rawMessage = text,
+                        expectedCorrelationId = request.messageId,
+                        expectedToolName = request.toolName,
+                        expectedTaskId = request.approvedTaskId,
+                        expectedArgumentsSha256 = request.approvedArgumentsSha256,
+                    )
+                } catch (_: ProtocolException) {
+                    closeWithProtocolFailure(
+                        webSocket = webSocket,
+                        closingOutcome = closingOutcome,
+                        finish = ::finish,
+                    )
+                    return
+                }
+                if (approvalRequest != null) {
+                    val now = nowMillis()
+                    if (request.isExpired() || now >= approvalRequest.expiresAtEpochMillis) {
+                        closeWithOutcome(
+                            webSocket = webSocket,
+                            status = NORMAL_CLOSURE_STATUS,
+                            outcome = AttemptOutcome.FinalFailure(approvalExpiredError()),
+                            closingOutcome = closingOutcome,
+                            finish = ::finish,
+                        )
+                        return
+                    }
+                    val localDeadline = request.expiresAtEpochMillis
+                    if (
+                        localDeadline != null &&
+                        approvalRequest.expiresAtEpochMillis > localDeadline
+                    ) {
+                        closeWithProtocolFailure(
+                            webSocket = webSocket,
+                            closingOutcome = closingOutcome,
+                            finish = ::finish,
+                        )
+                        return
+                    }
+                    if (approvalRequest.issuedAtEpochMillis > now + APPROVAL_CLOCK_SKEW_MILLIS) {
+                        closeWithProtocolFailure(
+                            webSocket = webSocket,
+                            closingOutcome = closingOutcome,
+                            finish = ::finish,
+                        )
+                        return
+                    }
+                    val approvalResponse = try {
+                        codec.createApprovalResponse(
+                            deviceId = request.deviceId,
+                            correlationId = request.messageId,
+                            approvalRequest = approvalRequest,
+                        )
+                    } catch (_: ProtocolException) {
+                        closeWithProtocolFailure(
+                            webSocket = webSocket,
+                            closingOutcome = closingOutcome,
+                            finish = ::finish,
+                        )
+                        return
+                    }
+                    if (!webSocket.send(approvalResponse)) {
+                        closeWithOutcome(
+                            webSocket = webSocket,
+                            status = NORMAL_CLOSURE_STATUS,
+                            outcome = AttemptOutcome.RetryableFailure(
+                                retryableError(
+                                    code = "transport_send_failed",
+                                    message = "Hub approval response could not be sent.",
+                                ),
+                            ),
+                            closingOutcome = closingOutcome,
+                            finish = ::finish,
+                        )
+                    }
+                    return
+                }
+
                 val event = try {
                     codec.decodeEvent(
                         rawMessage = text,
@@ -470,6 +549,7 @@ class OkHttpHubGateway private constructor(
         private const val HTTP_UNAUTHORIZED = 401
         private const val HTTP_FORBIDDEN = 403
         private const val DEFAULT_ATTEMPT_TIMEOUT_MILLIS = 35_000L
+        private const val APPROVAL_CLOCK_SKEW_MILLIS = 5_000L
 
         private fun defaultClient(): OkHttpClient =
             OkHttpClient.Builder()

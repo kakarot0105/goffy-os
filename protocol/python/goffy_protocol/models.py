@@ -16,6 +16,8 @@ SEMVER_PATTERN = r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$"
 MAC_SYSTEM_INFO_TOOL_NAME = "mac.system_info"
 MAC_SYSTEM_INFO_TOOL_VERSION = "1.0.0"
 MAC_SYSTEM_INFO_FIELDS = frozenset({"status", "operatingSystem", "architecture"})
+APPROVAL_SCHEMA_VERSION: Literal["goffy.approval.v1"] = "goffy.approval.v1"
+SHA256_HEX_PATTERN = r"^[a-f0-9]{64}$"
 
 
 class GoffyModel(BaseModel):
@@ -79,9 +81,48 @@ class MessageEnvelope(GoffyModel):
         return self
 
 
+class ApprovalRequestPayload(GoffyModel):
+    schema_version: Literal["goffy.approval.v1"] = Field(alias="schemaVersion")
+    approval_id: UUID
+    task_id: UUID
+    tool_name: str = Field(min_length=1, max_length=128, pattern=TOOL_NAME_PATTERN)
+    arguments_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    issued_at_epoch_millis: int = Field(ge=0)
+    expires_at_epoch_millis: int = Field(ge=1)
+
+    @field_validator("approval_id", "task_id", mode="before")
+    @classmethod
+    def parse_uuid(cls, value: UUID | str) -> UUID | str:
+        return UUID(value) if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def reject_non_expiring_request(self) -> ApprovalRequestPayload:
+        if self.expires_at_epoch_millis <= self.issued_at_epoch_millis:
+            raise ValueError("approval request must expire after it is issued")
+        return self
+
+
+class ApprovalResponsePayload(GoffyModel):
+    schema_version: Literal["goffy.approval.v1"] = Field(alias="schemaVersion")
+    approval_id: UUID
+    task_id: UUID
+    approved: bool
+
+    @field_validator("approval_id", "task_id", mode="before")
+    @classmethod
+    def parse_uuid(cls, value: UUID | str) -> UUID | str:
+        return UUID(value) if isinstance(value, str) else value
+
+
 class ToolInvocationPayload(GoffyModel):
     tool_name: str = Field(min_length=1, max_length=128, pattern=TOOL_NAME_PATTERN)
     arguments: dict[str, Any]
+    task_id: UUID | None = None
+
+    @field_validator("task_id", mode="before")
+    @classmethod
+    def parse_task_uuid(cls, value: UUID | str | None) -> UUID | str | None:
+        return UUID(value) if isinstance(value, str) else value
 
 
 class CapabilityDiscoveryRequestPayload(GoffyModel):

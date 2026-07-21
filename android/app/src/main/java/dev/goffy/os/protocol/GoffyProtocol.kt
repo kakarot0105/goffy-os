@@ -1,5 +1,6 @@
 package dev.goffy.os.protocol
 
+import java.security.MessageDigest
 import java.time.Instant
 import java.time.format.DateTimeParseException
 import java.util.UUID
@@ -31,6 +32,8 @@ const val MAX_PROTOCOL_MESSAGE_BYTES = 32_768
 enum class MessageType(val wireName: String) {
     CAPABILITY_DISCOVERY_REQUEST("CapabilityDiscoveryRequest"),
     CAPABILITY_DISCOVERY_RESPONSE("CapabilityDiscoveryResponse"),
+    APPROVAL_REQUEST("ApprovalRequest"),
+    APPROVAL_RESPONSE("ApprovalResponse"),
     TOOL_INVOCATION("ToolInvocation"),
     TOOL_PROGRESS("ToolProgress"),
     TOOL_RESULT("ToolResult"),
@@ -63,6 +66,24 @@ data class ToolInvocationRequest(
     val discoveryMessageId: UUID,
     val encodedDiscoveryMessage: String,
     val expiresAtEpochMillis: Long? = null,
+    val deviceId: String = "android-test",
+    val approvedTaskId: UUID? = null,
+    val approvedArgumentsSha256: String? = null,
+)
+
+data class ToolApprovalGrant(
+    val taskId: UUID,
+    val issuedAtEpochMillis: Long,
+    val expiresAtEpochMillis: Long,
+)
+
+data class HubApprovalRequest(
+    val approvalId: UUID,
+    val taskId: UUID,
+    val toolName: String,
+    val argumentsSha256: String,
+    val issuedAtEpochMillis: Long,
+    val expiresAtEpochMillis: Long,
 )
 
 data class DiscoveredToolCapability(
@@ -373,13 +394,19 @@ class GoffyProtocolCodec(
         toolName: String,
         arguments: ToolArguments = NoToolArguments,
         expiresAtEpochMillis: Long? = null,
+        approvalGrant: ToolApprovalGrant? = null,
     ): ToolInvocationRequest {
         requireBounded("deviceId", deviceId, 1, 128)
         requireToolName(toolName)
-        if (expiresAtEpochMillis != null && expiresAtEpochMillis <= 0L) {
+        val requestExpiresAt = approvalGrant?.expiresAtEpochMillis ?: expiresAtEpochMillis
+        if (requestExpiresAt != null && requestExpiresAt <= 0L) {
             throw ProtocolException("invocation deadline must be positive")
         }
         val encodedArguments = encodeToolArguments(toolName, arguments)
+        if (approvalGrant != null) {
+            requireApprovalGrant(approvalGrant)
+        }
+        val argumentsSha256 = approvalGrant?.let { sha256Hex(canonicalJson(encodedArguments)) }
         val messageId = nextMessageId()
         val discoveryMessageId = nextMessageId()
         if (discoveryMessageId == messageId) {
@@ -388,6 +415,9 @@ class GoffyProtocolCodec(
         val invocationPayload = buildJsonObject {
             put("toolName", toolName)
             put("arguments", encodedArguments)
+            if (approvalGrant != null) {
+                put("taskId", approvalGrant.taskId.toString())
+            }
         }
         val discoveryPayload = buildJsonObject { put("toolName", toolName) }
         val encodedDiscoveryMessage = encodeEnvelope(
@@ -408,7 +438,39 @@ class GoffyProtocolCodec(
             encodedMessage = encodedMessage,
             discoveryMessageId = discoveryMessageId,
             encodedDiscoveryMessage = encodedDiscoveryMessage,
-            expiresAtEpochMillis = expiresAtEpochMillis,
+            expiresAtEpochMillis = requestExpiresAt,
+            deviceId = deviceId,
+            approvedTaskId = approvalGrant?.taskId,
+            approvedArgumentsSha256 = argumentsSha256,
+        )
+    }
+
+    private fun requireApprovalGrant(approvalGrant: ToolApprovalGrant) {
+        if (approvalGrant.expiresAtEpochMillis <= approvalGrant.issuedAtEpochMillis) {
+            throw ProtocolException("approval grant must expire after it is issued")
+        }
+    }
+
+    fun createApprovalResponse(
+        deviceId: String,
+        correlationId: UUID,
+        approvalRequest: HubApprovalRequest,
+        approved: Boolean = true,
+    ): String {
+        requireBounded("deviceId", deviceId, 1, 128)
+        requireToolName(approvalRequest.toolName)
+        val payload = buildJsonObject {
+            put("schemaVersion", "goffy.approval.v1")
+            put("approvalId", approvalRequest.approvalId.toString())
+            put("taskId", approvalRequest.taskId.toString())
+            put("approved", approved)
+        }
+        return encodeEnvelope(
+            messageId = nextMessageId(),
+            deviceId = deviceId,
+            messageType = MessageType.APPROVAL_RESPONSE,
+            payload = payload,
+            correlationId = correlationId,
         )
     }
 
@@ -503,6 +565,7 @@ class GoffyProtocolCodec(
         deviceId: String,
         messageType: MessageType,
         payload: JsonObject,
+        correlationId: UUID? = null,
     ): String {
         val root = buildJsonObject {
             put("protocolVersion", GOFFY_PROTOCOL_VERSION)
@@ -511,7 +574,7 @@ class GoffyProtocolCodec(
             put("deviceId", deviceId)
             put("messageType", messageType.wireName)
             put("payload", payload)
-            put("correlationId", JsonNull)
+            put("correlationId", correlationId?.toString()?.let(::JsonPrimitive) ?: JsonNull)
         }
         val encoded = json.encodeToString(JsonObject.serializer(), root)
         if (encoded.encodeToByteArray().size > MAX_PROTOCOL_MESSAGE_BYTES) {
@@ -533,11 +596,66 @@ class GoffyProtocolCodec(
             MessageType.TOOL_RESULT -> decodeResult(envelope.payload, expectedToolName)
             MessageType.TOOL_ERROR -> decodeError(envelope.payload)
             MessageType.VERIFICATION_RESULT -> decodeVerification(envelope.payload)
+            MessageType.APPROVAL_REQUEST,
+            MessageType.APPROVAL_RESPONSE,
             MessageType.CAPABILITY_DISCOVERY_REQUEST,
             MessageType.CAPABILITY_DISCOVERY_RESPONSE,
             MessageType.TOOL_INVOCATION,
             -> throw ProtocolException("unexpected inbound message type")
         }
+    }
+
+    fun decodeApprovalRequestOrNull(
+        rawMessage: String,
+        expectedCorrelationId: UUID,
+        expectedToolName: String,
+        expectedTaskId: UUID?,
+        expectedArgumentsSha256: String?,
+    ): HubApprovalRequest? {
+        if (expectedTaskId == null || expectedArgumentsSha256 == null) {
+            return null
+        }
+        requireToolName(expectedToolName)
+        val envelope = decodeInboundEnvelope(rawMessage, expectedCorrelationId)
+        if (envelope.messageType != MessageType.APPROVAL_REQUEST) {
+            return null
+        }
+        val payload = envelope.payload
+        payload.requireKeys(APPROVAL_REQUEST_KEYS)
+        payload.requireString("schemaVersion").requireExactString(
+            "goffy.approval.v1",
+            "approval schema version",
+        )
+        val approvalId = parseUuid(payload.requireString("approvalId"), "approvalId")
+        val taskId = parseUuid(payload.requireString("taskId"), "taskId")
+        if (taskId != expectedTaskId) {
+            throw ProtocolException("approval request task does not match the approved task")
+        }
+        val toolName = payload.requireString("toolName")
+        requireExpectedTool(toolName, expectedToolName)
+        val argumentsSha256 = payload.requireString("argumentsSha256")
+        if (!SHA256_HEX.matches(argumentsSha256)) {
+            throw ProtocolException("approval request argument hash is invalid")
+        }
+        if (argumentsSha256 != expectedArgumentsSha256) {
+            throw ProtocolException("approval request arguments do not match the approved task")
+        }
+        val expiresAt = payload.requireLong("expiresAtEpochMillis")
+        if (expiresAt <= 0L) {
+            throw ProtocolException("approval request expiry is invalid")
+        }
+        val issuedAt = payload.requireLong("issuedAtEpochMillis")
+        if (expiresAt <= issuedAt) {
+            throw ProtocolException("approval request expiry is invalid")
+        }
+        return HubApprovalRequest(
+            approvalId = approvalId,
+            taskId = taskId,
+            toolName = toolName,
+            argumentsSha256 = argumentsSha256,
+            issuedAtEpochMillis = issuedAt,
+            expiresAtEpochMillis = expiresAt,
+        )
     }
 
     fun decodeCapabilityDiscovery(
@@ -551,6 +669,8 @@ class GoffyProtocolCodec(
             MessageType.CAPABILITY_DISCOVERY_RESPONSE ->
                 decodeCapabilityResponse(envelope.payload, expectedToolName)
             MessageType.TOOL_ERROR -> CapabilityDiscoveryMessage.Error(decodeError(envelope.payload))
+            MessageType.APPROVAL_REQUEST,
+            MessageType.APPROVAL_RESPONSE,
             MessageType.CAPABILITY_DISCOVERY_REQUEST,
             MessageType.TOOL_INVOCATION,
             MessageType.TOOL_PROGRESS,
@@ -2113,6 +2233,27 @@ private fun JsonElement?.stringValueOrNull(): String? {
     return primitive.takeIf { it.isString }?.content
 }
 
+private fun canonicalJson(value: JsonElement): String = when (value) {
+    is JsonObject -> value.entries
+        .sortedBy { it.key }
+        .joinToString(separator = ",", prefix = "{", postfix = "}") { (key, element) ->
+            "${quoteJsonString(key)}:${canonicalJson(element)}"
+        }
+    is JsonArray -> value.joinToString(separator = ",", prefix = "[", postfix = "]") { element ->
+        canonicalJson(element)
+    }
+    JsonNull -> "null"
+    else -> Json.encodeToString(JsonElement.serializer(), value)
+}
+
+private fun quoteJsonString(value: String): String =
+    Json.encodeToString(JsonElement.serializer(), JsonPrimitive(value))
+
+private fun sha256Hex(value: String): String =
+    MessageDigest.getInstance("SHA-256")
+        .digest(value.encodeToByteArray())
+        .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
+
 private fun requireToolName(value: String) {
     requireBounded("toolName", value, 1, 128)
     if (!TOOL_NAME.matches(value)) throw ProtocolException("toolName has an invalid format")
@@ -2125,6 +2266,7 @@ private fun requireBounded(field: String, value: String, minimum: Int, maximum: 
 }
 
 private val TOOL_NAME = Regex("^[a-z][a-z0-9_.]*$")
+private val SHA256_HEX = Regex("^[a-f0-9]{64}$")
 private val ENVELOPE_REQUIRED_KEYS = setOf(
     "protocolVersion",
     "messageId",
@@ -2142,6 +2284,15 @@ private val PROGRESS_KEYS = setOf(
     "message",
 )
 private val RESULT_KEYS = setOf("toolName", "executionTarget", "structuredContent")
+private val APPROVAL_REQUEST_KEYS = setOf(
+    "schemaVersion",
+    "approvalId",
+    "taskId",
+    "toolName",
+    "argumentsSha256",
+    "issuedAtEpochMillis",
+    "expiresAtEpochMillis",
+)
 private val SYSTEM_INFO_KEYS = setOf("status", "operatingSystem", "architecture")
 private val MAC_FILES_LIST_INPUT_KEYS = setOf(
     "rootIndex",

@@ -13,6 +13,8 @@ from goffy_protocol import (
     JSON_SCHEMA_DIALECT,
     MCP_PROTOCOL_VERSION,
     PROTOCOL_VERSION,
+    ApprovalRequestPayload,
+    ApprovalResponsePayload,
     CapabilityDiscoveryRequestPayload,
     CapabilityDiscoveryResponsePayload,
     MessageEnvelope,
@@ -74,6 +76,97 @@ def test_unknown_envelope_field_is_rejected() -> None:
 def test_tool_name_rejects_command_like_input() -> None:
     with pytest.raises(ValidationError):
         ToolInvocationPayload(tool_name="mac.system_info; rm -rf /", arguments={})
+
+
+def test_confirm_tool_invocation_accepts_task_id_without_client_approval_artifact() -> None:
+    task_id = uuid4()
+    payload = ToolInvocationPayload.model_validate(
+        {
+            "toolName": "mac.apps.open",
+            "arguments": {"displayName": "Safari"},
+            "taskId": str(task_id),
+        }
+    )
+
+    assert payload.task_id == task_id
+
+
+def test_tool_invocation_rejects_client_minted_approval_artifact() -> None:
+    task_id = uuid4()
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        ToolInvocationPayload.model_validate(
+            {
+                "toolName": "mac.apps.open",
+                "arguments": {"displayName": "Safari"},
+                "taskId": str(task_id),
+                "approval": {
+                    "schemaVersion": "goffy.approval.v1",
+                    "approvalId": str(uuid4()),
+                    "taskId": str(task_id),
+                    "toolName": "mac.apps.open",
+                    "argumentsSha256": (
+                        "48bcd955f3fdbcaddfc3844e3a9bdc8a9a3791bab296bec333e8e7231244793e"
+                    ),
+                    "issuedAtEpochMillis": 1_784_300_400_000,
+                    "expiresAtEpochMillis": 1_784_300_460_000,
+                },
+            }
+        )
+
+
+def test_approval_request_rejects_non_expiring_or_unhashed_input() -> None:
+    with pytest.raises(ValidationError, match="must expire after it is issued"):
+        ApprovalRequestPayload.model_validate(
+            {
+                "schemaVersion": "goffy.approval.v1",
+                "approvalId": str(uuid4()),
+                "taskId": str(uuid4()),
+                "toolName": "mac.apps.open",
+                "argumentsSha256": "0" * 64,
+                "issuedAtEpochMillis": 100,
+                "expiresAtEpochMillis": 100,
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        ApprovalRequestPayload.model_validate(
+            {
+                "schemaVersion": "goffy.approval.v1",
+                "approvalId": str(uuid4()),
+                "taskId": str(uuid4()),
+                "toolName": "mac.apps.open",
+                "argumentsSha256": "not-a-sha",
+                "issuedAtEpochMillis": 100,
+                "expiresAtEpochMillis": 200,
+            }
+        )
+
+
+def test_approval_response_payload_is_strict() -> None:
+    task_id = uuid4()
+    approval_id = uuid4()
+
+    parsed = ApprovalResponsePayload.model_validate(
+        {
+            "schemaVersion": "goffy.approval.v1",
+            "approvalId": str(approval_id),
+            "taskId": str(task_id),
+            "approved": True,
+        }
+    )
+
+    assert parsed.approval_id == approval_id
+    assert parsed.task_id == task_id
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        ApprovalResponsePayload.model_validate(
+            {
+                "schemaVersion": "goffy.approval.v1",
+                "approvalId": str(approval_id),
+                "taskId": str(task_id),
+                "approved": True,
+                "toolName": "mac.apps.open",
+            }
+        )
 
 
 def test_capability_discovery_payloads_are_strict() -> None:

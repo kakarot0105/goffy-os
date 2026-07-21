@@ -130,8 +130,9 @@ the capability boundary.
 - Optional `SAFE mac.apps.list` Hub/MCP tool for configured app-catalog reads,
   including an Android `List my Mac apps` route that cannot launch apps
 - Optional `CONFIRM mac.apps.open` Hub tool scaffold for approved app launching;
-  it stays fail-closed over the current SAFE WebSocket/MCP transports until a
-  Hub-validated approval artifact is added
+  Android approval UI and Hub-issued approval request/response protocol
+  groundwork exist, but WebSocket and MCP execution remain fail-closed until
+  device-bound approval proof is added
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
 - Shared fixture `protocol/fixtures/mac-system-info-flow.jsonl`
@@ -277,11 +278,13 @@ To enable approval-gated app launching for that same allowlist:
 export GOFFY_MAC_APP_OPEN_ENABLED=true
 ```
 
-When enabled, the Hub registers `CONFIRM mac.apps.open`, but the current
-SAFE-only WebSocket and MCP transports intentionally do not expose or execute it.
-The Android app has the typed route and approval UI scaffold for commands like
-`Open Safari on my Mac`; a follow-up protocol increment must add a Hub-validated,
-one-time approval artifact before this action can run end-to-end.
+When enabled, the Hub registers `CONFIRM mac.apps.open` internally, and Android
+can prepare the typed route plus visible approval prompt for commands like
+`Open Safari on my Mac`. The authenticated WebSocket and MCP endpoints still do
+not expose or execute the CONFIRM tool yet. The `goffy.approval.v1`
+request/response protocol groundwork is present, but it remains fail-closed
+until Android approval responses include a device-bound proof that another
+authenticated WebSocket client cannot forge.
 
 The Hub seals its registry before serving, checks registered tools locally at
 startup and every 30 seconds by default, and removes an unhealthy tool from both

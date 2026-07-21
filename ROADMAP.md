@@ -165,12 +165,14 @@
    - [x] Optional allowlisted `SAFE mac.apps.list` Hub/MCP tool
    - [x] Android route, typed codec, timeline, speech, and audit handling for
      default `mac.apps.list`
-   - [x] Optional `CONFIRM mac.apps.open` Hub tool scaffold, fail-closed on
-     current SAFE-only WebSocket/MCP transports
+   - [x] Optional `CONFIRM mac.apps.open` Hub tool scaffold, fail-closed
+     without device-bound approval proof
    - [x] Android route, typed codec, timeline, speech, and audit handling
      scaffold for approved `mac.apps.open`
-   - [ ] Hub-validated, one-time approval artifact for executing CONFIRM Mac
-     tools over WebSocket
+   - [x] Hub-issued, one-time approval request/response protocol scaffold for
+     future CONFIRM Mac WebSocket execution
+   - [ ] Device-bound Android approval proof for executing CONFIRM Mac tools
+     over WebSocket
 6. Inspectable and deletable user-approved memory
 7. Polished, accessible, battery-aware GOFFY UI
    - [x] Jarvis-style home/ROM UX design contract

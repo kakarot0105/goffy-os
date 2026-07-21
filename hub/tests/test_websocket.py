@@ -9,6 +9,7 @@ from pydantic import SecretStr
 from starlette.testclient import TestClient, WebSocketTestSession
 
 from goffy_hub.app import create_app
+from goffy_hub.approval import canonical_arguments_sha256
 from goffy_hub.settings import HubSettings
 from goffy_hub.tools import mac_apps
 from goffy_protocol import (
@@ -168,17 +169,34 @@ def test_system_info_discovery_then_invocation_streams_progress_result_and_verif
     assert events[3].payload["succeeded"] is True
 
 
-def test_confirm_mac_app_open_fails_closed_on_safe_websocket(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(mac_apps, "is_mac_apps_supported", lambda: True)
-    monkeypatch.setattr(mac_apps, "mac_app_open_supported", lambda: True)
-    settings = HubSettings(
+def mac_app_open_settings() -> HubSettings:
+    return HubSettings(
         auth_token=SecretStr("test-token-that-is-long-enough"),
         mac_app_allowlist=("Safari=com.apple.Safari",),
         mac_app_open_enabled=True,
     )
-    app = create_app(settings)
+
+
+def approved_mac_app_open_payload(
+    *,
+    task_id: UUID | None = None,
+    arguments: dict[str, object] | None = None,
+) -> dict[str, object]:
+    resolved_task_id = task_id or uuid4()
+    resolved_arguments = arguments or {"displayName": "Safari"}
+    return {
+        "toolName": "mac.apps.open",
+        "arguments": resolved_arguments,
+        "taskId": str(resolved_task_id),
+    }
+
+
+def test_confirm_mac_app_open_stays_fail_closed_without_device_bound_proof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mac_apps, "is_mac_apps_supported", lambda: True)
+    monkeypatch.setattr(mac_apps, "mac_app_open_supported", lambda: True)
+    app = create_app(mac_app_open_settings())
     discovery_request = discovery("mac.apps.open")
     invocation_request = invocation(
         "mac.apps.open",
@@ -199,6 +217,98 @@ def test_confirm_mac_app_open_fails_closed_on_safe_websocket(
     assert invocation_error.message_type is MessageType.TOOL_ERROR
     assert invocation_error.payload["code"] == "capability_discovery_required"
     assert invocation_error.correlation_id == invocation_request.message_id
+
+
+def test_approval_response_is_rejected_while_confirm_execution_is_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mac_apps, "is_mac_apps_supported", lambda: True)
+    monkeypatch.setattr(mac_apps, "mac_app_open_supported", lambda: True)
+    app = create_app(mac_app_open_settings())
+    request = MessageEnvelope(
+        protocol_version=PROTOCOL_VERSION,
+        message_id=uuid4(),
+        timestamp=datetime.now(UTC),
+        device_id="android-test",
+        message_type=MessageType.APPROVAL_RESPONSE,
+        payload={
+            "schemaVersion": "goffy.approval.v1",
+            "approvalId": str(uuid4()),
+            "taskId": str(uuid4()),
+            "approved": True,
+        },
+    )
+
+    with (
+        TestClient(app, base_url="http://127.0.0.1:8787") as client,
+        client.websocket_connect("/ws/v1", headers=AUTH_HEADERS) as socket,
+    ):
+        socket.send_text(request.model_dump_json(by_alias=True))
+        error = receive_envelope(socket)
+
+    assert error.message_type is MessageType.TOOL_ERROR
+    assert error.payload["code"] == "approval_unavailable"
+    assert error.correlation_id == request.message_id
+
+
+def test_safe_tool_rejects_unexpected_approval_artifact(client: TestClient) -> None:
+    request = invocation(
+        "mac.system_info",
+        payload={
+            **approved_mac_app_open_payload(),
+            "toolName": "mac.system_info",
+            "arguments": {},
+        },
+    )
+
+    with client.websocket_connect("/ws/v1", headers=AUTH_HEADERS) as socket:
+        socket.send_text(discovery().model_dump_json(by_alias=True))
+        receive_envelope(socket)
+        socket.send_text(request.model_dump_json(by_alias=True))
+        error = receive_envelope(socket)
+
+    assert error.message_type is MessageType.TOOL_ERROR
+    assert error.payload["code"] == "approval_unexpected"
+    assert error.correlation_id == request.message_id
+
+
+def test_confirm_mac_app_open_rejects_client_minted_approval_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mac_apps, "is_mac_apps_supported", lambda: True)
+    monkeypatch.setattr(mac_apps, "mac_app_open_supported", lambda: True)
+    app = create_app(mac_app_open_settings())
+    task_id = uuid4()
+    request = invocation(
+        "mac.apps.open",
+        payload={
+            "toolName": "mac.apps.open",
+            "arguments": {"displayName": "Safari"},
+            "taskId": str(task_id),
+            "approval": {
+                "schemaVersion": "goffy.approval.v1",
+                "approvalId": str(uuid4()),
+                "taskId": str(task_id),
+                "toolName": "mac.apps.open",
+                "argumentsSha256": canonical_arguments_sha256({"displayName": "Safari"}),
+                "issuedAtEpochMillis": 1,
+                "expiresAtEpochMillis": 60_001,
+            },
+        },
+    )
+
+    with (
+        TestClient(app, base_url="http://127.0.0.1:8787") as client,
+        client.websocket_connect("/ws/v1", headers=AUTH_HEADERS) as socket,
+    ):
+        socket.send_text(discovery("mac.apps.open").model_dump_json(by_alias=True))
+        receive_envelope(socket)
+        socket.send_text(request.model_dump_json(by_alias=True))
+        error = receive_envelope(socket)
+
+    assert error.message_type is MessageType.TOOL_ERROR
+    assert error.payload["code"] == "invalid_tool_arguments"
+    assert error.correlation_id == request.message_id
 
 
 def test_discovery_is_consumed_by_one_invocation_attempt(client: TestClient) -> None:

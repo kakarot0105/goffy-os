@@ -107,6 +107,14 @@ include real credentials or unrelated personal data.
   MCP session for that credential and releases its capacity slot. New
   authentication checks the digest store; revoked state survives restart.
 - WebSocket tokens are passed in the `Authorization` header, never in URLs.
+- WebSocket and MCP execution can discover SAFE tools only. Configured CONFIRM
+  tools such as `mac.apps.open` remain fail-closed because a plain
+  `ApprovalResponse` from an authenticated WebSocket client is not yet
+  device-bound proof of a visible Android approval. The `goffy.approval.v1`
+  request/response protocol scaffold binds principal, task ID, tool name,
+  canonical argument SHA-256, issue time, and expiry, but execution stays
+  disabled until Android can attach non-forgeable approval proof. SAFE tools
+  reject approval task IDs.
 - Android redeems pairing challenges only against a loopback endpoint and never
   retries redemption. `MainActivity.onStop()` cancels and joins enrollment before
   local cleanup. The temporary challenge input is foreground-only,

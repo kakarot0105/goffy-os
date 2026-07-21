@@ -238,6 +238,13 @@ class GoffyViewModelTest {
         assertEquals(pending.expiresAtEpochMillis, gateway.requests.single().expiresAtEpochMillis)
         assertTrue(gateway.requests.single().encodedMessage.contains("\"toolName\":\"mac.apps.open\""))
         assertTrue(gateway.requests.single().encodedMessage.contains("\"displayName\":\"Safari\""))
+        assertTrue(gateway.requests.single().encodedMessage.contains("\"taskId\":\"${pending.taskId}\""))
+        assertFalse(gateway.requests.single().encodedMessage.contains("\"approval\""))
+        assertEquals(pending.taskId, gateway.requests.single().approvedTaskId)
+        assertEquals(
+            "48bcd955f3fdbcaddfc3844e3a9bdc8a9a3791bab296bec333e8e7231244793e",
+            gateway.requests.single().approvedArgumentsSha256,
+        )
     }
 
     @Test

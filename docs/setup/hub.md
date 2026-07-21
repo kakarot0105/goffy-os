@@ -278,16 +278,19 @@ allowlist is configured and app opening is explicitly enabled:
 export GOFFY_MAC_APP_OPEN_ENABLED=true
 ```
 
-When enabled, the Hub registers the CONFIRM tool but keeps it unavailable on the
-current SAFE-only WebSocket and MCP transports. Android has the typed route and
-approval UI scaffold for commands like `Open Safari on my Mac`, but a follow-up
-protocol increment must add a Hub-validated, one-time approval artifact before
-the Hub will execute the action end-to-end. The tool implementation is limited to
-the configured display name, maps it to the fixed allowlisted bundle identifier,
-uses `/usr/bin/open -b <bundle-id>` with a subprocess argument list, verifies the
-app is running through a bounded Launch Services/AppleScript check, and does not
-open files, scan installed app folders, interpolate shell strings, or expose
-itself over the current SAFE-only MCP surface.
+When enabled, the Hub registers the CONFIRM tool internally, but the
+authenticated WebSocket and MCP endpoints still do not expose or execute it.
+Android has the typed route and visible approval prompt for commands like
+`Open Safari on my Mac`, and the `goffy.approval.v1` request/response protocol
+groundwork binds principal, task ID, tool name, canonical argument SHA-256, issue
+time, and expiry. Execution remains fail-closed until Android approval responses
+include device-bound proof that another authenticated WebSocket client cannot
+forge. The tool implementation is limited to the configured display name, maps
+it to the fixed allowlisted bundle identifier, uses `/usr/bin/open -b
+<bundle-id>` with a subprocess argument list, verifies the app is running
+through a bounded Launch Services/AppleScript check, and does not open files,
+scan installed app folders, interpolate shell strings,
+or expose itself over the SAFE-only MCP surface.
 
 ## Approved Git Repository Roots
 
