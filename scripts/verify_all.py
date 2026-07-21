@@ -89,6 +89,7 @@ def python_steps(python: str) -> list[tuple[str, tuple[str, ...]]]:
         ("pytest", (python, "-m", "pytest", "-q")),
         ("security scan", (python, "scripts/security_scan.py")),
         ("ROM system app", rom_system_app_command(python)),
+        ("ROM product overlay", rom_product_overlay_command(python)),
         ("package build", (python, "-m", "build")),
         ("pairing smoke", (python, "scripts/verify_pairing_flow.py")),
     ]
@@ -96,6 +97,10 @@ def python_steps(python: str) -> list[tuple[str, tuple[str, ...]]]:
 
 def rom_system_app_command(python: str) -> tuple[str, ...]:
     return (python, "scripts/validate_rom_system_app.py")
+
+
+def rom_product_overlay_command(python: str) -> tuple[str, ...]:
+    return (python, "scripts/validate_rom_product_overlay.py")
 
 
 def merged_manifest_security_command(python: str) -> tuple[str, ...]:

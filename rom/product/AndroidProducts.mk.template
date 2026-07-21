@@ -1,0 +1,11 @@
+# GOFFY AOSP product registration template.
+#
+# Copy this file into a reviewed AOSP device/product tree as AndroidProducts.mk
+# only after ROM-0 manual gates are complete. This template is not flashable by
+# itself and intentionally provides only a userdebug lunch target for lab builds.
+
+PRODUCT_MAKEFILES := \
+    $(LOCAL_DIR)/goffy_gsi_phone.mk
+
+COMMON_LUNCH_CHOICES := \
+    goffy_gsi_phone-userdebug

@@ -12,4 +12,9 @@ Current policy:
   it and a separate security review approves it.
 - Keep the Android app fallback installable by normal APK flows.
 
-The first integration target is [`system-app/`](system-app/).
+Integration targets:
+
+- [`system-app/`](system-app/) defines the non-privileged GOFFY APK import.
+- [`product/`](product/) defines starter AOSP product-overlay templates that add
+  `GoffyOS` through `PRODUCT_PACKAGES` without unlock, flash, root, platform-key,
+  or privileged-permission behavior.

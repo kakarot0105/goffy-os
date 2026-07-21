@@ -1,0 +1,17 @@
+# GOFFY generic-phone product template.
+#
+# This template is a safe starting point for an AOSP/GSI-derived lab image that
+# includes GOFFY as a non-privileged system app. It does not include unlock,
+# flash, root, platform-key, or privileged-permission behavior.
+
+$(call inherit-product, $(SRC_TARGET_DIR)/product/handheld_system.mk)
+$(call inherit-product, $(SRC_TARGET_DIR)/product/telephony_system.mk)
+$(call inherit-product, $(LOCAL_DIR)/goffy_product_packages.mk)
+
+PRODUCT_NAME := goffy_gsi_phone
+PRODUCT_DEVICE := generic
+PRODUCT_BRAND := GOFFY
+PRODUCT_MODEL := GOFFY OS GSI Phone
+PRODUCT_MANUFACTURER := GOFFY
+
+PRODUCT_ENFORCE_ARTIFACT_PATH_REQUIREMENTS := strict

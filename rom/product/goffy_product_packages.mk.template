@@ -1,0 +1,7 @@
+# GOFFY product package list.
+#
+# GoffyOS is defined by rom/system-app/Android.bp.template as a non-privileged
+# android_app_import module. Keep this makefile limited to package inclusion.
+
+PRODUCT_PACKAGES += \
+    GoffyOS
