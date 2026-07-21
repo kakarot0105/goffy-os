@@ -3,6 +3,8 @@ package dev.goffy.os.capability
 import dev.goffy.os.protocol.ANDROID_SET_TIMER_ACTION
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.MAX_NOTE_TEXT_LENGTH
+import dev.goffy.os.protocol.MAX_QR_PAYLOAD_CHARACTER_COUNT
+import dev.goffy.os.protocol.MAX_QR_PREVIEW_LENGTH
 import dev.goffy.os.protocol.MAX_TIMER_SECONDS
 import dev.goffy.os.protocol.MIN_TIMER_SECONDS
 import dev.goffy.os.protocol.NoToolArguments
@@ -10,6 +12,9 @@ import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
+import dev.goffy.os.protocol.PHONE_QR_CONTENT_TYPES
+import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
+import dev.goffy.os.protocol.PHONE_QR_STATUS_AVAILABLE
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
 import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
@@ -144,6 +149,7 @@ class PhoneCapabilityRegistry internal constructor(
                     deviceCapability(defaultTimeoutMillis),
                     flashlightCapability(flashlightTimeoutMillis),
                     noteCapability(defaultTimeoutMillis),
+                    qrReadCapability(defaultTimeoutMillis),
                     timerCapability(defaultTimeoutMillis),
                 ),
             )
@@ -287,6 +293,42 @@ private fun noteCapability(timeoutMillis: Long): PhoneCapabilityDefinition =
         },
     )
 
+private fun qrReadCapability(timeoutMillis: Long): PhoneCapabilityDefinition =
+    definition(
+        name = PHONE_QR_READ_TOOL,
+        title = "Read foreground QR code",
+        description = "Read one foreground camera QR code without storing images or raw sensitive payloads.",
+        permission = PermissionLevel.SAFE,
+        timeoutMillis = timeoutMillis,
+        readOnly = true,
+        idempotent = true,
+        inputSchema = objectSchema(emptyMap()),
+        outputSchema = objectSchema(
+            properties = mapOf(
+                "status" to stringSchema(constant = PHONE_QR_STATUS_AVAILABLE),
+                "contentType" to stringSchema(enumValues = PHONE_QR_CONTENT_TYPES.sorted()),
+                "characterCount" to integerSchema(
+                    minimum = 1,
+                    maximum = MAX_QR_PAYLOAD_CHARACTER_COUNT.toLong(),
+                ),
+                "characterCountTruncated" to booleanSchema(),
+                "preview" to nullableStringSchema(maxLength = MAX_QR_PREVIEW_LENGTH),
+                "previewTruncated" to booleanSchema(),
+                "redacted" to booleanSchema(),
+            ),
+            required = listOf(
+                "status",
+                "contentType",
+                "characterCount",
+                "characterCountTruncated",
+                "preview",
+                "previewTruncated",
+                "redacted",
+            ),
+        ),
+        acceptsArguments = { it == NoToolArguments },
+    )
+
 private fun timerCapability(timeoutMillis: Long): PhoneCapabilityDefinition =
     definition(
         name = PHONE_TIMER_CREATE_TOOL,
@@ -404,4 +446,10 @@ private fun stringSchema(
     if (enumValues.isNotEmpty()) {
         put("enum", JsonArray(enumValues.map { JsonPrimitive(it) }))
     }
+}
+
+private fun nullableStringSchema(maxLength: Int): JsonObject = buildJsonObject {
+    put("type", JsonArray(listOf(JsonPrimitive("string"), JsonPrimitive("null"))))
+    put("minLength", 1)
+    put("maxLength", maxLength)
 }

@@ -18,6 +18,8 @@ import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PhoneNoteCreated
+import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
+import dev.goffy.os.protocol.PhoneQrRead
 import dev.goffy.os.protocol.PhoneTimerDispatched
 import dev.goffy.os.protocol.ToolProgress
 import java.util.UUID
@@ -455,6 +457,68 @@ class GoffyTaskReducerTest {
             ),
         )
         assertEquals(TaskPhase.FAILED, wrongContent.entries.single().phase)
+    }
+
+    @Test
+    fun qrReadResultRequiresTypedPrivacyPreservingContract() {
+        val qrPlan = GoffyExecutionPlan(
+            command = "Read foreground QR code",
+            executionTarget = ExecutionTarget.PHONE,
+            toolName = PHONE_QR_READ_TOOL,
+            permission = PermissionLevel.SAFE,
+            successCriteria = listOf("QR result matches the privacy-preserving contract"),
+        )
+        var state = TaskTimelineState().start(phoneTaskId, qrPlan)
+        state = state.apply(phoneTaskId, ExecutionEvent.Starting(1))
+        state = state.apply(phoneTaskId, ExecutionEvent.Ready)
+        state = state.apply(phoneTaskId, progress(qrPlan.toolName, ExecutionTarget.PHONE, "accepted", 0))
+        state = state.apply(phoneTaskId, progress(qrPlan.toolName, ExecutionTarget.PHONE, "completed", 1))
+        state = state.apply(
+            phoneTaskId,
+            ExecutionEvent.Result(
+                qrPlan.toolName,
+                ExecutionTarget.PHONE,
+                PhoneQrRead(
+                    status = "available",
+                    contentType = "text",
+                    characterCount = 11,
+                    characterCountTruncated = false,
+                    preview = "hello world",
+                    previewTruncated = false,
+                    redacted = false,
+                ),
+            ),
+        )
+
+        assertEquals(TaskPhase.COMPLETED_UNVERIFIED, state.entries.single().phase)
+        assertEquals("QR code read as text: hello world", state.entries.single().summary)
+
+        val invalid = PhoneQrRead(
+            status = "available",
+            contentType = "sensitive",
+            characterCount = 18,
+            characterCountTruncated = false,
+            preview = "secret-token-value",
+            previewTruncated = false,
+            redacted = true,
+        )
+        var invalidState = TaskTimelineState().start(phoneTaskId, qrPlan)
+        invalidState = invalidState.apply(phoneTaskId, ExecutionEvent.Starting(1))
+        invalidState = invalidState.apply(phoneTaskId, ExecutionEvent.Ready)
+        invalidState = invalidState.apply(
+            phoneTaskId,
+            progress(qrPlan.toolName, ExecutionTarget.PHONE, "accepted", 0),
+        )
+        invalidState = invalidState.apply(
+            phoneTaskId,
+            progress(qrPlan.toolName, ExecutionTarget.PHONE, "completed", 1),
+        )
+        invalidState = invalidState.apply(
+            phoneTaskId,
+            ExecutionEvent.Result(qrPlan.toolName, ExecutionTarget.PHONE, invalid),
+        )
+
+        assertEquals(TaskPhase.FAILED, invalidState.entries.single().phase)
     }
 
     @Test

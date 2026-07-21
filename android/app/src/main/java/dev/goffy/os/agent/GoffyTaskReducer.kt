@@ -18,6 +18,8 @@ import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
 import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
+import dev.goffy.os.protocol.PhoneQrRead
+import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
 import dev.goffy.os.protocol.PhoneTimerDispatched
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
 import dev.goffy.os.protocol.PermissionLevel
@@ -518,6 +520,10 @@ data class TaskTimelineState(
             approvalGranted &&
             content is PhoneNoteCreated &&
             content.matchesToolContract()
+        PHONE_QR_READ_TOOL -> executionTarget == ExecutionTarget.PHONE &&
+            permission == PermissionLevel.SAFE &&
+            content is PhoneQrRead &&
+            content.matchesToolContract()
         PHONE_TIMER_CREATE_TOOL -> executionTarget == ExecutionTarget.PHONE &&
             permission == PermissionLevel.CONFIRM &&
             approvalGranted &&
@@ -618,8 +624,17 @@ private fun ToolResultContent.summaryText(): String = when (this) {
         "Flashlight ${if (enabled) "on" else "off"}; state observed" +
             if (stateChanged) " after state change" else " (already requested state)"
     is PhoneNoteCreated -> "Note #$noteId stored: $text"
+    is PhoneQrRead -> qrReadSummary()
     is PhoneTimerDispatched -> "Timer intent for $durationSeconds seconds dispatched to $clockPackage"
 }
+
+private fun PhoneQrRead.qrReadSummary(): String =
+    if (redacted) {
+        "QR code read as $contentType; content hidden from audit ($characterCount chars)"
+    } else {
+        "QR code read as $contentType: ${preview ?: "no preview"}" +
+            if (previewTruncated || characterCountTruncated) "..." else ""
+    }
 
 private fun MacClipboardRead.macClipboardSummary(): String = when (status) {
     "available" -> {

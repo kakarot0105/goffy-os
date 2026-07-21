@@ -12,6 +12,7 @@ import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
+import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
 import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.PhoneNoteCreated
 import java.util.UUID
@@ -55,6 +56,33 @@ class ClosedTerminalAuditTest {
         assertEquals(1_720_000_000_000, restored.terminalAtEpochMillis)
         assertFalse(restored.toString().contains(secret))
         assertTrueNoSecret(restored.events.map { it.message }, secret)
+    }
+
+    @Test
+    fun qrReadCapabilityIsPersistedAsSafeClosedAuditMetadata() {
+        val entry = TaskTimelineEntry(
+            id = UUID.fromString("22222222-2222-4222-8222-222222222222"),
+            command = "Read foreground QR code",
+            executionTarget = ExecutionTarget.PHONE,
+            toolName = PHONE_QR_READ_TOOL,
+            phase = TaskPhase.VERIFIED,
+            summary = "QR code read as url: https://example.com/...",
+            events = listOf(
+                TaskTimelineEvent(TaskEventKind.OBSERVE, "Received foreground scanner input"),
+                TaskTimelineEvent(TaskEventKind.RESULT, "Stored bounded QR summary"),
+                TaskTimelineEvent(TaskEventKind.VERIFY, "Verified QR summary contract"),
+            ),
+            permission = PermissionLevel.SAFE,
+            terminalAtEpochMillis = 1_720_000_000_000,
+        )
+
+        val record = entry.toClosedTerminalAuditRecord(recordedAtEpochMillis = 1_720_000_000_000)
+
+        assertNotNull(record)
+        assertEquals(PHONE_QR_READ_TOOL, record?.toolName)
+        assertEquals(AuditPermission.SAFE, record?.permission)
+        assertEquals(AuditApprovalOutcome.NOT_REQUIRED, record?.approvalOutcome)
+        assertEquals("Recorded QR read task", record?.toTimelineEntry()?.command)
     }
 
     @Test

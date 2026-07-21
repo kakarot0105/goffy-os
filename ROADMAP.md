@@ -78,6 +78,7 @@
 - [x] Approval-gated allowlisted-system `phone.timer.create` dispatch with explicit `UNVERIFIED` state
 - [x] API 26 and API 33+ system Clock intent tests
 - [x] Approval-gated, callback-verified `phone.flashlight.set`
+- [x] Foreground `phone.qr.read` scanner with bounded/redacted timeline output
 - [x] Physical Moto G battery-status verification
 - [x] Disabled-by-default local-model intent fallback safety boundary
 - [x] LiteRT-LM Android dependency compatibility probe before runtime wiring
@@ -130,6 +131,7 @@
 
 4. Foreground-only voice, camera, QR, and OCR
    - [x] Foreground push-to-talk command capture with immediate lifecycle cleanup
+   - [x] Foreground QR read from `CAM` or typed `read this QR code`, with no image persistence
 5. Narrow, approval-gated Mac automation
    - [x] Optional approved-root `mac.files.list` Hub/MCP tool
    - [x] Android route, typed codec, timeline, speech, and audit handling for

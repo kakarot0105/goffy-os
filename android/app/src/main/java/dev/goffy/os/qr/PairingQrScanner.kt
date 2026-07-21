@@ -38,6 +38,19 @@ fun PairingQrScanner(
     onCameraFailure: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    ForegroundQrScanner(
+        onPayloadScanned = onPayloadScanned,
+        onCameraFailure = onCameraFailure,
+        modifier = modifier,
+    )
+}
+
+@Composable
+fun ForegroundQrScanner(
+    onPayloadScanned: (String) -> Unit,
+    onCameraFailure: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val currentOnPayloadScanned = rememberUpdatedState(onPayloadScanned)

@@ -69,7 +69,7 @@ import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.hub.HubOperatorAuditEvent
 import dev.goffy.os.localmodel.LocalModelRuntimeState
-import dev.goffy.os.qr.PairingQrScanner
+import dev.goffy.os.qr.ForegroundQrScanner
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.MacClipboardRead
@@ -79,6 +79,7 @@ import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PhoneNoteCreated
+import dev.goffy.os.protocol.PhoneQrRead
 import dev.goffy.os.protocol.PhoneTimerDispatched
 import dev.goffy.os.protocol.ToolResultContent
 import java.time.Instant
@@ -111,6 +112,19 @@ private data class PairingScannerNotice(
     val warning: Boolean,
 )
 
+private enum class CameraScanMode {
+    PAIRING,
+    QR_READ,
+}
+
+private val QrReadCommand = Regex(
+    pattern = "^(?:read|scan)(?: this| the| a)? qr(?: code)?[.!?]?$",
+    option = RegexOption.IGNORE_CASE,
+)
+
+internal fun isForegroundQrReadCommand(command: String): Boolean =
+    command.trim().matches(QrReadCommand)
+
 @Composable
 fun GoffyApp(
     viewModel: GoffyViewModel,
@@ -125,6 +139,8 @@ fun GoffyApp(
     val scannerPermissionDenied = stringResource(R.string.pairing_scanner_permission_denied)
     val scannerCaptured = stringResource(R.string.pairing_scanner_captured)
     val scannerStartFailed = stringResource(R.string.pairing_scanner_start_failed)
+    val qrReadPermissionDenied = stringResource(R.string.qr_read_permission_denied)
+    val qrReadStartFailed = stringResource(R.string.qr_read_start_failed)
     var command by remember { mutableStateOf("") }
     var endpoint by rememberSaveable(state.hubEndpoint) { mutableStateOf(state.hubEndpoint) }
     var pairingChallenge by remember { mutableStateOf("") }
@@ -133,18 +149,36 @@ fun GoffyApp(
     var showForgetConfirmation by remember { mutableStateOf(false) }
     var showRotateConfirmation by remember { mutableStateOf(false) }
     var showPairingScanner by remember { mutableStateOf(false) }
+    var showQrReadScanner by remember { mutableStateOf(false) }
+    var pendingCameraScanMode by remember { mutableStateOf<CameraScanMode?>(null) }
     var pairingScannerNotice by remember { mutableStateOf<PairingScannerNotice?>(null) }
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
+        val scanMode = pendingCameraScanMode
+        pendingCameraScanMode = null
         if (granted) {
-            pairingScannerNotice = null
-            showPairingScanner = true
+            when (scanMode) {
+                CameraScanMode.PAIRING -> {
+                    pairingScannerNotice = null
+                    showPairingScanner = true
+                }
+                CameraScanMode.QR_READ -> showQrReadScanner = true
+                null -> Unit
+            }
         } else {
-            pairingScannerNotice = PairingScannerNotice(
-                message = scannerPermissionDenied,
-                warning = true,
-            )
+            when (scanMode) {
+                CameraScanMode.PAIRING -> {
+                    pairingScannerNotice = PairingScannerNotice(
+                        message = scannerPermissionDenied,
+                        warning = true,
+                    )
+                }
+                CameraScanMode.QR_READ -> viewModel.recordForegroundQrScanUnavailable(
+                    qrReadPermissionDenied,
+                )
+                null -> Unit
+            }
         }
     }
     val audioPermissionLauncher = rememberLauncherForActivityResult(
@@ -156,6 +190,16 @@ fun GoffyApp(
             }
         } else {
             onVoicePermissionDenied()
+        }
+    }
+    fun startForegroundQrRead() {
+        if (context.checkSelfPermission(Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            showQrReadScanner = true
+        } else {
+            pendingCameraScanMode = CameraScanMode.QR_READ
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
 
@@ -204,6 +248,19 @@ fun GoffyApp(
                     onDismiss = { showPairingScanner = false },
                 )
             }
+            if (showQrReadScanner) {
+                QrReadScannerDialog(
+                    onScanned = { payload ->
+                        viewModel.recordForegroundQrScan(payload)
+                        showQrReadScanner = false
+                    },
+                    onCameraFailure = {
+                        viewModel.recordForegroundQrScanUnavailable(qrReadStartFailed)
+                        showQrReadScanner = false
+                    },
+                    onDismiss = { showQrReadScanner = false },
+                )
+            }
             GoffyHomeScreen(
                 state = state,
                 command = command,
@@ -235,9 +292,11 @@ fun GoffyApp(
                         pairingScannerNotice = null
                         showPairingScanner = true
                     } else {
+                        pendingCameraScanMode = CameraScanMode.PAIRING
                         cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                     }
                 },
+                onReadQrCode = { startForegroundQrRead() },
                 onPairHub = {
                     val challenge = pairingChallenge
                     pairingChallenge = ""
@@ -260,7 +319,11 @@ fun GoffyApp(
                 },
                 onSpeakLatest = onSpeakLatest,
                 onSubmit = {
-                    viewModel.submitCommand(command)
+                    if (isForegroundQrReadCommand(command)) {
+                        startForegroundQrRead()
+                    } else {
+                        viewModel.submitCommand(command)
+                    }
                     command = ""
                 },
                 onSetLocalModelEnabled = { enabled ->
@@ -299,7 +362,7 @@ private fun PairingQrScannerDialog(
                         .background(Void)
                         .border(1.dp, Line, RoundedCornerShape(18.dp)),
                 ) {
-                    PairingQrScanner(
+                    ForegroundQrScanner(
                         onPayloadScanned = onScanned,
                         onCameraFailure = onCameraFailure,
                         modifier = Modifier.fillMaxSize(),
@@ -321,6 +384,62 @@ private fun PairingQrScannerDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(stringResource(R.string.pairing_scanner_close), color = Signal)
+            }
+        },
+        containerColor = Panel,
+        titleContentColor = Bone,
+        textContentColor = Mist,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    )
+}
+
+@Composable
+private fun QrReadScannerDialog(
+    onScanned: (String) -> Unit,
+    onCameraFailure: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.qr_read_scanner_title)) },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(R.string.qr_read_scanner_explanation),
+                    color = Mist,
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(360.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Void)
+                        .border(1.dp, Line, RoundedCornerShape(18.dp)),
+                ) {
+                    ForegroundQrScanner(
+                        onPayloadScanned = onScanned,
+                        onCameraFailure = onCameraFailure,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    Text(
+                        text = stringResource(R.string.qr_read_scanner_frame_label),
+                        color = Bone,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 12.dp)
+                            .background(Void.copy(alpha = 0.72f), RoundedCornerShape(99.dp))
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.qr_read_scanner_close), color = Signal)
             }
         },
         containerColor = Panel,
@@ -428,6 +547,7 @@ private fun GoffyHomeScreen(
     onToggleLinkSetup: () -> Unit,
     onConfigureHub: () -> Unit,
     onScanPairingQr: () -> Unit,
+    onReadQrCode: () -> Unit,
     onPairHub: () -> Unit,
     onRotateHub: () -> Unit,
     onForgetHub: () -> Unit,
@@ -497,6 +617,7 @@ private fun GoffyHomeScreen(
             onSubmit = onSubmit,
             onCancel = onCancel,
             onVoiceInput = onVoiceInput,
+            onReadQrCode = onReadQrCode,
             onSpeakLatest = onSpeakLatest,
         )
         Spacer(Modifier.height(18.dp))
@@ -1079,6 +1200,7 @@ private fun CommandSurface(
     onSubmit: () -> Unit,
     onCancel: () -> Unit,
     onVoiceInput: () -> Unit,
+    onReadQrCode: () -> Unit,
     onSpeakLatest: (String) -> Unit,
 ) {
     Column(
@@ -1112,9 +1234,11 @@ private fun CommandSurface(
                     busy = busy,
                     onVoiceInput = onVoiceInput,
                 )
-                PlaceholderAction(
+                CameraQrAction(
                     shortLabel = stringResource(R.string.camera_short),
                     description = stringResource(R.string.camera_placeholder),
+                    busy = busy,
+                    onReadQrCode = onReadQrCode,
                 )
                 SpeakLatestAction(
                     speakableText = latestSpeakableText,
@@ -1196,10 +1320,15 @@ private fun SpeakLatestAction(
 }
 
 @Composable
-private fun PlaceholderAction(shortLabel: String, description: String) {
+private fun CameraQrAction(
+    shortLabel: String,
+    description: String,
+    busy: Boolean,
+    onReadQrCode: () -> Unit,
+) {
     OutlinedButton(
-        onClick = {},
-        enabled = false,
+        onClick = onReadQrCode,
+        enabled = !busy,
         modifier = Modifier.semantics { contentDescription = description },
         colors = ButtonDefaults.outlinedButtonColors(disabledContentColor = Mist),
     ) {
@@ -1583,6 +1712,29 @@ private fun TaskResult(result: ToolResultContent) {
                 color = Bone,
                 fontSize = 14.sp,
                 maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        is PhoneQrRead -> {
+            Text(
+                text = stringResource(R.string.qr_read_result, result.contentType.uppercase()),
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = if (result.redacted) {
+                    stringResource(R.string.qr_read_redacted_result, result.characterCount)
+                } else {
+                    stringResource(
+                        R.string.qr_read_preview_result,
+                        result.characterCount,
+                        result.preview ?: "",
+                    )
+                },
+                color = if (result.redacted) Warning else Mist,
+                fontSize = 11.sp,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }

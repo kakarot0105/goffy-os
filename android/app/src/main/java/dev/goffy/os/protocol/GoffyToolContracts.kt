@@ -10,6 +10,22 @@ fun PhoneDeviceInfo.matchesToolContract(): Boolean =
         sdkInt in MIN_SUPPORTED_SDK..MAX_REASONABLE_SDK &&
         (!goffyDefaultHome || goffyHomeCandidate)
 
+fun PhoneQrRead.matchesToolContract(): Boolean =
+    status == PHONE_QR_STATUS_AVAILABLE &&
+        contentType in PHONE_QR_CONTENT_TYPES &&
+        characterCount in 1..MAX_QR_PAYLOAD_CHARACTER_COUNT &&
+        if (redacted) {
+            preview == null && !previewTruncated
+        } else {
+            preview != null &&
+                preview.isSafeQrPreview() &&
+                if (contentType == "url" || previewTruncated || characterCountTruncated) {
+                    characterCount >= preview.length
+                } else {
+                    characterCount == preview.length
+                }
+        }
+
 fun MacFilesListArguments.matchesToolContract(): Boolean =
     rootIndex in 0..MAX_MAC_FILES_ROOT_INDEX &&
         relativePath.isSafeMacFilesRelativePath() &&
@@ -158,6 +174,14 @@ private fun String.isSafeClipboardText(): Boolean =
                 Character.getType(character) == Character.FORMAT.toInt()
         }
 
+private fun String.isSafeQrPreview(): Boolean =
+    isNotBlank() &&
+        length <= MAX_QR_PREVIEW_LENGTH &&
+        none { character ->
+            character.isISOControl() ||
+                Character.getType(character) == Character.FORMAT.toInt()
+        }
+
 private fun String?.doesNotContainFileUrl(): Boolean =
     this == null || !contains("file://", ignoreCase = true)
 
@@ -204,6 +228,10 @@ const val MAX_MAC_CLIPBOARD_TEXT_LENGTH = 2_000
 const val MAX_MAC_CLIPBOARD_CHARACTER_COUNT = 100_000
 val MAC_CLIPBOARD_STATUS_VALUES = setOf("available", "empty", "unsupported")
 const val MAX_NOTE_TEXT_LENGTH = 2_000
+const val PHONE_QR_STATUS_AVAILABLE = "available"
+const val MAX_QR_PREVIEW_LENGTH = 96
+const val MAX_QR_PAYLOAD_CHARACTER_COUNT = 10_000
+val PHONE_QR_CONTENT_TYPES = setOf("text", "url", "wifi", "sensitive", "unknown")
 const val MIN_TIMER_SECONDS = 1
 const val MAX_TIMER_SECONDS = 86_400
 const val ANDROID_SET_TIMER_ACTION = "android.intent.action.SET_TIMER"

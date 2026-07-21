@@ -63,6 +63,8 @@ import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PhoneNoteCreated
+import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
+import dev.goffy.os.protocol.PhoneQrRead
 import dev.goffy.os.protocol.ANDROID_SET_TIMER_ACTION
 import dev.goffy.os.protocol.PhoneTimerDispatched
 import dev.goffy.os.protocol.PhoneTimerCreateArguments
@@ -729,6 +731,64 @@ class GoffyViewModelTest {
         assertEquals(ExecutionTarget.PHONE, entry.executionTarget)
         assertEquals(TaskPhase.VERIFIED, entry.phase)
         assertEquals(LocalModelRuntimeState.READY, viewModel.uiState.value.localModelStatus.state)
+    }
+
+    @Test
+    fun foregroundQrScanCreatesVerifiedPhoneTimelineWithoutHubCall() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val viewModel = createViewModel(gateway)
+        advanceUntilIdle()
+
+        viewModel.recordForegroundQrScan("https://example.com/private?token=secret")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        val result = entry.result as PhoneQrRead
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals(ExecutionTarget.PHONE, entry.executionTarget)
+        assertEquals(PHONE_QR_READ_TOOL, entry.toolName)
+        assertEquals("url", result.contentType)
+        assertEquals("https://example.com/...", result.preview)
+        assertFalse(result.redacted)
+        assertTrue(gateway.requests.isEmpty())
+        assertFalse(viewModel.uiState.value.toString().contains("token=secret"))
+    }
+
+    @Test
+    fun foregroundQrScanRedactsSensitivePayloadFromTimelineState() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val viewModel = createViewModel(gateway)
+        advanceUntilIdle()
+
+        viewModel.recordForegroundQrScan("WIFI:T:WPA;S:Home;P:secret-password;;")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        val result = entry.result as PhoneQrRead
+        assertEquals(TaskPhase.VERIFIED, entry.phase)
+        assertEquals("wifi", result.contentType)
+        assertTrue(result.redacted)
+        assertNull(result.preview)
+        assertFalse(viewModel.uiState.value.toString().contains("secret-password"))
+        assertTrue(gateway.requests.isEmpty())
+    }
+
+    @Test
+    fun foregroundQrScanFailureCreatesClosedPhoneTimelineEntry() = runTest(dispatcher) {
+        val gateway = FakeHubGateway { flowOf() }
+        val viewModel = createViewModel(gateway)
+        advanceUntilIdle()
+
+        viewModel.recordForegroundQrScanUnavailable("Camera permission denied. QR read was not started.")
+        advanceUntilIdle()
+
+        val entry = viewModel.uiState.value.timeline.entries.single()
+        assertEquals(TaskPhase.FAILED, entry.phase)
+        assertEquals(ExecutionTarget.PHONE, entry.executionTarget)
+        assertEquals(PHONE_QR_READ_TOOL, entry.toolName)
+        assertEquals("Camera permission denied. QR read was not started.", entry.summary)
+        assertNull(entry.result)
+        assertTrue(gateway.requests.isEmpty())
     }
 
     @Test

@@ -92,7 +92,7 @@
     <string name="timer_dispatched">TIMER REQUEST / %1$d SECONDS</string>
     <string name="timer_clock_package">CLOCK / %1$s</string>
     <string name="microphone_placeholder">Foreground push-to-talk command input</string>
-    <string name="camera_placeholder">Camera actions beyond QR pairing are coming in Milestone 4</string>
+    <string name="camera_placeholder">Foreground QR reader. No image is stored, and sensitive-looking QR payloads are hidden from audit.</string>
     <string name="microphone_short">MIC</string>
     <string name="microphone_listening_short">LISTEN</string>
     <string name="voice_prompt">Speak a GOFFY command</string>
@@ -105,6 +105,15 @@
     <string name="voice_permission_denied">Microphone permission denied. Type the command instead.</string>
     <string name="voice_error">Voice input failed safely. Type the command instead.</string>
     <string name="camera_short">CAM</string>
+    <string name="qr_read_scanner_title">Read QR code</string>
+    <string name="qr_read_scanner_explanation">The camera opens only while this visible scanner is shown. GOFFY reads one QR code, stores no image, and records only a bounded privacy-preserving summary.</string>
+    <string name="qr_read_scanner_frame_label">QR READ / FOREGROUND</string>
+    <string name="qr_read_scanner_close">Close scanner</string>
+    <string name="qr_read_permission_denied">Camera permission denied. QR read was not started.</string>
+    <string name="qr_read_start_failed">QR scanner could not start. No image or QR payload was stored.</string>
+    <string name="qr_read_result">QR / %1$s</string>
+    <string name="qr_read_redacted_result">%1$d chars / content hidden from audit</string>
+    <string name="qr_read_preview_result">%1$d chars / %2$s</string>
     <string name="speak_latest_short">SAY</string>
     <string name="speak_latest_result">Speak latest safe result</string>
     <string name="timeline_title">TASK TIMELINE</string>

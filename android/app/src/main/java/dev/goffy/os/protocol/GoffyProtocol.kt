@@ -198,6 +198,16 @@ data class PhoneDeviceInfo(
     val goffyDefaultHome: Boolean = false,
 ) : ToolResultContent
 
+data class PhoneQrRead(
+    val status: String,
+    val contentType: String,
+    val characterCount: Int,
+    val characterCountTruncated: Boolean,
+    val preview: String?,
+    val previewTruncated: Boolean,
+    val redacted: Boolean,
+) : ToolResultContent
+
 data class PhoneNoteCreated(
     val noteId: Long,
     val text: String,

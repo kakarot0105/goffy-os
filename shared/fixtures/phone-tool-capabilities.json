@@ -152,6 +152,60 @@
     }
   },
   {
+    "name": "phone.qr.read",
+    "title": "Read foreground QR code",
+    "description": "Read one foreground camera QR code without storing images or raw sensitive payloads.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "status": {"type": "string", "minLength": 1, "const": "available"},
+        "contentType": {
+          "type": "string",
+          "minLength": 1,
+          "enum": ["sensitive", "text", "unknown", "url", "wifi"]
+        },
+        "characterCount": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "characterCountTruncated": {"type": "boolean"},
+        "preview": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 96
+        },
+        "previewTruncated": {"type": "boolean"},
+        "redacted": {"type": "boolean"}
+      },
+      "required": [
+        "status",
+        "contentType",
+        "characterCount",
+        "characterCountTruncated",
+        "preview",
+        "previewTruncated",
+        "redacted"
+      ],
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    },
+    "_meta": {
+      "dev.goffy/toolVersion": "1.0.0",
+      "dev.goffy/executionTarget": "PHONE",
+      "dev.goffy/permission": "SAFE",
+      "dev.goffy/timeoutMs": 2000
+    }
+  },
+  {
     "name": "phone.timer.create",
     "title": "Create system timer",
     "description": "Dispatch an approved timer to an allowlisted Android system Clock.",

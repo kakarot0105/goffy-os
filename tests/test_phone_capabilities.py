@@ -13,6 +13,7 @@ EXPECTED_PERMISSIONS = {
     "phone.device.info": PermissionLevel.SAFE,
     "phone.flashlight.set": PermissionLevel.CONFIRM,
     "phone.note.create": PermissionLevel.CONFIRM,
+    "phone.qr.read": PermissionLevel.SAFE,
     "phone.timer.create": PermissionLevel.CONFIRM,
 }
 
@@ -64,6 +65,18 @@ def test_phone_capability_schemas_accept_canonical_examples() -> None:
         "phone.note.create": (
             {"text": "Buy milk"},
             {"noteId": 1, "text": "Buy milk", "createdAtEpochMillis": 1},
+        ),
+        "phone.qr.read": (
+            {},
+            {
+                "status": "available",
+                "contentType": "url",
+                "characterCount": 42,
+                "characterCountTruncated": False,
+                "preview": "https://example.com/...",
+                "previewTruncated": False,
+                "redacted": False,
+            },
         ),
         "phone.timer.create": (
             {"durationSeconds": 30, "skipClockUi": True},

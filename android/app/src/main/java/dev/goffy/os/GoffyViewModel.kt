@@ -50,13 +50,17 @@ import dev.goffy.os.phone.AndroidSystemTimerSource
 import dev.goffy.os.phone.DefaultPhoneToolGateway
 import dev.goffy.os.phone.PhoneToolGateway
 import dev.goffy.os.phone.PhoneToolAuthorization
+import dev.goffy.os.qr.QrPayloadSummarizer
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GoffyProtocolCodec
+import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
+import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
 import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import dev.goffy.os.protocol.PermissionLevel
+import dev.goffy.os.protocol.ToolProgress
 import java.time.Instant
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
@@ -70,6 +74,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -704,6 +709,100 @@ class GoffyViewModel internal constructor(
         }
     }
 
+    fun recordForegroundQrScan(rawPayload: String) {
+        refreshLocalModelStatus()
+        if (mutableUiState.value.isBusy) {
+            mutableUiState.value = mutableUiState.value.rejectCommand(
+                QR_SCAN_COMMAND,
+                "Another task is already running; cancel it before scanning a QR code",
+                nowMillis(),
+            )
+            return
+        }
+        if (rawPayload.isBlank()) {
+            mutableUiState.value = mutableUiState.value.rejectCommand(
+                QR_SCAN_COMMAND,
+                "QR scanner returned an empty payload",
+                nowMillis(),
+            )
+            return
+        }
+        val result = QrPayloadSummarizer.summarize(rawPayload)
+        val plan = qrReadPlan()
+        executeTask(
+            taskId = nextTaskId(),
+            plan = plan,
+            events = flowOf(
+                ExecutionEvent.Starting(attempt = 1),
+                ExecutionEvent.Ready,
+                ExecutionEvent.Progress(
+                    ToolProgress(
+                        toolName = PHONE_QR_READ_TOOL,
+                        executionTarget = ExecutionTarget.PHONE,
+                        stage = "accepted",
+                        sequence = 0,
+                        message = "Foreground QR scan accepted on this phone.",
+                    ),
+                ),
+                ExecutionEvent.Progress(
+                    ToolProgress(
+                        toolName = PHONE_QR_READ_TOOL,
+                        executionTarget = ExecutionTarget.PHONE,
+                        stage = "completed",
+                        sequence = 1,
+                        message = "CameraX and ML Kit returned one QR payload summary.",
+                    ),
+                ),
+                ExecutionEvent.Result(
+                    toolName = PHONE_QR_READ_TOOL,
+                    executionTarget = ExecutionTarget.PHONE,
+                    content = result,
+                ),
+                ExecutionEvent.Verification(
+                    succeeded = true,
+                    summary = "QR payload summary matched the foreground phone-read contract.",
+                    checks = listOf(
+                        "foreground camera action",
+                        "no image persistence",
+                        "bounded privacy-preserving summary",
+                        "typed QR output",
+                    ),
+                ),
+            ),
+        )
+    }
+
+    fun recordForegroundQrScanUnavailable(summary: String) {
+        refreshLocalModelStatus()
+        if (mutableUiState.value.isBusy) {
+            mutableUiState.value = mutableUiState.value.rejectCommand(
+                QR_SCAN_COMMAND,
+                "Another task is already running; cancel it before scanning a QR code",
+                nowMillis(),
+            )
+            return
+        }
+        mutableUiState.value = mutableUiState.value.rejectPlan(
+            qrReadPlan(),
+            summary,
+            nowMillis(),
+        )
+    }
+
+    private fun qrReadPlan(): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = QR_SCAN_COMMAND,
+        executionTarget = ExecutionTarget.PHONE,
+        toolName = PHONE_QR_READ_TOOL,
+        permission = PermissionLevel.SAFE,
+        successCriteria = listOf(
+            "The camera was opened only from a visible foreground scanner",
+            "One QR payload was summarized without storing an image",
+            "Raw QR content was excluded from the task timeline and audit record",
+            "The structured QR summary matched the privacy-preserving contract",
+        ),
+        arguments = NoToolArguments,
+    )
+
     private fun startLocalModelObservationIfAvailable(
         command: String,
         decision: RoutingDecision.Unsupported,
@@ -1059,6 +1158,7 @@ class GoffyViewModel internal constructor(
         const val RELEASE_HUB_ENDPOINT_HINT = "wss://your-mac.example:8787/ws/v1"
         const val DEFAULT_APPROVAL_TTL_MILLIS = 60_000L
         const val APPROVAL_PREVIEW_LENGTH = 160
+        const val QR_SCAN_COMMAND = "Read foreground QR code"
     }
 
     private data class PendingPhoneExecution(

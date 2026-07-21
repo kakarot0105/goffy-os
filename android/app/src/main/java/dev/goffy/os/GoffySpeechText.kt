@@ -10,6 +10,7 @@ import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PhoneNoteCreated
+import dev.goffy.os.protocol.PhoneQrRead
 import dev.goffy.os.protocol.PhoneTimerDispatched
 import dev.goffy.os.protocol.ToolResultContent
 
@@ -50,6 +51,13 @@ private fun ToolResultContent.speakableText(verified: Boolean): String =
         is PhoneFlashlightState ->
             "Flashlight is ${if (enabled) "on" else "off"}. State ${if (verified) "verified" else "observed"}."
         is PhoneNoteCreated -> noteCreatedSpeech(verified)
+        is PhoneQrRead ->
+            "QR code was read as $contentType. " +
+                if (redacted) {
+                    "The content was hidden from speech and audit."
+                } else {
+                    "A safe bounded preview is visible on screen."
+                }
         is PhoneTimerDispatched ->
             "Timer request for $durationSeconds seconds was sent to $clockPackage. " +
                 "Final timer state is owned by the Clock app."

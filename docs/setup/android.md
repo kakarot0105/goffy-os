@@ -140,6 +140,12 @@ review both published checksums during any wrapper upgrade.
   codes only, stores no image, and closes the camera when the panel is dismissed,
   the Activity stops, or one bundle is captured. Scanning only fills the existing
   pairing-bundle field; the user still must tap `Pair phone`.
+- Generic QR reads are also foreground-only. Tap `CAM` or type `read this QR
+  code` to open the same CameraX/ML Kit scanner for one QR payload. GOFFY records
+  a verified `phone.qr.read` timeline entry with type, length, and only a bounded
+  safe preview. Wi-Fi, OTP, token/password-looking payloads, unsafe display
+  characters, and sensitive-looking values are hidden from audit/timeline
+  content by default; URL previews show only scheme and host.
 - Manual development bearer entry remains debug-only and memory-only.
 
 ## Android audit trail
@@ -169,9 +175,10 @@ Performance assessment: the audit path is a tiny bounded SQLite read at startup
 and one write per terminal task on the existing IO dispatcher. There is no
 polling or WorkManager, so this slice stays within GOFFY LITE expectations for
 4 GB devices. Paired restore adds one bounded file read and Keystore decrypt; pair
-and forget add one tiny atomic write/delete. QR scanning lazy-loads CameraX and
-the bundled barcode model only while the visible scanner panel is active, uses a
-single latest-frame analyzer at 1280x720, and shuts down the analyzer when closed.
+and forget add one tiny atomic write/delete. Pairing and generic QR scanning
+lazy-load CameraX and the bundled barcode model only while the visible scanner
+panel is active, use a single latest-frame analyzer at 1280x720, and shut down
+the analyzer when closed.
 No large model or background service loads.
 
 ## Local verification
@@ -558,7 +565,7 @@ Then submit `Turn on the flashlight`. Confirm `PHONE / phone.flashlight.set /
 CONFIRM`, deny once and verify the light stays unchanged, then approve a new
 request. The task should reach `VERIFIED` only after the rear torch turns on.
 Submit `Turn off the torch`, approve it, and confirm a second `VERIFIED` result.
-If `CAMERA` was not previously granted for QR pairing, the flashlight action
+If `CAMERA` was not previously granted for QR scanning, the flashlight action
 should not request it. No camera privacy indicator or image preview should
 appear. Record failures when another camera app is active. Physical Moto G
 verification remains open.
