@@ -17,6 +17,7 @@
 - [x] Local stock-restore archive hashing helper with redacted evidence output
 - [x] Non-privileged ROM system-app descriptor and validator
 - [x] Safe AOSP product-overlay template and validator for `GoffyOS`
+- [x] Dry-run release signing plan for externally keyed ROM APK
 - [x] Dry-run-first AOSP product import generator for signed GOFFY APK staging
 - [x] Offline ROM-0 readiness reporter for probe, manual gate, and signed APK evidence
 - [x] Android Home-shell intent declared, security-scanned, and physically queried

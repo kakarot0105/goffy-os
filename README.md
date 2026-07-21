@@ -326,6 +326,17 @@ before editing evidence by hand:
 The template stays under `.goffy-validation`, defaults to blocked values, and
 does not authorize unlock, flash, erase, root, or boot-image changes.
 
+For ROM APK packaging, keep release keys outside the repo and generate a dry-run
+signing plan before producing any `GoffyOS-signed.apk`:
+
+```bash
+.venv/bin/python scripts/create_rom_release_signing_plan.py \
+  --keystore /absolute/path/outside/repo/goffy-release.jks
+```
+
+The plan uses Android SDK `apksigner`, records only password environment
+variable names, and does not sign, flash, unlock, or mutate an AOSP checkout.
+
 ## Verify the repository
 
 ```bash

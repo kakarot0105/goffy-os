@@ -14,6 +14,8 @@ Validation:
 
 ```bash
 .venv/bin/python scripts/validate_rom_system_app.py
+.venv/bin/python scripts/create_rom_release_signing_plan.py \
+  --keystore /absolute/path/outside/repo/goffy-release.jks
 ```
 
 Policy:
@@ -24,6 +26,9 @@ Policy:
   unsigned build artifact only.
 - Sign the APK with a dedicated GOFFY release key outside the repo before
   copying it into an AOSP tree as `GoffyOS.apk`.
+- Use `scripts/create_rom_release_signing_plan.py` to create a dry-run plan; the
+  plan references `GOFFY_APK_KEYSTORE_PASS` and `GOFFY_APK_KEY_PASS` by name but
+  never stores password values.
 - Keep `privileged_permission_allowlist` empty.
 - Keep `CAMERA` and `RECORD_AUDIO` foreground and user-approved only.
 - Re-run the validator after any Android manifest permission change.

@@ -22,12 +22,18 @@ Integration targets:
 Safe import planning:
 
 ```bash
+.venv/bin/python scripts/create_rom_release_signing_plan.py \
+  --keystore /absolute/path/outside/repo/goffy-release.jks
 .venv/bin/python scripts/create_aosp_product_import.py \
   --aosp-root /path/to/aosp \
   --apk /path/to/GoffyOS-signed.apk
 ```
 
-The command above is dry-run only. To copy the reviewed templates and signed APK
+The signing-plan command is dry-run only: it locates Android SDK `apksigner`,
+requires the release keystore to live outside this repo, records only password
+environment variable names, and writes plan JSON under `.goffy-validation`.
+
+The import command above is dry-run only. To copy the reviewed templates and signed APK
 into an existing AOSP tree, add both `--execute` and
 `--confirm-aosp-tree-mutation`. The importer validates the ROM descriptors first,
 refuses the default unsigned Gradle APK, requires an APK Signature Scheme v2/v3

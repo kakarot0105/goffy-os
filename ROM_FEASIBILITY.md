@@ -173,6 +173,19 @@ release artifact by default, requires an APK Signature Scheme v2/v3 signing
 block, rejects debug build artifacts, and refuses to overwrite different existing
 AOSP files.
 
+Before importing, create a local signing plan without storing keys or passwords
+in the repo:
+
+```bash
+./android/gradlew -p android :app:assembleRelease --no-daemon
+.venv/bin/python scripts/create_rom_release_signing_plan.py \
+  --keystore /absolute/path/outside/repo/goffy-release.jks
+```
+
+The plan uses the Android SDK `apksigner`, requires keystore passwords through
+environment variable names only, writes plan JSON under `.goffy-validation`, and
+does not sign, flash, unlock, erase, or mutate an AOSP checkout.
+
 Use the readiness reporter to summarize ROM-0 blockers without touching the
 phone or an AOSP checkout:
 
