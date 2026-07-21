@@ -11,6 +11,7 @@
 - [x] First GSI/DSU candidate shortlist with license and Moto/MediaTek risk notes
 - [x] No-flash planning checklist generator and DSU staging setup guide
 - [x] Official stock restore source identified through Motorola Software Fix
+- [x] Manual restore/unlock evidence validator and sensitive-key rejection
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist
 - [ ] User-approved destructive unlock/flash decision point

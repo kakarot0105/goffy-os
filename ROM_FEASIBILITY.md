@@ -105,6 +105,8 @@ No destructive ROM work until all gates are satisfied:
 
 The ROM-0 planning and DSU staging guide is in
 [`docs/setup/rom-0-planning-checklist.md`](docs/setup/rom-0-planning-checklist.md).
+Manual restore/unlock evidence requirements are in
+[`docs/setup/rom-0-manual-gates.md`](docs/setup/rom-0-manual-gates.md).
 
 ## First ROM Milestone
 

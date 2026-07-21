@@ -26,6 +26,9 @@ The connected phone has been observed as:
 The current ROM status is blocked until bootloader eligibility and stock restore
 are proven.
 
+Manual evidence validation is documented in
+[`rom-0-manual-gates.md`](rom-0-manual-gates.md).
+
 ## Generate The Checklist
 
 Run the read-only probe and generate a planning checklist:
