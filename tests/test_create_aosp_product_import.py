@@ -28,6 +28,7 @@ def test_aosp_product_import_plan_is_dry_run_with_signed_apk(tmp_path: Path) -> 
         (APP_IMPORT_DIR / "Android.bp").as_posix(),
         (APP_IMPORT_DIR / "GoffyOS.apk").as_posix(),
     }
+    assert apk_entry(report).apk_signature_schemes == ("v2",)
     assert not (aosp_root / PRODUCT_IMPORT_DIR).exists()
     assert not (aosp_root / APP_IMPORT_DIR).exists()
 
@@ -47,6 +48,7 @@ def test_aosp_product_import_blocks_debug_artifacts(tmp_path: Path) -> None:
 
     assert report.safe_to_execute is False
     assert "GOFFY import APK must not be a debug build artifact" in report.blockers
+    assert apk_entry(report).apk_signature_schemes == ("v2",)
 
 
 def test_aosp_product_import_rejects_signed_name_without_signature_block(
@@ -59,6 +61,7 @@ def test_aosp_product_import_rejects_signed_name_without_signature_block(
 
     assert report.safe_to_execute is False
     assert "GOFFY import APK must contain an APK Signature Scheme v2/v3 block" in report.blockers
+    assert apk_entry(report).apk_signature_schemes == ()
 
 
 def test_aosp_product_import_executes_only_into_existing_aosp_root(tmp_path: Path) -> None:
@@ -110,6 +113,10 @@ def write_signed_apk(tmp_path: Path) -> Path:
     apk = tmp_path / "GoffyOS-signed.apk"
     apk.write_bytes(fake_apk_with_v2_signature_block())
     return apk
+
+
+def apk_entry(report):
+    return next(item for item in report.files if item.destination.endswith("GoffyOS.apk"))
 
 
 def fake_apk_with_v2_signature_block() -> bytes:

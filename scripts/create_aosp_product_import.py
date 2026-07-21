@@ -37,6 +37,7 @@ class PlannedImportFile:
     sha256: str | None
     byte_count: int | None
     status: str
+    apk_signature_schemes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -155,15 +156,20 @@ def planned_file(*, source: Path, destination: Path) -> PlannedImportFile:
     if source.is_file():
         source_hash = sha256_file(source)
         byte_count = source.stat().st_size
+        apk_signature_schemes = (
+            detect_apk_signature_schemes(source) if source.suffix == ".apk" else ()
+        )
     else:
         source_hash = None
         byte_count = None
+        apk_signature_schemes = ()
     return PlannedImportFile(
         source=str(source),
         destination=destination.as_posix(),
         sha256=source_hash,
         byte_count=byte_count,
         status="planned",
+        apk_signature_schemes=apk_signature_schemes,
     )
 
 
@@ -194,43 +200,56 @@ def apk_blockers(path: Path) -> list[str]:
         blockers.append("GOFFY import APK must be externally signed before ROM import")
     if path.is_file() and path.stat().st_size <= 0:
         blockers.append("GOFFY import APK must not be empty")
-    if path.is_file() and not has_apk_signature_block(path):
+    if path.is_file() and not detect_apk_signature_schemes(path):
         blockers.append("GOFFY import APK must contain an APK Signature Scheme v2/v3 block")
     return blockers
 
 
-def has_apk_signature_block(path: Path) -> bool:
+def detect_apk_signature_schemes(path: Path) -> tuple[str, ...]:
     data = path.read_bytes()
     eocd_offset = data.rfind(ZIP_EOCD_MAGIC)
     if eocd_offset < 0 or eocd_offset + 22 > len(data):
-        return False
+        return ()
     central_directory_offset = struct.unpack_from("<I", data, eocd_offset + 16)[0]
     if central_directory_offset < 32 or central_directory_offset > len(data):
-        return False
+        return ()
     if data[central_directory_offset - 16 : central_directory_offset] != APK_SIG_BLOCK_MAGIC:
-        return False
+        return ()
     block_size = struct.unpack_from("<Q", data, central_directory_offset - 24)[0]
     block_start = central_directory_offset - block_size - 8
     if block_start < 0:
-        return False
+        return ()
     leading_size = struct.unpack_from("<Q", data, block_start)[0]
     if leading_size != block_size:
-        return False
+        return ()
 
+    schemes: list[str] = []
     pair_offset = block_start + 8
     pair_limit = central_directory_offset - 24
     while pair_offset < pair_limit:
         if pair_offset + 12 > pair_limit:
-            return False
+            return ()
         pair_size = struct.unpack_from("<Q", data, pair_offset)[0]
         pair_end = pair_offset + 8 + pair_size
         if pair_size < 4 or pair_end > pair_limit:
-            return False
+            return ()
         signature_id = struct.unpack_from("<I", data, pair_offset + 8)[0]
         if signature_id in APK_SIGNATURE_SCHEME_IDS:
-            return True
+            name = scheme_name(signature_id)
+            if name not in schemes:
+                schemes.append(name)
         pair_offset = pair_end
-    return False
+    return tuple(schemes)
+
+
+def scheme_name(signature_id: int) -> str:
+    if signature_id == 0x7109871A:
+        return "v2"
+    if signature_id == 0xF05368C0:
+        return "v3"
+    if signature_id == 0x1B93AD61:
+        return "v3.1"
+    return f"unknown:{signature_id:x}"
 
 
 def missing_source_blockers(files: tuple[PlannedImportFile, ...]) -> list[str]:
@@ -295,7 +314,14 @@ def render_report(report: AospProductImportReport, *, as_json: bool) -> str:
     lines.append("files:")
     for planned in report.files:
         size = "missing" if planned.byte_count is None else f"{planned.byte_count} bytes"
-        lines.append(f"- {planned.destination} <- {planned.source} [{planned.status}, {size}]")
+        signatures = (
+            f", apk signatures={','.join(planned.apk_signature_schemes)}"
+            if planned.apk_signature_schemes
+            else ""
+        )
+        lines.append(
+            f"- {planned.destination} <- {planned.source} [{planned.status}, {size}{signatures}]"
+        )
     return "\n".join(lines)
 
 
