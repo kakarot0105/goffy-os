@@ -14,6 +14,9 @@ if __package__ in {None, ""} and str(ROOT) not in sys.path:
 from scripts.create_rom_stock_restore_evidence import (  # noqa: E402
     JSON_SCHEMA_VERSION as STOCK_RESTORE_SCHEMA_VERSION,
 )
+from scripts.create_rom_unlock_eligibility_evidence import (  # noqa: E402
+    load_unlock_eligibility_evidence,
+)
 from scripts.validate_rom_manual_gates import (  # noqa: E402
     ARCHIVE_NAME_PATTERN,
     SHA256_PATTERN,
@@ -32,6 +35,7 @@ STOCK_RESTORE_KEYS = frozenset(("source_url", "archive_name", "sha256", "rollbac
 def create_manual_gates_template(
     *,
     stock_restore_evidence: Path | None = None,
+    unlock_eligibility_evidence: Path | None = None,
 ) -> dict[str, Any]:
     stock_restore = {
         "source_url": MOTOROLA_SOFTWARE_FIX_URL,
@@ -39,14 +43,20 @@ def create_manual_gates_template(
         "sha256": "",
         "rollback_doc": "docs/setup/kansas-stock-rollback.md",
     }
+    oem_unlocking_enabled = False
+    motorola_unlock_eligibility = "unknown"
     if stock_restore_evidence is not None:
         stock_restore = load_stock_restore_evidence(stock_restore_evidence)
+    if unlock_eligibility_evidence is not None:
+        unlock = load_unlock_eligibility_evidence(unlock_eligibility_evidence)
+        oem_unlocking_enabled = bool(unlock["oem_unlocking_enabled"])
+        motorola_unlock_eligibility = str(unlock["motorola_unlock_eligibility"])
 
     return {
         "schema_version": MANUAL_GATES_SCHEMA_VERSION,
         "backup_confirmed": False,
-        "oem_unlocking_enabled": False,
-        "motorola_unlock_eligibility": "unknown",
+        "oem_unlocking_enabled": oem_unlocking_enabled,
+        "motorola_unlock_eligibility": motorola_unlock_eligibility,
         "destructive_approval": "not_requested",
         "stock_restore": stock_restore,
     }
@@ -150,6 +160,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Optional output from create_rom_stock_restore_evidence.py to seed stock_restore.",
     )
     parser.add_argument(
+        "--unlock-eligibility-evidence",
+        type=Path,
+        help=(
+            "Optional output from create_rom_unlock_eligibility_evidence.py to seed "
+            "OEM unlocking and Motorola eligibility fields."
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=DEFAULT_OUTPUT,
@@ -168,6 +186,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         template = create_manual_gates_template(
             stock_restore_evidence=args.stock_restore_evidence,
+            unlock_eligibility_evidence=args.unlock_eligibility_evidence,
         )
         text = render_json(template)
         if args.stdout:

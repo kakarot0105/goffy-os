@@ -75,6 +75,19 @@ exist for service-provider-exclusive models. This unit reports `tracfone`, so
 eligibility must be confirmed through Motorola's official unlock process before
 we treat ROM work as possible.
 
+Manual unlock checks can now be recorded as redacted local evidence:
+
+```bash
+.venv/bin/python scripts/create_rom_unlock_eligibility_evidence.py \
+  --oem-unlocking-visible yes \
+  --oem-unlocking-enabled yes \
+  --motorola-eligibility eligible \
+  --output .goffy-validation/rom-unlock-eligibility-evidence.json
+```
+
+This evidence still does not authorize unlocking. It only lets the ROM-0 manual
+gate template consume the observed OEM-toggle and Motorola eligibility result.
+
 ## Reuse-First ROM Strategy
 
 Before writing device-specific ROM code, reuse mature work where possible:

@@ -13,6 +13,12 @@ from scripts.create_rom_manual_gates_template import (
 from scripts.create_rom_stock_restore_evidence import (
     JSON_SCHEMA_VERSION as STOCK_RESTORE_SCHEMA_VERSION,
 )
+from scripts.create_rom_unlock_eligibility_evidence import (
+    JSON_SCHEMA_VERSION as UNLOCK_ELIGIBILITY_SCHEMA_VERSION,
+)
+from scripts.create_rom_unlock_eligibility_evidence import (
+    MOTOROLA_BOOTLOADER_SUPPORT_URL,
+)
 from scripts.validate_rom_manual_gates import (
     JSON_SCHEMA_VERSION as MANUAL_GATES_SCHEMA_VERSION,
 )
@@ -62,6 +68,36 @@ def test_manual_gates_template_merges_stock_restore_evidence(tmp_path: Path) -> 
     assert template["backup_confirmed"] is False
     assert template["destructive_approval"] == "not_requested"
     assert "generated_at" not in render_json(template)
+
+
+def test_manual_gates_template_merges_unlock_eligibility_evidence(tmp_path: Path) -> None:
+    evidence_path = tmp_path / "rom-unlock-eligibility-evidence.json"
+    evidence_path.write_text(
+        json.dumps(
+            {
+                "schema_version": UNLOCK_ELIGIBILITY_SCHEMA_VERSION,
+                "generated_at": "2026-07-21T00:00:00+00:00",
+                "unlock_eligibility": {
+                    "source_url": MOTOROLA_BOOTLOADER_SUPPORT_URL,
+                    "oem_unlocking_visible": True,
+                    "oem_unlocking_enabled": True,
+                    "motorola_unlock_eligibility": "eligible",
+                    "operator_note_code": "checked_no_identifiers_stored",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    template = create_manual_gates_template(unlock_eligibility_evidence=evidence_path)
+    report = validate_manual_gates(template)
+
+    assert template["oem_unlocking_enabled"] is True
+    assert template["motorola_unlock_eligibility"] == "eligible"
+    assert "Motorola bootloader unlock eligibility is not recorded as eligible" not in (
+        report.blockers
+    )
+    assert "stock_restore.sha256 must be 64 hex characters" in report.blockers
 
 
 def test_manual_gates_template_rejects_sensitive_stock_restore_evidence(tmp_path: Path) -> None:

@@ -26,6 +26,7 @@
 - [x] Android Home-shell intent declared, security-scanned, and physically queried
 - [x] Public installed-build provenance recorded; exact stock archive still missing
 - [x] Non-destructive stock archive-name candidate matcher keeps filename matches out of manual gates
+- [x] Redacted unlock-eligibility evidence helper for manual OEM/Motorola checks
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist
 - [ ] User-approved destructive unlock/flash decision point

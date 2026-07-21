@@ -20,10 +20,11 @@ blocked defaults: backup and OEM unlock are `false`, Motorola eligibility is
 fastboot, unlock, flash, root, shell, or network actions.
 
 After creating stock-restore evidence, seed the template with the exact
-redacted restore fields:
+redacted restore and unlock-eligibility fields:
 
 ```bash
 .venv/bin/python scripts/create_rom_manual_gates_template.py \
+  --unlock-eligibility-evidence .goffy-validation/rom-unlock-eligibility-evidence.json \
   --stock-restore-evidence .goffy-validation/rom-stock-restore-evidence.json \
   --output .goffy-validation/rom-0-manual-gates.json
 ```
@@ -79,6 +80,25 @@ The validator:
 
 Passing validation means only `READY_FOR_HUMAN_REVIEW`. It does not mean GOFFY
 may unlock or flash the phone.
+
+## Unlock Eligibility Evidence Helper
+
+After manually checking Developer options and Motorola's bootloader eligibility
+page, create redacted evidence without storing IMEI, serial number, unlock data,
+tokens, screenshots, or account details:
+
+```bash
+.venv/bin/python scripts/create_rom_unlock_eligibility_evidence.py \
+  --oem-unlocking-visible yes \
+  --oem-unlocking-enabled yes \
+  --motorola-eligibility eligible \
+  --operator-note-code checked_no_identifiers_stored \
+  --output .goffy-validation/rom-unlock-eligibility-evidence.json
+```
+
+This helper only records manual observations. It does not run ADB, fastboot,
+unlock, flash, erase, root, shell, or network actions, and it does not authorize
+destructive work. It stores only a closed-set note code, not free-form text.
 
 ## Stock Restore Evidence Helper
 
