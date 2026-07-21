@@ -5,6 +5,7 @@ from pathlib import Path
 
 from scripts.create_rom_planning_checklist import (
     DEVICE_SERIAL_PLACEHOLDER,
+    JSON_SCHEMA_VERSION,
     DryRunStatus,
     build_checklist,
     load_probe_json,
@@ -40,12 +41,15 @@ def test_locked_probe_blocks_destructive_rom_steps() -> None:
     payload = render_json(checklist)
 
     assert checklist.status is DryRunStatus.BLOCKED_LOCKED_BOOTLOADER
+    assert checklist.schema_version == JSON_SCHEMA_VERSION
     assert any("bootloader is currently locked" in blocker for blocker in checklist.blockers)
     assert "fastboot flashing unlock" not in markdown
     assert "fastboot flash" not in markdown
     assert DEVICE_SERIAL_PLACEHOLDER not in payload
     assert "Motorola Software Fix Rescue" in markdown
     assert "Google Android 16 GSI" in markdown
+    assert "Reuse Prior Art" in markdown
+    assert "INSPECT_ONLY_DO_NOT_IMPORT" in markdown
 
 
 def test_unlocked_probe_still_blocks_until_stock_restore_evidence_exists() -> None:
@@ -81,6 +85,32 @@ def test_structured_restore_evidence_emits_only_template_dsu_commands() -> None:
     assert "com.android.dynsystem/com.android.dynsystem.VerificationActivity" in markdown
     assert "fastboot flash" not in markdown
     assert DEVICE_SERIAL_PLACEHOLDER in markdown
+
+
+def test_reuse_prior_art_blocks_unsafe_kansas_tree_import() -> None:
+    checklist = build_checklist(LOCKED_PROBE)
+    payload = json.loads(render_json(checklist))
+
+    candidates = {candidate["name"]: candidate for candidate in payload["reuse_candidates"]}
+    kansas_tree = candidates["councilcj/android_device_motorola_kansas"]
+    kernel_source = candidates["MotorolaMobilityLLC/kernel-mtk"]
+
+    assert kansas_tree["decision"] == "INSPECT_ONLY_DO_NOT_IMPORT"
+    assert "no LICENSE file" in kansas_tree["license_note"]
+    assert "anti-rollback" in kansas_tree["risk"]
+    assert kernel_source["decision"] == "BLOCKED_UNTIL_EXACT_KANSAS_BUILD_MATCH"
+    assert "MMI-W1VKS36H.9-12-1" in kernel_source["risk"]
+    assert "W1VKS36H.9-12-9-8-2" in kernel_source["next_check"]
+
+
+def test_reuse_prior_art_records_concrete_lineage_repos() -> None:
+    checklist = build_checklist(LOCKED_PROBE)
+    payload = json.loads(render_json(checklist))
+    candidate_names = {candidate["name"] for candidate in payload["reuse_candidates"]}
+
+    assert "LineageOS/android_device_motorola_fogo" in candidate_names
+    assert "LineageOS/android_device_motorola_pnangn" in candidate_names
+    assert "LineageOS Motorola device trees for related devices" not in candidate_names
 
 
 def test_load_probe_json_rejects_unknown_schema(tmp_path: Path) -> None:

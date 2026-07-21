@@ -11,6 +11,7 @@
 - [x] First GSI/DSU candidate shortlist with license and Moto/MediaTek risk notes
 - [x] No-flash planning checklist generator and DSU staging setup guide
 - [x] Official stock restore source identified through Motorola Software Fix
+- [x] Reuse-first Kansas prior-art matrix with blocked/import-safe decisions
 - [x] Manual restore/unlock evidence validator and sensitive-key rejection
 - [x] Safe ROM-0 manual gate template generator with optional stock-restore merge
 - [x] Rollback Markdown template and exact archive/SHA evidence validation

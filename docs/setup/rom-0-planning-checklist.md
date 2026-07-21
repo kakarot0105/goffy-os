@@ -42,6 +42,10 @@ The probe command uses `adb` for allowlisted read-only property reads. The
 checklist command only reads the saved probe JSON. It does not use `adb`,
 `fastboot`, network, root, flashing tools, or shell execution.
 
+Generated checklists include a "Reuse Prior Art" section. This section is not an
+import manifest; it is a safety gate that labels each public source as reusable,
+pattern-only, inspect-only, or blocked.
+
 ## Restore Source Priority
 
 - Primary: Motorola Software Fix Rescue.
@@ -91,6 +95,31 @@ SHA-256, and rollback steps are recorded.
 
 Prefer Android 16 ARM64 for the ROM-0 baseline because the phone is already on
 Android 16. Do not jump to Android 17 until Android 16 GSI behavior is measured.
+
+## Reuse Prior Art
+
+- Official Motorola MTK kernel source.
+  Source: https://github.com/MotorolaMobilityLLC/kernel-mtk
+  Decision: `BLOCKED_UNTIL_EXACT_KANSAS_BUILD_MATCH`.
+  Reason: it is the official Motorola MTK kernel publication, and a related
+  `MMI-W1VKS36H.9-12-1` tag exists, but current search has not found exact
+  `kansas` or installed-build `W1VKS36H.9-12-9-8-2` source evidence. Do not
+  copy or build kernel code until exact build provenance is found.
+
+- Exact Kansas recovery/device-tree candidate.
+  Source: https://github.com/councilcj/android_device_motorola_kansas
+  Decision: `INSPECT_ONLY_DO_NOT_IMPORT`.
+  Reason: the repo has no repository-level license metadata, appears to be a
+  generated recovery tree, includes prebuilt kernel/dtb/dtbo artifacts, and
+  contains anti-rollback-bypass settings. It can inform manual comparison only.
+
+- Related Motorola LineageOS device trees.
+  Sources: https://github.com/LineageOS/android_device_motorola_fogo and
+  https://github.com/LineageOS/android_device_motorola_pnangn
+  Decision: `REUSE_PATTERNS_ONLY_NOT_DEVICE_CONFIG`.
+  Reason: these concrete repositories can teach structure and extraction
+  patterns, but they have no GitHub license metadata in the current scan and
+  target other devices/SoCs. They must not be copied as Kansas configuration.
 
 ## Manual Gates
 

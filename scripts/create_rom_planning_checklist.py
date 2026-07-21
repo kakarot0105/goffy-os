@@ -10,7 +10,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-JSON_SCHEMA_VERSION = "goffy.rom-planning-checklist.v1"
+JSON_SCHEMA_VERSION = "goffy.rom-planning-checklist.v2"
 SUPPORTED_PROBE_SCHEMA = "goffy.rom-feasibility-probe.v1"
 DEVICE_SERIAL_PLACEHOLDER = "<device-serial>"
 GSI_IMAGE_PLACEHOLDER = "<gsi-system-raw.img>"
@@ -43,6 +43,17 @@ class GsiCandidate:
 
 
 @dataclass(frozen=True)
+class ReuseCandidate:
+    name: str
+    source: str
+    license_note: str
+    decision: str
+    use: str
+    risk: str
+    next_check: str
+
+
+@dataclass(frozen=True)
 class ChecklistStep:
     phase: str
     status: str
@@ -63,6 +74,7 @@ class RomDryRunChecklist:
     warnings: tuple[str, ...]
     restore_sources: tuple[SourceCandidate, ...]
     gsi_candidates: tuple[GsiCandidate, ...]
+    reuse_candidates: tuple[ReuseCandidate, ...]
     steps: tuple[ChecklistStep, ...]
 
 
@@ -130,6 +142,95 @@ GSI_CANDIDATES = (
         risk=(
             "Requires an unlocked bootloader, dynamic partitions, a local GSI file, "
             "and storage access."
+        ),
+    ),
+)
+
+
+REUSE_CANDIDATES = (
+    ReuseCandidate(
+        name="MotorolaMobilityLLC/kernel-mtk",
+        source="https://github.com/MotorolaMobilityLLC/kernel-mtk",
+        license_note=(
+            "Official Motorola MTK kernel publication; GitHub reports a non-standard "
+            "kernel license surface. Verify COPYING and exact branch/build tags before reuse."
+        ),
+        decision="BLOCKED_UNTIL_EXACT_KANSAS_BUILD_MATCH",
+        use=(
+            "Primary official source candidate for kernel study if it can be matched to "
+            "the installed Kansas build."
+        ),
+        risk=(
+            "A related `MMI-W1VKS36H.9-12-1` tag exists, but current search did not locate "
+            "an exact `kansas` / `W1VKS36H.9-12-9-8-2` match. Generic MTK kernel code is "
+            "not enough for ROM bring-up."
+        ),
+        next_check=(
+            "Find a Motorola branch, tag, or release note matching `kansas`, `MT6835`, "
+            "and `W1VKS36H.9-12-9-8-2` before copying or building kernel code."
+        ),
+    ),
+    ReuseCandidate(
+        name="councilcj/android_device_motorola_kansas",
+        source="https://github.com/councilcj/android_device_motorola_kansas",
+        license_note=(
+            "Some files contain SPDX Apache-2.0 headers, but the repository has no "
+            "LICENSE file or GitHub license metadata."
+        ),
+        decision="INSPECT_ONLY_DO_NOT_IMPORT",
+        use=(
+            "Manual comparison only for Kansas display, partition, and recovery assumptions. "
+            "Do not copy code, binaries, or generated files into GOFFY."
+        ),
+        risk=(
+            "Generated recovery tree, prebuilt kernel/dtb/dtbo artifacts, and anti-rollback "
+            "bypass settings make it unsafe for direct reuse."
+        ),
+        next_check=(
+            "Ask upstream for explicit licensing/provenance and remove any anti-rollback or "
+            "prebuilt-binary dependency before considering a clean-room derivative."
+        ),
+    ),
+    ReuseCandidate(
+        name="LineageOS/android_device_motorola_fogo",
+        source="https://github.com/LineageOS/android_device_motorola_fogo",
+        license_note=(
+            "No GitHub license metadata was reported during the current scan; inspect "
+            "repository files and per-file SPDX headers before any reuse."
+        ),
+        decision="REUSE_PATTERNS_ONLY_NOT_DEVICE_CONFIG",
+        use=(
+            "Concrete related Motorola tree inspected for AOSP/Lineage product structure "
+            "and extraction flow only."
+        ),
+        risk=(
+            "This targets a different Motorola device. Copying config can break boot, "
+            "radio, camera, or verified-boot assumptions."
+        ),
+        next_check=(
+            "Use only as architectural reference until an exact Kansas tree with clear "
+            "license and maintainer history exists."
+        ),
+    ),
+    ReuseCandidate(
+        name="LineageOS/android_device_motorola_pnangn",
+        source="https://github.com/LineageOS/android_device_motorola_pnangn",
+        license_note=(
+            "No GitHub license metadata was reported during the current scan; inspect "
+            "repository files and per-file SPDX headers before any reuse."
+        ),
+        decision="REUSE_PATTERNS_ONLY_NOT_DEVICE_CONFIG",
+        use=(
+            "Concrete related Motorola tree inspected for AOSP/Lineage product structure "
+            "and extraction flow only."
+        ),
+        risk=(
+            "This targets a different Motorola device. Copying config can break boot, "
+            "radio, camera, or verified-boot assumptions."
+        ),
+        next_check=(
+            "Use only as architectural reference until an exact Kansas tree with clear "
+            "license and maintainer history exists."
         ),
     ),
 )
@@ -215,6 +316,7 @@ def build_checklist(
         warnings=tuple(dict.fromkeys(warnings)),
         restore_sources=RESTORE_SOURCES,
         gsi_candidates=GSI_CANDIDATES,
+        reuse_candidates=REUSE_CANDIDATES,
         steps=tuple(steps),
     )
 
@@ -394,6 +496,15 @@ def render_markdown(checklist: RomDryRunChecklist) -> str:
         lines.append(f"  License: {candidate.license_note}")
         lines.append(f"  Use: {candidate.use}")
         lines.append(f"  Risk: {candidate.risk}")
+
+    lines.extend(("", "## Reuse Prior Art"))
+    for reuse_candidate in checklist.reuse_candidates:
+        lines.append(f"- {reuse_candidate.name}: {reuse_candidate.source}")
+        lines.append(f"  Decision: `{reuse_candidate.decision}`")
+        lines.append(f"  License: {reuse_candidate.license_note}")
+        lines.append(f"  Use: {reuse_candidate.use}")
+        lines.append(f"  Risk: {reuse_candidate.risk}")
+        lines.append(f"  Next check: {reuse_candidate.next_check}")
 
     lines.extend(("", "## Checklist"))
     for step in checklist.steps:

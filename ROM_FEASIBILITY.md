@@ -139,6 +139,39 @@ Acceptance criteria:
 The exact stock package checksum remains open because we have not downloaded or
 hash-recorded a restore archive.
 
+## Current Reuse Prior Art Decisions
+
+Current reuse scan date: 2026-07-21.
+
+- Official kernel candidate: `MotorolaMobilityLLC/kernel-mtk`.
+  Decision: `BLOCKED_UNTIL_EXACT_KANSAS_BUILD_MATCH`.
+  Reason: it is the official Motorola MTK kernel publication, and a related
+  `MMI-W1VKS36H.9-12-1` tag exists, but current search did not locate exact
+  `kansas` or installed-build `W1VKS36H.9-12-9-8-2` evidence. Do not build or
+  copy kernel code until a branch, tag, or release note matches this unit.
+
+- Exact Kansas device-tree candidate:
+  `councilcj/android_device_motorola_kansas`.
+  Decision: `INSPECT_ONLY_DO_NOT_IMPORT`.
+  Reason: the repository targets `kansas`, but it has no repository-level
+  license metadata, appears generated for recovery, includes prebuilt
+  kernel/dtb/dtbo artifacts, and contains anti-rollback-bypass settings. It may
+  be useful for manual comparison, but GOFFY must not import code, binaries, or
+  generated files from it.
+
+- Related Motorola LineageOS device trees:
+  `LineageOS/android_device_motorola_fogo` and
+  `LineageOS/android_device_motorola_pnangn`.
+  Decision: `REUSE_PATTERNS_ONLY_NOT_DEVICE_CONFIG`.
+  Reason: these concrete repositories can teach AOSP/Lineage product structure
+  and extraction patterns, but they have no GitHub license metadata in the
+  current scan and target different devices/SoCs. Copying configuration would
+  be unsafe for boot, radio, camera, verified boot, and recovery behavior.
+
+These decisions are emitted by
+[`scripts/create_rom_planning_checklist.py`](scripts/create_rom_planning_checklist.py)
+under "Reuse Prior Art" so generated ROM-0 checklists carry the same reuse gate.
+
 ## ROM Packaging Readiness
 
 GOFFY now has a ROM-side system-app package descriptor in
