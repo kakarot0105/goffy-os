@@ -6,6 +6,7 @@
 - [x] Read-only Moto G ROM feasibility probe
 - [x] Exact connected target identified as `kansas_g_sys` / `kansas` / MediaTek `MT6835`
 - [x] Treble and dynamic-partition status captured from the physical phone
+- [x] Android DSU package and `START_INSTALL` activity captured from the physical phone
 - [x] Current locked bootloader state captured from the physical phone
 - [x] First GSI/DSU candidate shortlist with license and Moto/MediaTek risk notes
 - [x] No-flash planning checklist generator and DSU staging setup guide

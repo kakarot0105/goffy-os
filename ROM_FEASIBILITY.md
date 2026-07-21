@@ -21,6 +21,8 @@ Read-only ADB evidence from the connected phone:
 - Active slot: `_b`
 - Dynamic partitions: `true`
 - Treble: `true`
+- DSU package: `true`
+- DSU `START_INSTALL` activity: `true`
 - Verified boot: `green`
 - Bootloader: `ro.boot.flash.locked=1`,
   `ro.boot.vbmeta.device_state=locked`

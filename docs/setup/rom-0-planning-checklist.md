@@ -19,6 +19,8 @@ The connected phone has been observed as:
 - Android release: `16`
 - Treble: `true`
 - Dynamic partitions: `true`
+- DSU package: `true`
+- DSU `START_INSTALL` activity: `true`
 - Bootloader state: locked
 
 The current ROM status is blocked until bootloader eligibility and stock restore

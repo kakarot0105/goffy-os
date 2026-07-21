@@ -28,6 +28,9 @@ JSON_SCHEMA_VERSION = "goffy.rom-feasibility-probe.v1"
 DEVICE_SERIAL_PLACEHOLDER = "<device-serial>"
 MAX_PROPERTY_VALUE_CHARS = 512
 MAX_TEXT_ARTIFACT_CHARS = 32_000
+DSU_PACKAGE = "com.android.dynsystem"
+DSU_START_INSTALL_ACTION = "android.os.image.action.START_INSTALL"
+DSU_PLACEHOLDER_URI = "file:///storage/emulated/0/Download/goffy-dsu-placeholder.gz"
 
 ROM_PROPERTIES = (
     "ro.product.model",
@@ -86,6 +89,7 @@ class RomFeasibilityReport:
     boot: dict[str, str]
     platform: dict[str, str]
     treble: dict[str, str]
+    dsu: dict[str, str]
     rom_path: RomPath
     blockers: tuple[str, ...]
     warnings: tuple[str, ...]
@@ -139,7 +143,14 @@ def build_report(
         runner=runner,
         timeout_seconds=timeout_seconds,
     )
-    steps = (from_device_step(target_step), *property_steps, vndk_step)
+    dsu, dsu_steps = collect_dsu_readiness(
+        root=root,
+        adb=adb,
+        target=target,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+    )
+    steps = (from_device_step(target_step), *property_steps, vndk_step, *dsu_steps)
 
     device = {
         "model": properties.get("ro.product.model", ""),
@@ -179,6 +190,7 @@ def build_report(
     rom_path, blockers, warnings, next_steps = classify_rom_path(
         properties=properties,
         vndk_isolated=vndk_isolated,
+        dsu=dsu,
     )
     return RomFeasibilityReport(
         schema_version=JSON_SCHEMA_VERSION,
@@ -188,6 +200,7 @@ def build_report(
         boot=boot,
         platform=platform,
         treble=treble,
+        dsu=dsu,
         rom_path=rom_path,
         blockers=blockers,
         warnings=warnings,
@@ -212,6 +225,7 @@ def blocked_report(
         boot={},
         platform={},
         treble={},
+        dsu={},
         rom_path=RomPath.UNKNOWN,
         blockers=(blocker,),
         warnings=(),
@@ -296,6 +310,90 @@ def collect_vndk_isolation(
     )
 
 
+def collect_dsu_readiness(
+    *,
+    root: Path,
+    adb: Path,
+    target: DeviceTarget,
+    runner: CommandRunner,
+    timeout_seconds: int,
+) -> tuple[dict[str, str], tuple[RomProbeStep, ...]]:
+    package_display = display_adb_command(adb, "shell", "pm", "path", DSU_PACKAGE)
+    package_result = runner(
+        adb_command(adb, target, "shell", "pm", "path", DSU_PACKAGE),
+        root,
+        timeout_seconds,
+    )
+    package_path = bounded_value(package_result.stdout.removeprefix("package:"))
+    package_present = package_result.exit_code == 0 and bool(package_path)
+
+    resolve_display = display_adb_command(
+        adb,
+        "shell",
+        "cmd",
+        "package",
+        "resolve-activity",
+        "--brief",
+        "-a",
+        DSU_START_INSTALL_ACTION,
+        "-d",
+        DSU_PLACEHOLDER_URI,
+    )
+    resolve_result = runner(
+        adb_command(
+            adb,
+            target,
+            "shell",
+            "cmd",
+            "package",
+            "resolve-activity",
+            "--brief",
+            "-a",
+            DSU_START_INSTALL_ACTION,
+            "-d",
+            DSU_PLACEHOLDER_URI,
+        ),
+        root,
+        timeout_seconds,
+    )
+    start_install_activity = parse_resolved_activity(resolve_result.stdout)
+    start_install_resolves = resolve_result.exit_code == 0 and bool(start_install_activity)
+
+    dsu = {
+        "package_present": bool_text(package_present),
+        "package_path": package_path if package_present else "",
+        "start_install_resolves": bool_text(start_install_resolves),
+        "start_install_activity": start_install_activity,
+    }
+    steps = (
+        RomProbeStep(
+            name="Check DSU package",
+            status=StepStatus.OK if package_present else StepStatus.FAIL,
+            command=package_display,
+            detail="Dynamic System package present" if package_present else "DSU package not found",
+        ),
+        RomProbeStep(
+            name="Resolve DSU START_INSTALL activity",
+            status=StepStatus.OK if start_install_resolves else StepStatus.FAIL,
+            command=resolve_display,
+            detail=(
+                f"resolved {start_install_activity}"
+                if start_install_resolves
+                else "START_INSTALL activity not resolved"
+            ),
+        ),
+    )
+    return dsu, steps
+
+
+def parse_resolved_activity(text: str) -> str:
+    for raw_line in reversed(text.splitlines()):
+        line = raw_line.strip()
+        if "/" in line and not line.startswith("priority="):
+            return bounded_value(line)
+    return ""
+
+
 def parse_vndk_isolated(text: str) -> str:
     in_vendor = False
     for raw_line in text.splitlines():
@@ -313,6 +411,7 @@ def classify_rom_path(
     *,
     properties: dict[str, str],
     vndk_isolated: str,
+    dsu: dict[str, str],
 ) -> tuple[RomPath, tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
     blockers: list[str] = []
     warnings: list[str] = []
@@ -353,6 +452,10 @@ def classify_rom_path(
         warnings.append("VNDK isolation is false; cross-version GSI compatibility may be limited")
     elif not vndk_isolated:
         warnings.append("VNDK isolation could not be confirmed from system config")
+    if dsu.get("package_present") != "true":
+        warnings.append("Android Dynamic System package is not visible")
+    if dsu.get("start_install_resolves") != "true":
+        warnings.append("Android DSU START_INSTALL activity is not resolvable")
 
     if blockers and locked_bootloader:
         path = RomPath.BLOCKED_LOCKED_BOOTLOADER
@@ -394,6 +497,10 @@ def bounded_value(value: str) -> str:
     return value.strip()[:MAX_PROPERTY_VALUE_CHARS]
 
 
+def bool_text(value: bool) -> str:
+    return "true" if value else "false"
+
+
 def from_device_step(step: object) -> RomProbeStep:
     return RomProbeStep(
         name=getattr(step, "name", "Verify device target"),
@@ -417,6 +524,12 @@ def render_text(report: RomFeasibilityReport) -> str:
             f"{report.device.get('model', '<unknown>')} / "
             f"{report.device.get('codename', '<unknown>')} / "
             f"{report.platform.get('soc_model', '<unknown>')}"
+        )
+    if report.dsu:
+        lines.append(
+            "dsu: "
+            f"package={report.dsu.get('package_present', 'unknown')} "
+            f"start_install={report.dsu.get('start_install_resolves', 'unknown')}"
         )
     if report.blockers:
         lines.append("blockers:")

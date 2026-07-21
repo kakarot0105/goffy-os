@@ -4,7 +4,13 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import scripts.rom_feasibility_probe as probe
-from scripts.rom_feasibility_probe import RomPath, build_report, parse_vndk_isolated, render_json
+from scripts.rom_feasibility_probe import (
+    RomPath,
+    build_report,
+    parse_resolved_activity,
+    parse_vndk_isolated,
+    render_json,
+)
 from scripts.run_moto_g_device_smoke import CommandResult
 
 SERIAL = "ZY32LBQLMQ"
@@ -62,6 +68,18 @@ def test_parse_vndk_isolated_reads_vendor_section() -> None:
     )
 
 
+def test_parse_resolved_activity_reads_final_component() -> None:
+    assert (
+        parse_resolved_activity(
+            """
+            priority=0 preferredOrder=0 match=0x208000 specificIndex=-1 isDefault=true
+            com.android.dynsystem/.VerificationActivity
+            """
+        )
+        == "com.android.dynsystem/.VerificationActivity"
+    )
+
+
 def test_probe_reports_locked_bootloader_without_serial(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(probe, "trusted_adb_path", lambda: Path("/opt/android/adb"))
     report = build_report(root=tmp_path, runner=runner_for(LOCKED_PROPS))
@@ -73,6 +91,8 @@ def test_probe_reports_locked_bootloader_without_serial(monkeypatch, tmp_path: P
     assert report.device["codename"] == "kansas"
     assert report.platform["soc_model"] == "MT6835"
     assert report.treble["enabled"] == "true"
+    assert report.dsu["package_present"] == "true"
+    assert report.dsu["start_install_activity"] == "com.android.dynsystem/.VerificationActivity"
     assert "bootloader is currently locked" in report.blockers[0]
     assert SERIAL not in payload
 
@@ -111,14 +131,41 @@ def runner_for(properties: dict[str, str]):
             return CommandResult(0, ADB_DEVICES, "")
         if normalized[-3:] == ("shell", "getprop", "ro.product.model"):
             return CommandResult(0, "moto g - 2025\n", "")
-        if normalized[-2:] == ("shell", "cat"):
-            return CommandResult(1, "", "missing path")
         if normalized[-3:] == (
             "shell",
             "cat",
             "/system/etc/ld.config.version_identifier.txt",
         ):
             return CommandResult(0, "[vendor]\nnamespace.default.isolated = true\n", "")
+        if normalized[-4:] == ("shell", "pm", "path", "com.android.dynsystem"):
+            return CommandResult(
+                0,
+                (
+                    "package:/system/priv-app/DynamicSystemInstallationService/"
+                    "DynamicSystemInstallationService.apk\n"
+                ),
+                "",
+            )
+        if normalized[-9:] == (
+            "shell",
+            "cmd",
+            "package",
+            "resolve-activity",
+            "--brief",
+            "-a",
+            "android.os.image.action.START_INSTALL",
+            "-d",
+            "file:///storage/emulated/0/Download/goffy-dsu-placeholder.gz",
+        ):
+            return CommandResult(
+                0,
+                (
+                    "priority=0 preferredOrder=0 match=0x208000 specificIndex=-1 "
+                    "isDefault=true\n"
+                    "com.android.dynsystem/.VerificationActivity\n"
+                ),
+                "",
+            )
         if len(normalized) >= 5 and normalized[-2] == "getprop":
             return CommandResult(0, f"{properties.get(normalized[-1], '')}\n", "")
         return CommandResult(1, "", f"unexpected command: {normalized}")
