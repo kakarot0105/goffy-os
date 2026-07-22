@@ -35,8 +35,9 @@ the capability boundary.
 > device-bound: paired Android approval responses are signed with the phone
 > approval key and verified by the Hub before `mac.apps.open` can run.
 > Physical Moto G PHONE and MAC
-> localhost smoke now verify the home shell, `phone.battery.status`, and
-> `mac.system_info` over USB `adb reverse`; physical Moto G LiteRT-LM
+> localhost smoke now verify the home shell, `phone.battery.status`,
+> approved `phone.memory.remember`, `phone.memory.list`, and `mac.system_info`
+> over USB `adb reverse`; physical Moto G LiteRT-LM
 > benchmarking now proves Qwen3 0.6B mixed INT4 can run on CPU, and the
 > developer-controlled adapter smoke proves real generated text reaches the
 > deterministic quality gate. The model is not runtime-enabled because its
@@ -70,6 +71,8 @@ the capability boundary.
 - Approval-gated `CONFIRM phone.memory.remember`, bounded `SAFE phone.memory.list`,
   and approval-gated destructive `CONFIRM phone.memory.forget_all` in app-private
   SQLite with inspectable provenance
+- Opt-in physical Moto G smoke coverage for approved local-memory write/list
+  without deleting existing phone memories
 - Approval-gated `CONFIRM phone.timer.create` through an allowlisted system Clock
 - Approval-gated `CONFIRM phone.flashlight.set` with CameraManager callback verification
 - Immutable, bounded PHONE capability registry with MCP-shaped closed schemas
@@ -549,9 +552,17 @@ device-map markers from `after-launch.xml` into `home-surface.xml`, types only
 the fixed `check my battery level` smoke command, verifies that a fresh PHONE
 task card appeared with expected markers, captures a screenshot, and saves
 bounded GOFFY process logcat under
-`.goffy-validation/device-smoke/`. Add `--include-mac` only when the Hub is
-already running and the phone's saved Hub link is valid, or pass a short-lived
-local debug token file under `.goffy-validation`:
+`.goffy-validation/device-smoke/`. Add `--include-memory` to also submit a
+unique per-run `remember that goffy memory smoke ...` command, tap the matching
+`Approve once` control inside that fresh task card, verify
+`phone.memory.remember`, then submit `what do you remember` and verify the
+unique `goffy memory smoke ...` text is listed in the fresh memory-list result.
+The memory smoke does not run `forget all memories`, so it will not delete
+existing local GOFFY memories.
+
+Add `--include-mac` only when the Hub is already running and the phone's saved
+Hub link is valid, or pass a short-lived local debug token file under
+`.goffy-validation`:
 
 ```bash
 .venv/bin/python scripts/run_moto_g_device_smoke.py \

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -17,8 +18,11 @@ from scripts.run_moto_g_device_smoke import (
     timeline_command_occurrences,
     verify_home_surface,
 )
+from scripts.verify_moto_g_readiness import DEBUG_APK_RELATIVE_PATH
 
 SERIAL = "ZY32LBQLMQ"
+TEST_MEMORY_TEXT = "goffy memory smoke test 20260722"
+TEST_MEMORY_COMMAND = smoke.memory_remember_command(TEST_MEMORY_TEXT)
 ADB_DEVICES = (
     "List of devices attached\n"
     f"{SERIAL} device usb:2-1.2 product:kansas_g_sys model:moto_g___2025 device:kansas\n"
@@ -403,6 +407,134 @@ MAC_PROCESS_UI_XML = "\n".join(
 )
 
 
+MEMORY_REMEMBER_COMMAND_TYPED_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        f'  <node text="{TEST_MEMORY_COMMAND}" class="android.widget.EditText" '
+        'enabled="true" bounds="[60,900][660,1040]" />',
+        '  <node text="Send" class="android.widget.TextView" enabled="true" '
+        'bounds="[520,1100][660,1180]" />',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,1200][260,1240]" />',
+        "</hierarchy>",
+    ]
+)
+
+
+MEMORY_APPROVAL_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="Approve once" class="android.widget.TextView" enabled="true" '
+        'bounds="[10,10][110,60]" />',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,100][260,140]" />',
+        f'  <node text="{TEST_MEMORY_COMMAND}" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,180][620,220]" />',
+        '  <node text="AWAITING APPROVAL" class="android.widget.TextView" enabled="true" '
+        'bounds="[500,180][690,220]" />',
+        '  <node text="PHONE  /  phone.memory.remember  /  CONFIRM" '
+        'class="android.widget.TextView" enabled="true" bounds="[60,240][660,280]" />',
+        '  <node text="APPROVAL REQUIRED" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,300][320,340]" />',
+        f'  <node text="Approve remembering this locally: {TEST_MEMORY_TEXT}" '
+        'class="android.widget.TextView" enabled="true" bounds="[60,360][660,400]" />',
+        '  <node text="Deny" class="android.widget.TextView" enabled="true" '
+        'bounds="[430,420][500,470]" />',
+        '  <node text="Approve once" class="android.widget.TextView" enabled="true" '
+        'bounds="[520,420][680,500]" />',
+        "</hierarchy>",
+    ]
+)
+
+
+MEMORY_REMEMBER_VERIFIED_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,100][260,140]" />',
+        f'  <node text="{TEST_MEMORY_COMMAND}" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,180][620,220]" />',
+        '  <node text="VERIFIED" class="android.widget.TextView" enabled="true" '
+        'bounds="[500,180][690,220]" />',
+        '  <node text="MEMORY SAVED / #1" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,240][320,280]" />',
+        f'  <node text="{TEST_MEMORY_TEXT}" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,300][420,340]" />',
+        '  <node text="PHONE  /  phone.memory.remember  /  CONFIRM" '
+        'class="android.widget.TextView" enabled="true" bounds="[60,360][660,400]" />',
+        "</hierarchy>",
+    ]
+)
+
+
+MEMORY_LIST_COMMAND_TYPED_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        f'  <node text="{smoke.DEFAULT_MEMORY_LIST_COMMAND}" class="android.widget.EditText" '
+        'enabled="true" bounds="[60,900][660,1040]" />',
+        '  <node text="Send" class="android.widget.TextView" enabled="true" '
+        'bounds="[520,1100][660,1180]" />',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,1200][260,1240]" />',
+        "</hierarchy>",
+    ]
+)
+
+
+MEMORY_LIST_VERIFIED_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,100][260,140]" />',
+        f'  <node text="{smoke.DEFAULT_MEMORY_LIST_COMMAND}" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,180][620,220]" />',
+        '  <node text="VERIFIED" class="android.widget.TextView" enabled="true" '
+        'bounds="[500,180][690,220]" />',
+        '  <node text="MEMORIES / 1" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,240][320,280]" />',
+        f'  <node text="#1 / {TEST_MEMORY_TEXT}" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,300][520,340]" />',
+        '  <node text="PHONE  /  phone.memory.list  /  SAFE" '
+        'class="android.widget.TextView" enabled="true" bounds="[60,360][660,400]" />',
+        "</hierarchy>",
+    ]
+)
+
+
+MEMORY_LIST_EMPTY_WITH_OLDER_REMEMBER_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,100][260,140]" />',
+        f'  <node text="{smoke.DEFAULT_MEMORY_LIST_COMMAND}" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,180][620,220]" />',
+        '  <node text="VERIFIED" class="android.widget.TextView" enabled="true" '
+        'bounds="[500,180][690,220]" />',
+        '  <node text="MEMORIES / 0" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,240][320,280]" />',
+        '  <node text="PHONE  /  phone.memory.list  /  SAFE" '
+        'class="android.widget.TextView" enabled="true" bounds="[60,300][660,340]" />',
+        f'  <node text="{TEST_MEMORY_COMMAND}" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,420][620,460]" />',
+        '  <node text="VERIFIED" class="android.widget.TextView" enabled="true" '
+        'bounds="[500,420][690,460]" />',
+        '  <node text="MEMORY SAVED / #1" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,480][320,520]" />',
+        f'  <node text="{TEST_MEMORY_TEXT}" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,540][420,580]" />',
+        '  <node text="PHONE  /  phone.memory.remember  /  CONFIRM" '
+        'class="android.widget.TextView" enabled="true" bounds="[60,600][660,640]" />',
+        "</hierarchy>",
+    ]
+)
+
+
 DEBUG_SETUP_UI_XML = "\n".join(
     [
         "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
@@ -578,6 +710,22 @@ def test_plan_mode_never_executes_device_commands(
     assert report.mac_command == smoke.DEFAULT_MAC_COMMAND
 
 
+def test_plan_mode_includes_memory_smoke_when_requested(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(smoke, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+
+    report = build_report(root=tmp_path, include_memory=True)
+
+    step_names = [step.name for step in report.steps]
+    assert report.ok
+    assert not report.executed
+    assert "PHONE memory remember smoke" in step_names
+    assert "PHONE memory list smoke" in step_names
+    assert all(step.status is StepStatus.PLANNED for step in report.steps)
+
+
 def test_execute_requires_explicit_device_mutation_confirmation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -613,7 +761,7 @@ def test_execute_rejects_non_smoke_commands(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(smoke, "trusted_adb_path", lambda: Path("/opt/android/adb"))
-    apk = tmp_path / smoke.DEBUG_APK_RELATIVE_PATH
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
     apk.parent.mkdir(parents=True)
     apk.write_bytes(b"apk")
 
@@ -639,7 +787,7 @@ def test_execute_requires_single_or_explicit_moto_g_target(
     tmp_path: Path,
 ) -> None:
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
-    apk = tmp_path / smoke.DEBUG_APK_RELATIVE_PATH
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
     apk.parent.mkdir(parents=True)
     apk.write_bytes(b"apk")
     monkeypatch.setattr(smoke, "trusted_adb_path", lambda: adb)
@@ -680,7 +828,7 @@ def test_execute_rejects_non_moto_g_target(
     tmp_path: Path,
 ) -> None:
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
-    apk = tmp_path / smoke.DEBUG_APK_RELATIVE_PATH
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
     apk.parent.mkdir(parents=True)
     apk.write_bytes(b"apk")
     monkeypatch.setattr(smoke, "trusted_adb_path", lambda: adb)
@@ -708,7 +856,7 @@ def test_collapse_setup_card_does_not_skip_when_command_field_visible(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
     target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
     ui_outputs = iter((EXPANDED_SETUP_WITH_COMMAND_UI_XML, BASE_UI_XML))
@@ -749,7 +897,7 @@ def test_execute_runs_fixed_setup_launch_and_phone_command(
     tmp_path: Path,
 ) -> None:
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
-    apk = tmp_path / smoke.DEBUG_APK_RELATIVE_PATH
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
     apk.parent.mkdir(parents=True)
     apk.write_bytes(b"apk")
     monkeypatch.setattr(smoke, "trusted_adb_path", lambda: adb)
@@ -816,12 +964,93 @@ def test_execute_runs_fixed_setup_launch_and_phone_command(
     assert (str(adb), "-s", SERIAL, "logcat", "-d", "--pid", "1234", "-t", "200") in seen
 
 
+def test_execute_runs_opt_in_memory_smoke_without_forget_all(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
+    apk.parent.mkdir(parents=True)
+    apk.write_bytes(b"apk")
+    monkeypatch.setattr(smoke, "trusted_adb_path", lambda: adb)
+    monkeypatch.setattr(
+        smoke,
+        "capture_screenshot",
+        lambda **kwargs: DeviceSmokeStep(
+            name="Capture screenshot",
+            status=StepStatus.OK,
+            artifact="final.png",
+        ),
+    )
+    seen: list[tuple[str, ...]] = []
+    cat_calls = 0
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        nonlocal cat_calls
+        seen.append(tuple(command))
+        target = target_runner(command)
+        if target is not None:
+            return target
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            cat_calls += 1
+            if cat_calls < 5:
+                return CommandResult(0, BASE_UI_XML, "")
+            outputs = {
+                5: COMMAND_TYPED_UI_XML,
+                6: PHONE_UI_XML,
+                7: BASE_UI_XML,
+                8: MEMORY_REMEMBER_COMMAND_TYPED_UI_XML,
+                9: MEMORY_APPROVAL_UI_XML,
+                10: MEMORY_APPROVAL_UI_XML,
+                11: MEMORY_REMEMBER_VERIFIED_UI_XML,
+                12: BASE_UI_XML,
+                13: BASE_UI_XML,
+                14: MEMORY_LIST_COMMAND_TYPED_UI_XML,
+                15: MEMORY_LIST_VERIFIED_UI_XML,
+            }
+            return CommandResult(0, outputs.get(cat_calls, MEMORY_LIST_VERIFIED_UI_XML), "")
+        if adb_args(command) == ("shell", "pidof", smoke.PACKAGE_NAME):
+            return CommandResult(0, "1234\n", "")
+        if adb_args(command) == ("logcat", "-d", "--pid", "1234", "-t", "200"):
+            return CommandResult(0, "goffy log\n", "")
+        return CommandResult(0, "ok", "")
+
+    report = build_report(
+        root=tmp_path,
+        execute=True,
+        confirm_device_mutation=True,
+        include_memory=True,
+        memory_text=TEST_MEMORY_TEXT,
+        runner=runner,
+        trusted_root=tmp_path,
+        output_directory=tmp_path / "artifacts",
+    )
+
+    assert report.ok
+    assert report.executed
+    assert any(step.name == "PHONE memory remember smoke" for step in report.steps)
+    assert any(step.name == "PHONE memory list smoke" for step in report.steps)
+    assert (tmp_path / "artifacts" / "phone-memory-remember.xml").is_file()
+    assert (tmp_path / "artifacts" / "phone-memory-list.xml").is_file()
+    assert (
+        str(adb),
+        "-s",
+        SERIAL,
+        "shell",
+        "input",
+        "tap",
+        "600",
+        "460",
+    ) in seen
+    assert all("forget" not in " ".join(command).casefold() for command in seen)
+
+
 def test_stale_ui_does_not_pass_without_fresh_command_card(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
-    apk = tmp_path / smoke.DEBUG_APK_RELATIVE_PATH
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
     apk.parent.mkdir(parents=True)
     apk.write_bytes(b"apk")
     monkeypatch.setattr(smoke, "trusted_adb_path", lambda: adb)
@@ -874,7 +1103,7 @@ def test_submit_command_reveals_send_button_with_bounded_scroll(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
     target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
     output_directory = tmp_path / "artifacts"
@@ -933,7 +1162,7 @@ def test_submit_command_reveals_input_below_launch_viewport(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
     target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
     output_directory = tmp_path / "artifacts"
@@ -991,7 +1220,7 @@ def test_submit_command_falls_back_to_keyevents_when_adb_text_is_ignored(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
     target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
     output_directory = tmp_path / "artifacts"
@@ -1056,7 +1285,7 @@ def test_submit_command_does_not_tap_send_when_command_text_is_missing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
     target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
     output_directory = tmp_path / "artifacts"
@@ -1122,11 +1351,31 @@ def test_find_send_control_fails_closed_for_disabled_explicit_send() -> None:
     )
 
 
+def test_find_send_control_uses_stable_submit_description() -> None:
+    xml = "\n".join(
+        [
+            "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+            '<hierarchy rotation="0">',
+            '  <node text="check my battery level" class="android.widget.EditText" '
+            'enabled="true" clickable="true" bounds="[60,900][660,1040]" />',
+            '  <node text="" content-desc="Submit GOFFY command" class="android.view.View" '
+            'enabled="true" clickable="true" bounds="[520,1100][660,1180]" />',
+            "</hierarchy>",
+        ]
+    )
+    command_field = smoke.find_command_field(xml)
+
+    assert command_field is not None
+    send = smoke.find_send_control(xml, command_field=command_field)
+    assert send is not None
+    assert send.content_desc == "Submit GOFFY command"
+
+
 def test_submit_command_reveals_timeline_after_send(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
     target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
     output_directory = tmp_path / "artifacts"
@@ -1135,6 +1384,10 @@ def test_submit_command_reveals_timeline_after_send(
         (
             BASE_UI_XML,
             COMMAND_TYPED_UI_XML,
+            COMMAND_FIELD_EMPTY_SEND_DISABLED_UI_XML,
+            COMMAND_FIELD_EMPTY_SEND_DISABLED_UI_XML,
+            COMMAND_FIELD_EMPTY_SEND_DISABLED_UI_XML,
+            COMMAND_FIELD_EMPTY_SEND_DISABLED_UI_XML,
             COMMAND_FIELD_EMPTY_SEND_DISABLED_UI_XML,
             PHONE_UI_XML,
         )
@@ -1184,7 +1437,7 @@ def test_submit_command_reveals_fresh_card_when_timeline_header_is_visible(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
     target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
     output_directory = tmp_path / "artifacts"
@@ -1193,6 +1446,10 @@ def test_submit_command_reveals_fresh_card_when_timeline_header_is_visible(
         (
             BASE_UI_XML,
             COMMAND_TYPED_UI_XML,
+            TIMELINE_HEADER_ONLY_UI_XML,
+            TIMELINE_HEADER_ONLY_UI_XML,
+            TIMELINE_HEADER_ONLY_UI_XML,
+            TIMELINE_HEADER_ONLY_UI_XML,
             TIMELINE_HEADER_ONLY_UI_XML,
             PHONE_UI_XML,
         )
@@ -1242,7 +1499,7 @@ def test_submit_command_recovers_command_input_from_timeline_viewport(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
     target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
     output_directory = tmp_path / "artifacts"
@@ -1303,7 +1560,7 @@ def test_submit_command_does_not_accept_stale_command_after_recovery(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
     target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
     output_directory = tmp_path / "artifacts"
@@ -1347,7 +1604,7 @@ def test_submit_command_does_not_borrow_markers_from_stale_command(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
     target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
     output_directory = tmp_path / "artifacts"
@@ -1391,7 +1648,7 @@ def test_submit_command_requires_newest_matching_card_when_baseline_undercounts(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
     target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
     output_directory = tmp_path / "artifacts"
@@ -1435,7 +1692,7 @@ def test_submit_command_taps_icon_only_send_control(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(smoke.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
     target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
     output_directory = tmp_path / "artifacts"
@@ -1467,7 +1724,7 @@ def test_submit_command_taps_icon_only_send_control(
     )
 
     assert result.status is StepStatus.OK
-    assert (str(adb), "-s", SERIAL, "shell", "input", "tap", "630", "755") in seen
+    assert (str(adb), "-s", SERIAL, "shell", "input", "tap", "630", "699") in seen
 
 
 def test_include_mac_requires_mac_visible_markers(
@@ -1475,7 +1732,7 @@ def test_include_mac_requires_mac_visible_markers(
     tmp_path: Path,
 ) -> None:
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
-    apk = tmp_path / smoke.DEBUG_APK_RELATIVE_PATH
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
     apk.parent.mkdir(parents=True)
     apk.write_bytes(b"apk")
     monkeypatch.setattr(smoke, "trusted_adb_path", lambda: adb)
@@ -1546,7 +1803,7 @@ def test_include_mac_can_smoke_process_list_command(
     tmp_path: Path,
 ) -> None:
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
-    apk = tmp_path / smoke.DEBUG_APK_RELATIVE_PATH
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
     apk.parent.mkdir(parents=True)
     apk.write_bytes(b"apk")
     monkeypatch.setattr(smoke, "trusted_adb_path", lambda: adb)
@@ -1623,7 +1880,7 @@ def test_debug_hub_token_file_must_stay_under_validation_directory(
     tmp_path: Path,
 ) -> None:
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
-    apk = tmp_path / smoke.DEBUG_APK_RELATIVE_PATH
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
     apk.parent.mkdir(parents=True)
     apk.write_bytes(b"apk")
     token_file = tmp_path.parent / f"{tmp_path.name}-outside-token"
@@ -1709,7 +1966,7 @@ def test_include_mac_can_configure_debug_hub_link_from_local_token_file(
     tmp_path: Path,
 ) -> None:
     adb = tmp_path / "sdk" / "platform-tools" / "adb"
-    apk = tmp_path / smoke.DEBUG_APK_RELATIVE_PATH
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
     apk.parent.mkdir(parents=True)
     apk.write_bytes(b"apk")
     token = "abcdef0123456789abcdef0123456789"  # noqa: S105
@@ -1828,6 +2085,12 @@ def test_command_window_requires_markers_after_matching_command() -> None:
         PHONE_UI_XML_FRESH_PENDING_THEN_STALE_SUCCESS,
         "check my battery level",
         ("VERIFIED", "%", "Battery status matched the local tool contract."),
+        fresh_count=1,
+    )
+    assert not command_window_contains(
+        MEMORY_LIST_EMPTY_WITH_OLDER_REMEMBER_UI_XML,
+        smoke.DEFAULT_MEMORY_LIST_COMMAND,
+        ("VERIFIED", "MEMORIES", "phone.memory.list", TEST_MEMORY_TEXT),
         fresh_count=1,
     )
     assert timeline_command_occurrences(PHONE_UI_XML, "check my battery level") == 1

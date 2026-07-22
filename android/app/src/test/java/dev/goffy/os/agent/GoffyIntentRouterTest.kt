@@ -22,6 +22,9 @@ import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
+import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
+import dev.goffy.os.protocol.PhoneMemoryRememberArguments
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
@@ -279,6 +282,36 @@ class GoffyIntentRouterTest {
             GoffyIntentRouter.route("Create a note saying first\nsecond") is
                 RoutingDecision.Unsupported,
         )
+    }
+
+    @Test
+    fun routesMemoryListPhrasesToOneSafePhoneTool() {
+        val cases = listOf(
+            "what do you remember",
+            "Show my memories",
+            "list my memories",
+        )
+
+        cases.forEach { command ->
+            val decision = GoffyIntentRouter.route(command)
+            assertTrue(decision is RoutingDecision.Routed)
+            val plan = (decision as RoutingDecision.Routed).plan
+            assertEquals(ExecutionTarget.PHONE, plan.executionTarget)
+            assertEquals(PermissionLevel.SAFE, plan.permission)
+            assertEquals(PHONE_MEMORY_LIST_TOOL, plan.toolName)
+        }
+    }
+
+    @Test
+    fun routesBoundedMemoryRememberToOneConfirmPhoneTool() {
+        val decision = GoffyIntentRouter.route("remember that goffy memory smoke test")
+
+        assertTrue(decision is RoutingDecision.Routed)
+        val plan = (decision as RoutingDecision.Routed).plan
+        assertEquals(ExecutionTarget.PHONE, plan.executionTarget)
+        assertEquals(PermissionLevel.CONFIRM, plan.permission)
+        assertEquals(PHONE_MEMORY_REMEMBER_TOOL, plan.toolName)
+        assertEquals(PhoneMemoryRememberArguments("goffy memory smoke test"), plan.arguments)
     }
 
     @Test

@@ -36,6 +36,8 @@ HUB_REVERSE_ENDPOINT = "tcp:8787"
 DEFAULT_PHONE_COMMAND = "check my battery level"
 DEFAULT_MAC_COMMAND = "check my Mac status"
 DEFAULT_MAC_PROCESS_COMMAND = "What is running on my Mac"
+DEFAULT_MEMORY_LIST_COMMAND = "what do you remember"
+DEFAULT_MEMORY_TEXT_PREFIX = "goffy memory smoke"
 DEBUG_HUB_ENDPOINT = "ws://127.0.0.1:8787/ws/v1"
 REMOTE_UI_XML = "/sdcard/goffy-device-smoke-window.xml"
 MAX_INPUT_TEXT_LENGTH = 120
@@ -43,6 +45,8 @@ INPUT_TEXT_PATTERN = re.compile(r"^[A-Za-z0-9 .,_:-]{1,120}$")
 DEBUG_HUB_TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9._-]{24,120}$")
 BOUNDS_PATTERN = re.compile(r"\[([0-9]+),([0-9]+)\]\[([0-9]+),([0-9]+)\]")
 MAX_LOGCAT_LINES = 200
+INITIAL_RESULT_SETTLE_POLLS = 3
+SEND_BOTTOM_SAFE_MARGIN_PX = 96
 MOTO_G_MODEL_PATTERN = re.compile(r"\bmoto\s*g\b|moto_g", re.IGNORECASE)
 DEVICE_SERIAL_PLACEHOLDER = "<device-serial>"
 DEBUG_HUB_TOKEN_PLACEHOLDER = "<redacted-debug-hub-token>"  # noqa: S105
@@ -58,6 +62,25 @@ MAC_SMOKE_MARKERS = {
         "mac.processes.list output matched the registered schema.",
     ),
 }
+TASK_CARD_STATUS_TEXTS = frozenset(
+    {
+        "AWAITING APPROVAL",
+        "ACCEPTED",
+        "BLOCKED",
+        "CANCELLED",
+        "COMPLETED UNVERIFIED",
+        "DENIED",
+        "FAILED",
+        "PENDING",
+        "PREPARING",
+        "ROUTING",
+        "RUNNING",
+        "UNVERIFIED",
+        "VERIFIED",
+        "VERIFYING",
+    }
+)
+MAX_TASK_CARD_WINDOW_NODES = 30
 MOTO_G_PORTRAIT_VIEWPORT_BOUNDS = (0, 0, 720, 1604)
 COMMAND_INPUT_REVEAL_SWIPES = (
     ("360", "1450", "360", "650", "450"),
@@ -207,13 +230,25 @@ def display_adb_command(adb: Path, *args: str) -> tuple[str, ...]:
     return (str(adb), "-s", DEVICE_SERIAL_PLACEHOLDER, *args)
 
 
+def default_memory_smoke_text() -> str:
+    timestamp = datetime.now(UTC).strftime("%Y%m%d %H%M%S %f")
+    return f"{DEFAULT_MEMORY_TEXT_PREFIX} {timestamp}"
+
+
+def memory_remember_command(memory_text: str) -> str:
+    return f"remember that {memory_text}"
+
+
 def planned_steps(
     root: Path,
     adb: Path | None,
     *,
     include_mac: bool,
+    include_memory: bool,
     phone_command: str,
     mac_command: str,
+    memory_text: str,
+    memory_remember_command: str,
     debug_hub_token_file: Path | None,
 ) -> tuple[DeviceSmokeStep, ...]:
     adb_path = adb or Path("<adb>")
@@ -278,6 +313,36 @@ def planned_steps(
             detail=f"would submit `{phone_command}` and verify phone.battery.status",
         ),
     ]
+    if include_memory:
+        steps.extend(
+            [
+                DeviceSmokeStep(
+                    name="PHONE memory remember smoke",
+                    status=StepStatus.PLANNED,
+                    mutates_device=True,
+                    detail=(
+                        f"would submit `{memory_remember_command}`, tap the matching "
+                        "approval, and verify phone.memory.remember"
+                    ),
+                ),
+                DeviceSmokeStep(
+                    name="Restore HOME top viewport before memory list",
+                    status=StepStatus.PLANNED,
+                    mutates_device=True,
+                    detail="would restore the command surface before listing memories",
+                ),
+                DeviceSmokeStep(
+                    name="PHONE memory list smoke",
+                    status=StepStatus.PLANNED,
+                    mutates_device=True,
+                    detail=(
+                        f"would submit `{DEFAULT_MEMORY_LIST_COMMAND}` and verify the "
+                        f"newest `{memory_text}` memory is visible without deleting "
+                        "existing memories"
+                    ),
+                ),
+            ]
+        )
     if include_mac:
         if debug_hub_token_file is not None:
             steps.append(
@@ -332,6 +397,7 @@ def build_report(
     execute: bool = False,
     confirm_device_mutation: bool = False,
     include_mac: bool = False,
+    include_memory: bool = False,
     phone_command: str = DEFAULT_PHONE_COMMAND,
     mac_command: str = DEFAULT_MAC_COMMAND,
     runner: CommandRunner = default_command_runner,
@@ -341,9 +407,12 @@ def build_report(
     trusted_root: Path = ROOT,
     device_serial: str | None = None,
     debug_hub_token_file: Path | None = None,
+    memory_text: str | None = None,
 ) -> DeviceSmokeReport:
     resolved_root = root.resolve()
     adb = trusted_adb_path()
+    resolved_memory_text = memory_text or default_memory_smoke_text()
+    remember_command = memory_remember_command(resolved_memory_text)
     if not execute:
         return DeviceSmokeReport(
             executed=False,
@@ -355,8 +424,11 @@ def build_report(
                 resolved_root,
                 adb,
                 include_mac=include_mac,
+                include_memory=include_memory,
                 phone_command=phone_command,
                 mac_command=mac_command,
+                memory_text=resolved_memory_text,
+                memory_remember_command=remember_command,
                 debug_hub_token_file=debug_hub_token_file,
             ),
             repo_root=resolved_root,
@@ -367,8 +439,11 @@ def build_report(
         adb=adb,
         confirm_device_mutation=confirm_device_mutation,
         include_mac=include_mac,
+        include_memory=include_memory,
         phone_command=phone_command,
         mac_command=mac_command,
+        memory_text=resolved_memory_text,
+        memory_remember_command=remember_command,
         trusted_root=trusted_root,
         debug_hub_token_file=debug_hub_token_file,
     )
@@ -542,6 +617,90 @@ def build_report(
             output_directory=artifacts,
         )
     )
+    if include_memory and steps[-1].status is StepStatus.OK:
+        steps.append(
+            submit_and_verify_command(
+                adb=adb,
+                target=target,
+                root=resolved_root,
+                runner=runner,
+                timeout_seconds=timeout_seconds,
+                wait_timeout_seconds=wait_timeout_seconds,
+                command=remember_command,
+                expected_markers=(
+                    "VERIFIED",
+                    "MEMORY SAVED",
+                    "phone.memory.remember",
+                    resolved_memory_text,
+                ),
+                approval_markers=("APPROVAL REQUIRED", "Approve remembering this locally"),
+                approval_button_text="Approve once",
+                step_name="PHONE memory remember smoke",
+                artifact_prefix="phone-memory-remember",
+                output_directory=artifacts,
+            )
+        )
+        if steps[-1].status is StepStatus.OK:
+            restore_for_memory_list = restore_home_top_viewport(
+                adb=adb,
+                target=target,
+                root=resolved_root,
+                runner=runner,
+                timeout_seconds=timeout_seconds,
+                output_directory=artifacts,
+                step_name="Restore HOME top viewport before memory list",
+                success_detail="restored command surface before memory list smoke",
+            )
+            steps.append(restore_for_memory_list)
+        if steps[-1].status is StepStatus.OK:
+            steps.append(
+                submit_and_verify_command(
+                    adb=adb,
+                    target=target,
+                    root=resolved_root,
+                    runner=runner,
+                    timeout_seconds=timeout_seconds,
+                    wait_timeout_seconds=wait_timeout_seconds,
+                    command=DEFAULT_MEMORY_LIST_COMMAND,
+                    expected_markers=(
+                        "VERIFIED",
+                        "MEMORIES",
+                        "phone.memory.list",
+                        resolved_memory_text,
+                    ),
+                    step_name="PHONE memory list smoke",
+                    artifact_prefix="phone-memory-list",
+                    output_directory=artifacts,
+                )
+            )
+        elif steps[-1].name == "Restore HOME top viewport before memory list":
+            steps.append(
+                DeviceSmokeStep(
+                    name="PHONE memory list smoke",
+                    status=StepStatus.SKIP,
+                    detail="skipped because command surface restore failed",
+                )
+            )
+    elif include_memory:
+        steps.extend(
+            [
+                DeviceSmokeStep(
+                    name="PHONE memory remember smoke",
+                    status=StepStatus.SKIP,
+                    detail="skipped because PHONE command smoke failed",
+                ),
+                DeviceSmokeStep(
+                    name="Restore HOME top viewport before memory list",
+                    status=StepStatus.SKIP,
+                    detail="skipped because PHONE command smoke failed",
+                ),
+                DeviceSmokeStep(
+                    name="PHONE memory list smoke",
+                    status=StepStatus.SKIP,
+                    detail="skipped because PHONE command smoke failed",
+                ),
+            ]
+        )
     if include_mac and steps[-1].status is StepStatus.OK:
         steps.append(
             submit_and_verify_command(
@@ -601,8 +760,11 @@ def execution_blockers(
     adb: Path | None,
     confirm_device_mutation: bool,
     include_mac: bool,
+    include_memory: bool,
     phone_command: str,
     mac_command: str,
+    memory_text: str,
+    memory_remember_command: str,
     trusted_root: Path,
     debug_hub_token_file: Path | None,
 ) -> tuple[str, ...]:
@@ -611,6 +773,13 @@ def execution_blockers(
         blockers.append("missing explicit --confirm-device-mutation")
     if phone_command != DEFAULT_PHONE_COMMAND:
         blockers.append("execute mode only supports the fixed PHONE smoke command")
+    if include_memory:
+        if not INPUT_TEXT_PATTERN.fullmatch(memory_text):
+            blockers.append("generated memory smoke text contains unsupported characters")
+        if not INPUT_TEXT_PATTERN.fullmatch(memory_remember_command):
+            blockers.append("generated memory smoke command contains unsupported characters")
+        if memory_remember_command == DEFAULT_MEMORY_LIST_COMMAND:
+            blockers.append("memory smoke commands must stay distinct")
     if include_mac and mac_command.casefold() not in MAC_SMOKE_MARKERS:
         blockers.append("execute mode only supports the fixed MAC smoke commands")
     if root.resolve() != trusted_root.resolve():
@@ -945,10 +1114,12 @@ def restore_home_top_viewport(
     runner: CommandRunner,
     timeout_seconds: int,
     output_directory: Path,
+    step_name: str = "Restore HOME top viewport",
+    success_detail: str = "restored launch viewport before HOME smoke",
 ) -> DeviceSmokeStep:
     for start_x, start_y, end_x, end_y, duration_ms in HOME_TOP_RESTORE_SWIPES:
         step = execute_step(
-            name="Restore HOME top viewport",
+            name=step_name,
             command=adb_command(
                 adb,
                 target,
@@ -993,16 +1164,16 @@ def restore_home_top_viewport(
     )
     if has_exact_text(visible_nodes, "GOFFY"):
         return DeviceSmokeStep(
-            name="Restore HOME top viewport",
+            name=step_name,
             status=StepStatus.OK,
             mutates_device=True,
-            detail="restored launch viewport before HOME smoke",
+            detail=success_detail,
         )
     artifact = "restore-home-top.xml"
     if ui_text.strip():
         (output_directory / artifact).write_text(ui_text, encoding="utf-8")
     return DeviceSmokeStep(
-        name="Restore HOME top viewport",
+        name=step_name,
         status=StepStatus.FAIL,
         mutates_device=True,
         detail="GOFFY title was not visible after bounded top-restore swipes",
@@ -1267,6 +1438,8 @@ def submit_and_verify_command(
     step_name: str,
     artifact_prefix: str,
     output_directory: Path,
+    approval_markers: tuple[str, ...] = (),
+    approval_button_text: str | None = None,
 ) -> DeviceSmokeStep:
     if not INPUT_TEXT_PATTERN.fullmatch(command):
         return DeviceSmokeStep(
@@ -1453,7 +1626,7 @@ def submit_and_verify_command(
                 artifact=after_fallback_artifact,
             )
     for attempt in range(len(SEND_REVEAL_SWIPES) + 1):
-        if send is not None:
+        if send is not None and send_control_is_safely_visible(send):
             break
         if attempt == len(SEND_REVEAL_SWIPES):
             break
@@ -1515,18 +1688,21 @@ def submit_and_verify_command(
             remediation="Inspect the saved UI XML and confirm the command field retained input.",
             artifact=artifact,
         )
-    if send is None:
+    if send is None or not send_control_is_safely_visible(send):
         artifact = f"{artifact_prefix}-send-missing.xml"
         if ui_text.strip():
             (output_directory / artifact).write_text(ui_text, encoding="utf-8")
         return DeviceSmokeStep(
             name=step_name,
             status=StepStatus.FAIL,
-            detail="Send button not found after typing command",
+            detail="Send button not safely visible after typing command",
             remediation="Inspect the saved UI XML and adjust bounded viewport reveal logic.",
             artifact=artifact,
         )
-    tapped_send = tap_center(
+    ready_artifact = f"{artifact_prefix}-ready-to-send.xml"
+    if ui_text.strip():
+        (output_directory / ready_artifact).write_text(ui_text, encoding="utf-8")
+    tapped_send = tap_send_control(
         adb,
         target,
         root,
@@ -1537,10 +1713,43 @@ def submit_and_verify_command(
     )
     if tapped_send.status is not StepStatus.OK:
         return tapped_send
+    time.sleep(1)
+    after_send_artifact = f"{artifact_prefix}-after-send.xml"
+    after_send = dump_ui(
+        adb=adb,
+        target=target,
+        root=root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+        artifact_path=output_directory / after_send_artifact,
+    )
+    if after_send.status is StepStatus.OK and approval_button_text is None:
+        after_send_text = (output_directory / after_send_artifact).read_text(encoding="utf-8")
+        current_command_count = timeline_command_occurrences(after_send_text, command)
+        fresh_count = current_command_count - baseline_command_count
+        if fresh_count > 0 and command_window_contains(
+            after_send_text,
+            command,
+            expected_markers,
+            fresh_count=fresh_count,
+        ):
+            (output_directory / f"{artifact_prefix}.xml").write_text(
+                after_send_text,
+                encoding="utf-8",
+            )
+            return DeviceSmokeStep(
+                name=step_name,
+                status=StepStatus.OK,
+                mutates_device=True,
+                detail=f"verified visible markers for `{command}`",
+                artifact=f"{artifact_prefix}.xml",
+            )
 
     deadline = time.monotonic() + wait_timeout_seconds
     last_text = ""
     timeline_reveal_count = 0
+    settle_poll_count = 0
+    approval_tapped = False
     while time.monotonic() <= deadline:
         dump_step = dump_ui(
             adb=adb,
@@ -1554,6 +1763,52 @@ def submit_and_verify_command(
             last_text = (output_directory / f"{artifact_prefix}.xml").read_text(encoding="utf-8")
             current_command_count = timeline_command_occurrences(last_text, command)
             fresh_count = current_command_count - baseline_command_count
+            if (
+                approval_button_text is not None
+                and approval_markers
+                and not approval_tapped
+                and fresh_count > 0
+                and command_window_contains(
+                    last_text,
+                    command,
+                    approval_markers,
+                    fresh_count=fresh_count,
+                )
+            ):
+                approve, approval_error = find_command_window_node(
+                    last_text,
+                    command,
+                    text=approval_button_text,
+                    required_markers=approval_markers,
+                    fresh_count=fresh_count,
+                )
+                if approval_error is not None:
+                    return DeviceSmokeStep(
+                        name=step_name,
+                        status=StepStatus.FAIL,
+                        mutates_device=True,
+                        detail=approval_error,
+                        remediation=(
+                            "Only one matching approval control may be visible in the "
+                            "fresh smoke command card."
+                        ),
+                        artifact=f"{artifact_prefix}.xml",
+                    )
+                if approve is not None:
+                    approval = tap_center(
+                        adb,
+                        target,
+                        root,
+                        runner,
+                        timeout_seconds,
+                        approve,
+                        step_name=f"{step_name}: Tap approval",
+                    )
+                    if approval.status is not StepStatus.OK:
+                        return approval
+                    approval_tapped = True
+                    time.sleep(1)
+                    continue
             if fresh_count > 0 and command_window_contains(
                 last_text, command, expected_markers, fresh_count=fresh_count
             ):
@@ -1564,6 +1819,10 @@ def submit_and_verify_command(
                     detail=f"verified visible markers for `{command}`",
                     artifact=f"{artifact_prefix}.xml",
                 )
+            if settle_poll_count < INITIAL_RESULT_SETTLE_POLLS:
+                settle_poll_count += 1
+                time.sleep(1)
+                continue
             if timeline_reveal_count < len(TIMELINE_REVEAL_SWIPES):
                 start_x, start_y, end_x, end_y, duration_ms = TIMELINE_REVEAL_SWIPES[
                     timeline_reveal_count
@@ -1604,6 +1863,8 @@ def submit_and_verify_command(
         time.sleep(1)
 
     missing_markers = [marker for marker in expected_markers if marker not in last_text]
+    if approval_button_text is not None and not approval_tapped:
+        missing_markers.append("approved memory action")
     current_command_count = timeline_command_occurrences(last_text, command)
     if current_command_count <= baseline_command_count:
         missing_markers.append("fresh command card")
@@ -1823,8 +2084,9 @@ def find_send_control(xml_text: str, *, command_field: UiNode) -> UiNode | None:
     if labelled_send_nodes:
         return next((node for node in labelled_send_nodes if node.enabled), None)
 
+    send_descriptions = {"send", "submit goffy command"}
     content_desc_send_nodes = [
-        node for node in nodes if node.content_desc.strip().casefold() == "send"
+        node for node in nodes if node.content_desc.strip().casefold() in send_descriptions
     ]
     if content_desc_send_nodes:
         return next((node for node in content_desc_send_nodes if node.enabled), None)
@@ -1850,16 +2112,29 @@ def find_send_control(xml_text: str, *, command_field: UiNode) -> UiNode | None:
     return max(candidates, key=lambda node: (node.bounds[2], node.bounds[0]))
 
 
-def timeline_texts(xml_text: str) -> tuple[str, ...]:
+def send_control_is_safely_visible(node: UiNode) -> bool:
+    _, _, _, viewport_bottom = MOTO_G_PORTRAIT_VIEWPORT_BOUNDS
+    return node.bounds[3] <= viewport_bottom - SEND_BOTTOM_SAFE_MARGIN_PX
+
+
+def timeline_nodes(xml_text: str) -> tuple[UiNode, ...]:
     nodes = nodes_from_xml(xml_text)
-    texts = tuple(
-        node.text for node in nodes if node.text and node.class_name != "android.widget.EditText"
+    timeline_nodes = tuple(
+        node for node in nodes if node.text and node.class_name != "android.widget.EditText"
     )
     try:
-        timeline_index = texts.index("TASK TIMELINE")
+        timeline_index = next(
+            index for index, node in enumerate(timeline_nodes) if node.text == "TASK TIMELINE"
+        )
     except ValueError:
         return ()
-    return texts[timeline_index + 1 :]
+    except StopIteration:
+        return ()
+    return timeline_nodes[timeline_index + 1 :]
+
+
+def timeline_texts(xml_text: str) -> tuple[str, ...]:
+    return tuple(node.text for node in timeline_nodes(xml_text))
 
 
 def timeline_command_occurrences(xml_text: str, command: str) -> int:
@@ -1874,18 +2149,79 @@ def command_window_contains(
     *,
     fresh_count: int | None = None,
 ) -> bool:
-    texts = timeline_texts(xml_text)
-    normalized = command.casefold()
-    command_indexes = [index for index, text in enumerate(texts) if text.casefold() == normalized]
-    if not command_indexes:
+    nodes = command_window_nodes(
+        xml_text,
+        command,
+        fresh_count=fresh_count,
+    )
+    if not nodes:
         return False
-    if fresh_count is not None and fresh_count <= 0:
-        return False
-
-    index = command_indexes[0]
-    next_index = command_indexes[1] if len(command_indexes) > 1 else min(len(texts), index + 30)
-    segment = " ".join(texts[index:next_index])
+    segment = " ".join(node.text for node in nodes)
     return all(marker in segment for marker in markers)
+
+
+def command_window_nodes(
+    xml_text: str,
+    command: str,
+    *,
+    fresh_count: int | None = None,
+) -> tuple[UiNode, ...]:
+    nodes = timeline_nodes(xml_text)
+    normalized = command.casefold()
+    command_indexes = [
+        index
+        for index, node in enumerate(nodes)
+        if node.text.casefold() == normalized and is_task_card_header(nodes, index)
+    ]
+    if not command_indexes:
+        return ()
+    if fresh_count is not None and fresh_count <= 0:
+        return ()
+
+    # GOFFY renders the newest task cards first; the fresh command is therefore
+    # the first matching command window after the current command count increases.
+    index = command_indexes[0]
+    next_index = next_task_card_header_index(nodes, after=index)
+    if next_index is None:
+        next_index = min(len(nodes), index + MAX_TASK_CARD_WINDOW_NODES)
+    return nodes[index:next_index]
+
+
+def is_task_card_header(nodes: Sequence[UiNode], index: int) -> bool:
+    if index + 1 >= len(nodes):
+        return False
+    return nodes[index + 1].text.strip().upper() in TASK_CARD_STATUS_TEXTS
+
+
+def next_task_card_header_index(nodes: Sequence[UiNode], *, after: int) -> int | None:
+    for index in range(after + 1, len(nodes)):
+        if is_task_card_header(nodes, index):
+            return index
+    return None
+
+
+def find_command_window_node(
+    xml_text: str,
+    command: str,
+    *,
+    text: str,
+    required_markers: tuple[str, ...],
+    fresh_count: int,
+) -> tuple[UiNode | None, str | None]:
+    nodes = command_window_nodes(xml_text, command, fresh_count=fresh_count)
+    if not nodes:
+        return None, None
+
+    segment = " ".join(node.text for node in nodes)
+    if not all(marker in segment for marker in required_markers):
+        return None, None
+
+    candidates = [node for node in nodes if node.text == text and node.enabled]
+    if len(candidates) == 1:
+        return candidates[0], None
+    if not candidates:
+        return None, None
+    return None, f"ambiguous approval control `{text}` in fresh command window"
 
 
 def verify_home_surface(*, ui_xml: str, output_directory: Path) -> DeviceSmokeStep:
@@ -1994,6 +2330,33 @@ def tap_center(
     step_name: str = "Tap UI element",
 ) -> DeviceSmokeStep:
     x, y = node.center
+    return execute_step(
+        name=step_name,
+        command=adb_command(adb, target, "shell", "input", "tap", str(x), str(y)),
+        root=root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+        mutates_device=True,
+        display_command=display_adb_command(adb, "shell", "input", "tap", str(x), str(y)),
+    )
+
+
+def tap_send_control(
+    adb: Path,
+    target: DeviceTarget,
+    root: Path,
+    runner: CommandRunner,
+    timeout_seconds: int,
+    node: UiNode,
+    *,
+    step_name: str = "Tap Send",
+) -> DeviceSmokeStep:
+    left, top, right, bottom = node.bounds
+    x = (left + right) // 2
+    height = max(1, bottom - top)
+    # The Moto G command surface can clip the send button against the bottom
+    # gesture area; tapping near the top of the control avoids the gesture strip.
+    y = top + max(1, min(max(height // 6, 12), 32))
     return execute_step(
         name=step_name,
         command=adb_command(adb, target, "shell", "input", "tap", str(x), str(y)),
@@ -2237,6 +2600,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--include-mac", action="store_true", help="Also submit the MAC command.")
     parser.add_argument(
+        "--include-memory",
+        action="store_true",
+        help=(
+            "Also submit a fixed approved local-memory write and bounded memory list. "
+            "This never runs forget-all."
+        ),
+    )
+    parser.add_argument(
         "--debug-hub-token-file",
         type=Path,
         help=(
@@ -2262,6 +2633,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         execute=args.execute,
         confirm_device_mutation=args.confirm_device_mutation,
         include_mac=args.include_mac,
+        include_memory=args.include_memory,
         phone_command=args.phone_command,
         mac_command=args.mac_command,
         timeout_seconds=args.timeout_seconds,

@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -58,6 +59,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -1702,6 +1704,14 @@ private fun CommandSurface(
             enabled = !busy,
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text(stringResource(R.string.command_hint), color = Mist) },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+            keyboardActions = KeyboardActions(
+                onSend = {
+                    if (!busy && command.isNotBlank()) {
+                        onSubmit()
+                    }
+                },
+            ),
             minLines = 2,
             maxLines = 4,
             colors = goffyTextFieldColors(),
@@ -1745,6 +1755,9 @@ private fun CommandSurface(
                 Button(
                     onClick = onSubmit,
                     enabled = command.isNotBlank(),
+                    modifier = Modifier.semantics {
+                        contentDescription = "Submit GOFFY command"
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = Acid, contentColor = Void),
                 ) {
                     Text(stringResource(R.string.send_command), fontWeight = FontWeight.Bold)

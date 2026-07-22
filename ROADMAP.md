@@ -177,6 +177,8 @@
 6. Inspectable and deletable user-approved memory
    - [x] Phone-local user-approved memory create/list/forget-all foundation
    - [x] Memory text excluded from persistent terminal audit records
+   - [x] Physical Moto G smoke for approved memory remember/list without
+     destructive forget-all
    - [ ] Per-memory edit and delete controls
    - [ ] User-facing retention policy controls
    - [ ] Hub-visible memory export/import policy
