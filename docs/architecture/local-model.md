@@ -363,6 +363,27 @@ remain optional export-time tools because Google documents Model Maker as the
 path for average-word-vector text classifiers and Task Library integration, but
 those packages are too heavy for GOFFY's normal verifier.
 
+Create the isolated training package from the verified corpus:
+
+```bash
+.venv/bin/python scripts/create_tflite_task_text_training_package.py
+```
+
+The package writes `train.csv` and `dev.csv` with the Model Maker
+`sentence,label` columns, `labels.txt`, a source-policy manifest with file
+hashes, and a generated `train_with_model_maker.py` helper. The helper verifies
+the manifest hashes for `train.csv`, `dev.csv`, and `labels.txt` before
+training, defaults export output under the generated package directory, and
+rejects non-empty export directories to avoid stale model artifacts. It follows
+the official TensorFlow Lite Model Maker `average_word_vec` path because it is
+the documented small text-classifier architecture for `NLClassifier` integration
+and is listed as smaller than 1 MB before GOFFY's own physical-device evidence.
+Run that helper only in an isolated ML environment or Colab; do not add
+TensorFlow, Model Maker, or generated `.tflite` files to the normal GOFFY repo
+environment. The generated README pins `tflite-model-maker==0.4.3` and uses a
+disposable Python 3.10 environment because the normal GOFFY verifier runs on
+Python 3.12 and intentionally does not resolve the Model Maker dependency graph.
+
 After collecting physical Moto benchmark JSON artifacts for the `eval` split,
 create an evidence manifest with schema
 `goffy.tflite-task-text-routing-quality-evidence.v1`:
@@ -400,7 +421,7 @@ be replayed across examples or attributed to a different model.
 
 ## Reuse-First Scan
 
-Checked on 2026-07-20 and refreshed on 2026-07-21:
+Checked on 2026-07-20 and refreshed on 2026-07-22:
 
 - LiteRT-LM: Apache-2.0, current Google AI Edge path for Android/Kotlin local
   LLMs. Preferred runtime candidate after benchmarking because it is the current
@@ -409,6 +430,11 @@ Checked on 2026-07-20 and refreshed on 2026-07-21:
   Apache-2.0 prior art for on-device text classification. Not imported for the
   micro fallback because this slice needs no model asset, training pipeline, or
   added default runtime dependency.
+- TensorFlow Lite Model Maker text classification: Apache-2.0 official
+  export-time path for average-word-vector text classifiers with metadata for
+  Task Library `NLClassifier`. Reused as a generated training package only; not
+  added to the normal GOFFY Python environment because its dependency graph is
+  heavy and the Moto app must stay model-free by default.
 - fastText: MIT, mature lightweight text-classification prior art. Not imported
   into Android because the repository is archived/read-only, would add native
   integration surface, and still requires a trained model artifact.

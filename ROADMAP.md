@@ -116,6 +116,8 @@
 - [x] `modelDebug` TensorFlow Lite Task Text classifier bridge and benchmark harness
 - [x] Seed local intent-router corpus and routing-quality evidence verifier
 - [x] Automated Task Text eval-suite runner and routing-quality manifest writer
+- [x] Model Maker training-package generator for the tiny Task Text router
+- [ ] Train/export first tiny metadata-backed Task Text `.tflite` router
 - [ ] Physical Moto G Task Text classifier benchmark with tiny `.tflite` model
 - [ ] Production acceptance for user-enabled LiteRT-LM observation execution within latency and idle-memory budgets
 
