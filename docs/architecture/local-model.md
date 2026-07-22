@@ -443,6 +443,21 @@ The minimum image audit evidence schema is:
 }
 ```
 
+Create that evidence from a mature scanner output rather than writing a custom
+scanner. GOFFY accepts Trivy or Grype JSON and blocks evidence creation when any
+critical, high, or medium finding is present. The scanner report must also
+include canonical image identity metadata exactly matching the requested
+`repo@sha256:` or `sha256:` digest; GOFFY does not trust caller-supplied image
+names, tags, or arbitrary strings alone:
+
+```bash
+.venv/bin/python scripts/create_tflite_task_text_export_image_audit_evidence.py \
+  --image ghcr.io/goffy/task-text-export@sha256:<audited-image-digest> \
+  --scanner-report /path/to/trivy-or-grype.json \
+  --output /path/to/image-audit.json \
+  --write
+```
+
 Current local export evidence collected on 2026-07-22:
 
 - Training package:

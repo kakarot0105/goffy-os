@@ -509,6 +509,18 @@ Minimum audit evidence shape:
 }}
 ```
 
+Create that evidence from Trivy or Grype JSON. The scanner report must include
+canonical image identity metadata exactly matching the requested `repo@sha256:`
+or `sha256:` digest:
+
+```bash
+.venv/bin/python scripts/create_tflite_task_text_export_image_audit_evidence.py \\
+  --image ghcr.io/goffy/task-text-export@sha256:<audited-image-digest> \\
+  --scanner-report /path/to/trivy-or-grype.json \\
+  --output /path/to/image-audit.json \\
+  --write
+```
+
 Manual isolated fallback, for investigation only:
 
 ```bash

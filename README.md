@@ -122,6 +122,8 @@ the capability boundary.
   an audited immutable image before execution, plus physical Moto eval-suite
   evidence showing the first tiny Task Text candidate loads but fails the
   routing-quality gate
+- Reuse-first Task Text export-image audit evidence generator that consumes
+  Trivy or Grype JSON and blocks critical, high, or medium findings
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
