@@ -455,6 +455,18 @@ files only when they validate cleanly; invalid evidence fails closed in the
 refresh report. A blocked ROM state returns a blocked report instead of top-level
 success even when the refresh artifacts were written correctly.
 
+Then generate the ordered operator checklist from that refresh report:
+
+```bash
+.venv/bin/python scripts/create_rom0_operator_checklist.py
+```
+
+This writes `.goffy-validation/rom-0-operator-checklist.md` and
+`.goffy-validation/rom-0-operator-checklist.json`. The checklist keeps
+destructive actions withheld, orders the remaining human gates, and flags stock
+restore evidence as mandatory before unlock, DSU, flash, or boot decisions can
+advance.
+
 Then generate a local manual-gates template before editing evidence by hand:
 
 ```bash

@@ -143,6 +143,17 @@ missing, the bootloader probe is still locked, or manual bootloader-mode
 fastboot visibility has not been recorded; that is expected and safer than
 claiming success before ROM-0 is ready.
 
+To create an ordered operator checklist from the latest refresh report, run:
+
+```bash
+.venv/bin/python scripts/create_rom0_operator_checklist.py
+```
+
+The checklist is non-destructive. It consumes
+`.goffy-validation/rom-0-refresh-report.json`, writes JSON/Markdown under
+`.goffy-validation`, and explicitly blocks any unlock, DSU, flash, or boot
+decision from advancing before exact stock restore evidence exists.
+
 To regenerate only the manual bootloader visibility guide without rebooting the
 phone, run:
 
