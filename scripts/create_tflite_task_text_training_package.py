@@ -475,7 +475,40 @@ From the GOFFY repo, verify this package and the local training environment:
   --package-dir /path/to/this/generated/package
 ```
 
-Recommended isolated flow:
+Audited Docker export flow from the GOFFY repo:
+
+```bash
+.venv/bin/python scripts/run_tflite_task_text_model_maker_docker.py \\
+  --package-dir /path/to/this/generated/package \\
+  --image ghcr.io/goffy/task-text-export@sha256:<audited-image-digest> \\
+  --image-audit-evidence /path/to/image-audit.json \\
+  --execute \\
+  --confirm-docker-run
+```
+
+The Docker helper fails closed until the export image is immutable
+`@sha256:`-pinned and accompanied by audit evidence reporting zero critical,
+high, or medium findings. The image must contain the required Model Maker export
+stack ahead of time; the runner does not perform live `apt-get` or `pip install`
+during execution. Generated `.tflite` models must not be committed or packaged
+into default GOFFY LITE builds.
+
+Minimum audit evidence shape:
+
+```json
+{{
+  "schema_version": "goffy.tflite-task-text-export-image-audit.v1",
+  "image": "ghcr.io/goffy/task-text-export@sha256:<audited-image-digest>",
+  "ok": true,
+  "vulnerability_counts": {{
+    "critical": 0,
+    "high": 0,
+    "medium": 0
+  }}
+}}
+```
+
+Manual isolated fallback, for investigation only:
 
 ```bash
 python3.10 -m venv /tmp/goffy-model-maker-venv
@@ -485,9 +518,10 @@ cd /path/to/this/generated/package
 python {TRAINING_SCRIPT} --dataset-dir . --export-dir average_word_vec
 ```
 
-Use a disposable Python environment because Model Maker's dependency graph is
-not part of the normal GOFFY Python 3.12 verifier. Do not install TensorFlow or
-Model Maker into the repo venv, and do not commit generated `.tflite` files.
+The manual fallback is not the production-safe path and may fail on macOS arm64
+or current Python versions because Model Maker's legacy dependency graph is not
+part of the normal GOFFY Python 3.12 verifier. Do not install TensorFlow or
+Model Maker into the repo venv.
 The training helper verifies this package's manifest before training, rejects
 non-empty export directories, and keeps exports under the generated package
 directory. After training, run the physical Moto gate from the GOFFY repo:

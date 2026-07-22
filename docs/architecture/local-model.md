@@ -402,6 +402,73 @@ Mac, Python 3.11 failed to resolve `tflite-model-maker==0.4.3` because
 unavailable due to a local Colima disk-lock error. That is tooling evidence, not
 a model-quality decision.
 
+The export path now has a bounded Docker runner contract:
+
+```bash
+.venv/bin/python scripts/run_tflite_task_text_model_maker_docker.py \
+  --package-dir .goffy-validation/tflite-task-text-training-package/<timestamp> \
+  --image ghcr.io/goffy/task-text-export@sha256:<audited-image-digest> \
+  --image-audit-evidence /path/to/image-audit.json \
+  --execute \
+  --confirm-docker-run
+```
+
+The runner verifies the generated package first, checks Docker daemon
+readiness, requires a digest-pinned audited image on `linux/amd64`, requires
+image audit evidence with zero critical/high/medium findings before execution,
+mounts the package read-only, mounts only the selected export directory
+writable, disables container networking, drops capabilities, rejects non-empty
+export directories, and verifies that `model.tflite` matches the generated
+`goffy-training-report.json`. It does not run live `apt-get` or `pip install`
+and does not add TensorFlow, Model Maker, or a model asset to the normal
+repository environment.
+
+The minimum image audit evidence schema is:
+
+```json
+{
+  "schema_version": "goffy.tflite-task-text-export-image-audit.v1",
+  "image": "ghcr.io/goffy/task-text-export@sha256:<audited-image-digest>",
+  "ok": true,
+  "vulnerability_counts": {
+    "critical": 0,
+    "high": 0,
+    "medium": 0
+  }
+}
+```
+
+Current local export evidence collected on 2026-07-22:
+
+- Training package:
+  `.goffy-validation/tflite-task-text-training-package/20260722T085558218908Z`
+- Exported model:
+  `.goffy-validation/tflite-task-text-training-package/20260722T085558218908Z/average_word_vec/model.tflite`
+- SHA-256:
+  `70ad883c6e7b84d8b029a74b6faa15baa9053041ba6e538c3ed61688ce0ae31c`
+- Size: 13,171 bytes
+- One-epoch Model Maker report: loss `1.3863162994384766`, accuracy `0.25`
+
+Native macOS/arm64 remains unsuitable for this pinned Model Maker package
+because `tflite-support>=0.4.2` does not resolve there. Python 3.10 Docker
+binary-only resolution also failed because old `matplotlib<3.5.0` has no wheel
+for that path. The first export was produced through an isolated Linux/amd64
+Python 3.9 Docker run with legacy Model Maker/TensorFlow pins, then security
+review flagged that live dependency installation and `tensorflow==2.8.4` are not
+acceptable as repeatable GOFFY tooling. The committed runner therefore blocks
+execution until an audited immutable export image exists.
+
+Physical Moto G eval-suite evidence collected on 2026-07-22 is stored under
+`.goffy-validation/tflite-task-text-eval-suite/20260722T095857689565Z`. The
+runner built and installed the `modelDebug` classifier APKs, pushed the model to
+app-owned storage, and collected all 16 corpus eval artifacts. The model loaded
+on-device and sample inference stayed small, with `phone_ocr_009` reporting
+54 ms init and 9 ms inference. Routing quality is still blocked: route accuracy
+was `0.000`, required route examples did not produce accepted PHONE/MAC/CLOUD
+candidates at the configured threshold, and UNKNOWN rejection was `1.000`.
+Therefore the generated Task Text model remains benchmark evidence only and is
+not enabled for production routing.
+
 After collecting physical Moto benchmark JSON artifacts for the `eval` split,
 create an evidence manifest with schema
 `goffy.tflite-task-text-routing-quality-evidence.v1`:

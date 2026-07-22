@@ -61,10 +61,11 @@ the capability boundary.
 > `modelDebug` now compiles a Task Text classifier bridge plus a variant-scoped
 > Moto benchmark harness. The seed PHONE/MAC/CLOUD/UNKNOWN router corpus and
 > routing-quality evidence verifier are now in-repo, the Model Maker training
-> package generator creates the tiny-classifier export inputs, and the eval-suite
-> runner can collect one bound artifact per corpus row. Classifier acceptance
-> remains blocked until a trained tiny `.tflite` model produces physical Moto latency,
-> idle-memory, APK-budget, and routing-quality evidence.
+> package generator plus audited-image Docker runner contract cover export of a
+> tiny metadata-backed `.tflite` candidate, and the eval-suite runner collected
+> all 16 physical Moto artifacts for the first manually exported model.
+> Classifier acceptance remains blocked because that tiny model failed the
+> routing-quality gate, so it stays benchmark-only and non-authoritative.
 > Default GOFFY LITE still does not ship or load the LiteRT-LM runtime. Automatic
 > rotation scheduling, Android retrieval for Hub audit, certificate-backed Hub
 > identity proof, trusted LAN operation, bootloader unlock eligibility, stock
@@ -117,6 +118,10 @@ the capability boundary.
   training script without adding TensorFlow to the repo venv
 - Training-environment preflight for the generated package, Python 3.9/3.10
   compatibility, optional pip dry-run, and Docker fallback visibility
+- Bounded, fail-closed Docker Model Maker export runner contract that requires
+  an audited immutable image before execution, plus physical Moto eval-suite
+  evidence showing the first tiny Task Text candidate loads but fails the
+  routing-quality gate
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`

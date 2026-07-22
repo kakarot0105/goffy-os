@@ -118,8 +118,9 @@
 - [x] Automated Task Text eval-suite runner and routing-quality manifest writer
 - [x] Model Maker training-package generator for the tiny Task Text router
 - [x] Training-environment preflight for the generated Task Text package
-- [ ] Train/export first tiny metadata-backed Task Text `.tflite` router
-- [ ] Physical Moto G Task Text classifier benchmark with tiny `.tflite` model
+- [x] Train/export first tiny metadata-backed Task Text `.tflite` router
+- [x] Physical Moto G Task Text classifier benchmark with tiny `.tflite` model
+- [ ] Improve tiny Task Text training until physical Moto eval reaches the routing-quality gate
 - [ ] Production acceptance for user-enabled LiteRT-LM observation execution within latency and idle-memory budgets
 
 ## Milestone 3: MCP core - in progress
