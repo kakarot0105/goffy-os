@@ -169,7 +169,7 @@ def validate_probe_evidence(path: Path | None) -> ReadinessSection:
         blockers.append("ROM probe does not show Treble enabled")
     if treble.get("dynamic_partitions") != "true":
         blockers.append("ROM probe does not show dynamic partitions")
-    if dsu.get("package_installed") != "true":
+    if dsu_package_present(dsu) != "true":
         warnings.append("ROM probe did not confirm DSU package availability")
     evidence = {
         "model": device.get("model", ""),
@@ -428,6 +428,10 @@ def mapping_value(value: object) -> dict[str, str]:
     if not isinstance(value, Mapping):
         return {}
     return {str(key): str(item) for key, item in value.items()}
+
+
+def dsu_package_present(dsu: Mapping[str, str]) -> str:
+    return dsu.get("package_present") or dsu.get("package_installed", "")
 
 
 def string_items(value: object) -> tuple[str, ...]:

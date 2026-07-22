@@ -40,7 +40,7 @@ LOCKED_PROBE = {
     },
     "platform": {"soc_model": "MT6835", "android_release": "16", "sdk": "36"},
     "treble": {"enabled": "true", "dynamic_partitions": "true"},
-    "dsu": {"package_installed": "true"},
+    "dsu": {"package_present": "true", "start_install_resolves": "true"},
     "blockers": ["bootloader is currently locked; do not flash, root, or boot custom images yet"],
 }
 
@@ -57,6 +57,7 @@ def test_locked_probe_packet_withholds_destructive_authority() -> None:
     assert packet.device["hardware_sku"] == "XT2513V"
     assert packet.device["build_fingerprint"].startswith("motorola/kansas_g_sys/kansas")
     assert "hardware_sku: `XT2513V`" in markdown
+    assert "dsu_package_installed: `true`" in markdown
     assert "build_fingerprint: `motorola/kansas_g_sys/kansas" in markdown
     assert "Motorola Software Fix" in markdown
     assert "create_rom_unlock_eligibility_evidence.py" in markdown
@@ -144,6 +145,17 @@ def test_load_probe_json_rejects_unknown_schema(tmp_path: Path) -> None:
         assert "unsupported ROM probe schema" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def test_packet_accepts_legacy_dsu_package_installed_probe_field() -> None:
+    probe = {
+        **LOCKED_PROBE,
+        "dsu": {"package_installed": "true"},
+    }
+
+    packet = build_packet(probe)
+
+    assert packet.device["dsu_package_installed"] == "true"
 
 
 def test_cli_writes_only_under_validation_dir(

@@ -349,7 +349,7 @@ def compact_device(probe: Mapping[str, Any]) -> dict[str, str]:
         "vbmeta_device_state": boot.get("vbmeta_device_state", ""),
         "treble_enabled": treble.get("enabled", ""),
         "dynamic_partitions": treble.get("dynamic_partitions", ""),
-        "dsu_package_installed": dsu.get("package_installed", ""),
+        "dsu_package_installed": dsu_package_present(dsu),
     }
 
 
@@ -357,6 +357,10 @@ def mapping_value(value: object) -> dict[str, str]:
     if not isinstance(value, Mapping):
         return {}
     return {str(key): str(item) for key, item in value.items()}
+
+
+def dsu_package_present(dsu: Mapping[str, str]) -> str:
+    return dsu.get("package_present") or dsu.get("package_installed", "")
 
 
 def assert_no_destructive_authority(packet: Rom0ManualActionPacket) -> None:

@@ -148,6 +148,62 @@ def test_rom0_readiness_blocks_incomplete_probe_target_identity(tmp_path: Path) 
     )
 
 
+def test_rom0_readiness_accepts_legacy_dsu_package_installed_probe_field(
+    tmp_path: Path,
+) -> None:
+    probe = write_probe(tmp_path)
+    payload = json.loads(probe.read_text(encoding="utf-8"))
+    payload["dsu"] = {"package_installed": "true"}
+    probe.write_text(json.dumps(payload), encoding="utf-8")
+    rollback_doc = write_rollback_doc(tmp_path)
+    manual = write_manual_gates(tmp_path, rollback_doc)
+    apk = write_signed_apk(tmp_path)
+
+    report = build_readiness_report(
+        probe_json=probe,
+        manual_gates_json=manual,
+        signed_apk=apk,
+        aosp_root=tmp_path / "aosp",
+        evidence_root=tmp_path,
+    )
+
+    assert (
+        "ROM probe did not confirm DSU package availability"
+        not in section(
+            report,
+            "rom_probe",
+        ).warnings
+    )
+
+
+def test_rom0_readiness_warns_when_current_dsu_probe_field_is_false(
+    tmp_path: Path,
+) -> None:
+    probe = write_probe(tmp_path)
+    payload = json.loads(probe.read_text(encoding="utf-8"))
+    payload["dsu"] = {"package_present": "false"}
+    probe.write_text(json.dumps(payload), encoding="utf-8")
+    rollback_doc = write_rollback_doc(tmp_path)
+    manual = write_manual_gates(tmp_path, rollback_doc)
+    apk = write_signed_apk(tmp_path)
+
+    report = build_readiness_report(
+        probe_json=probe,
+        manual_gates_json=manual,
+        signed_apk=apk,
+        aosp_root=tmp_path / "aosp",
+        evidence_root=tmp_path,
+    )
+
+    assert (
+        "ROM probe did not confirm DSU package availability"
+        in section(
+            report,
+            "rom_probe",
+        ).warnings
+    )
+
+
 def test_rom0_readiness_blocks_manual_gate_target_mismatch(tmp_path: Path) -> None:
     probe = write_probe(tmp_path)
     rollback_doc = write_rollback_doc(tmp_path)
@@ -337,7 +393,7 @@ def write_probe(tmp_path: Path, *, unlocked: bool = True) -> Path:
                     "vbmeta_device_state": "unlocked" if unlocked else "locked",
                 },
                 "treble": {"enabled": "true", "dynamic_partitions": "true"},
-                "dsu": {"package_installed": "true"},
+                "dsu": {"package_present": "true"},
                 "properties": {"ro.build.fingerprint": BUILD_FINGERPRINT},
                 "rom_path": "GSI_OR_DSU_FIRST",
                 "blockers": [],
