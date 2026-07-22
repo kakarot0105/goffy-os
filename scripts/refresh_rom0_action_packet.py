@@ -25,6 +25,16 @@ from scripts.create_rom0_manual_action_packet import render_json as render_packe
 from scripts.create_rom0_manual_action_packet import (  # noqa: E402
     render_markdown as render_packet_markdown,
 )
+from scripts.create_rom_bootloader_visibility_guide import (  # noqa: E402
+    build_visibility_guide,
+    redact_message,
+)
+from scripts.create_rom_bootloader_visibility_guide import (  # noqa: E402
+    render_json as render_guide_json,
+)
+from scripts.create_rom_bootloader_visibility_guide import (  # noqa: E402
+    render_markdown as render_guide_markdown,
+)
 from scripts.create_rom_manual_gates_template import load_stock_restore_evidence  # noqa: E402
 from scripts.create_rom_stock_restore_evidence import write_output  # noqa: E402
 from scripts.create_rom_unlock_eligibility_evidence import (  # noqa: E402
@@ -35,12 +45,14 @@ from scripts.run_moto_g_device_smoke import (  # noqa: E402
     default_command_runner,
 )
 
-JSON_SCHEMA_VERSION = "goffy.rom0-refresh-report.v1"
+JSON_SCHEMA_VERSION = "goffy.rom0-refresh-report.v2"
 VALIDATION_DIR = Path(".goffy-validation")
 PROBE_FILENAME = "rom-feasibility-current.json"
 PACKET_MARKDOWN_FILENAME = "rom-0-manual-action-packet.md"
 PACKET_JSON_FILENAME = "rom-0-manual-action-packet.json"
 REFRESH_REPORT_FILENAME = "rom-0-refresh-report.json"
+BOOTLOADER_GUIDE_MARKDOWN_FILENAME = "rom-bootloader-visibility-guide.md"
+BOOTLOADER_GUIDE_JSON_FILENAME = "rom-bootloader-visibility-guide.json"
 UNLOCK_EVIDENCE_FILENAME = "rom-unlock-eligibility-evidence.json"
 STOCK_EVIDENCE_FILENAME = "rom-stock-restore-evidence.json"
 GSI_EVIDENCE_FILENAME = "rom-gsi-candidate-evidence.json"
@@ -79,8 +91,11 @@ class Rom0RefreshReport:
     probe_json: str
     packet_markdown: str
     packet_json: str
+    bootloader_guide_markdown: str
+    bootloader_guide_json: str
     refresh_report_json: str
     packet_status: str
+    bootloader_visibility_status: str
     blocked_by: tuple[str, ...]
     evidence_inputs: tuple[EvidenceInput, ...]
     errors: tuple[str, ...]
@@ -135,6 +150,7 @@ def refresh_rom0_action_packet(
         load_fastboot_evidence,
         root=root,
     )
+    bootloader_guide_input = generate_bootloader_visibility_guide(paths, root=root)
     packet = build_packet(
         asdict(probe_report),
         unlock_eligibility=unlock,
@@ -153,7 +169,13 @@ def refresh_rom0_action_packet(
         root=root,
     )
 
-    evidence_inputs = (unlock_input, stock_input, gsi_input, fastboot_input)
+    evidence_inputs = (
+        unlock_input,
+        stock_input,
+        gsi_input,
+        fastboot_input,
+        bootloader_guide_input,
+    )
     errors = tuple(
         f"{item.name}: {item.detail}"
         for item in evidence_inputs
@@ -161,8 +183,9 @@ def refresh_rom0_action_packet(
     )
     if not probe_report.device:
         errors = (*errors, "ROM feasibility probe did not capture a connected device")
-    rom_ready = packet.status is PacketStatus.READY_FOR_ROM0_READINESS_REVIEW
     refresh_succeeded = not errors
+    packet_ready = packet.status is PacketStatus.READY_FOR_ROM0_READINESS_REVIEW
+    rom_ready = refresh_succeeded and packet_ready
     report = Rom0RefreshReport(
         schema_version=JSON_SCHEMA_VERSION,
         generated_at=datetime.now(UTC).isoformat(),
@@ -174,8 +197,11 @@ def refresh_rom0_action_packet(
         probe_json=display_path(paths["probe_json"]),
         packet_markdown=display_path(paths["packet_markdown"]),
         packet_json=display_path(paths["packet_json"]),
+        bootloader_guide_markdown=display_path(paths["bootloader_guide_markdown"]),
+        bootloader_guide_json=display_path(paths["bootloader_guide_json"]),
         refresh_report_json=display_path(paths["refresh_report"]),
         packet_status=str(packet.status),
+        bootloader_visibility_status=bootloader_status_from_input(bootloader_guide_input),
         blocked_by=packet.blocked_by,
         evidence_inputs=evidence_inputs,
         errors=errors,
@@ -194,6 +220,8 @@ def output_paths(validation_dir: Path) -> dict[str, Path]:
         "packet_markdown": validation_dir / PACKET_MARKDOWN_FILENAME,
         "packet_json": validation_dir / PACKET_JSON_FILENAME,
         "refresh_report": validation_dir / REFRESH_REPORT_FILENAME,
+        "bootloader_guide_markdown": validation_dir / BOOTLOADER_GUIDE_MARKDOWN_FILENAME,
+        "bootloader_guide_json": validation_dir / BOOTLOADER_GUIDE_JSON_FILENAME,
         "unlock_evidence": validation_dir / UNLOCK_EVIDENCE_FILENAME,
         "stock_evidence": validation_dir / STOCK_EVIDENCE_FILENAME,
         "gsi_evidence": validation_dir / GSI_EVIDENCE_FILENAME,
@@ -216,7 +244,7 @@ def load_optional_evidence(
             name=name,
             path=display,
             status=EvidenceStatus.INVALID,
-            detail=str(exc),
+            detail=redact_message(str(exc)),
         )
     if resolved is None:
         return None, EvidenceInput(
@@ -232,7 +260,7 @@ def load_optional_evidence(
             name=name,
             path=display,
             status=EvidenceStatus.INVALID,
-            detail=str(exc),
+            detail=redact_message(str(exc)),
         )
     return evidence, EvidenceInput(
         name=name,
@@ -240,6 +268,44 @@ def load_optional_evidence(
         status=EvidenceStatus.LOADED,
         detail="validated and consumed",
     )
+
+
+def generate_bootloader_visibility_guide(
+    paths: Mapping[str, Path],
+    *,
+    root: Path,
+) -> EvidenceInput:
+    json_output = paths["bootloader_guide_json"]
+    markdown_output = paths["bootloader_guide_markdown"]
+    try:
+        guide = build_visibility_guide(
+            fastboot_evidence_json=paths["fastboot_evidence"],
+            root=root,
+        )
+        write_validation_file(json_output, render_guide_json(guide), root=root)
+        write_validation_file(markdown_output, render_guide_markdown(guide), root=root)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return EvidenceInput(
+            name="bootloader_visibility_guide",
+            path=display_path(json_output),
+            status=EvidenceStatus.INVALID,
+            detail=redact_message(str(exc)),
+        )
+    return EvidenceInput(
+        name="bootloader_visibility_guide",
+        path=display_path(json_output),
+        status=EvidenceStatus.LOADED,
+        detail=f"generated: {guide.status.value}",
+    )
+
+
+def bootloader_status_from_input(evidence_input: EvidenceInput) -> str:
+    if evidence_input.status is not EvidenceStatus.LOADED:
+        return evidence_input.status.value
+    prefix = "generated: "
+    if evidence_input.detail.startswith(prefix):
+        return evidence_input.detail.removeprefix(prefix)
+    return evidence_input.detail
 
 
 def write_validation_file(path: Path, text: str, *, root: Path) -> None:
@@ -312,7 +378,10 @@ def render_text(report: Rom0RefreshReport) -> str:
         f"- probe: {report.probe_json}",
         f"- packet markdown: {report.packet_markdown}",
         f"- packet json: {report.packet_json}",
+        f"- bootloader guide markdown: {report.bootloader_guide_markdown}",
+        f"- bootloader guide json: {report.bootloader_guide_json}",
         f"- refresh report: {report.refresh_report_json}",
+        f"bootloader visibility: {report.bootloader_visibility_status}",
         "evidence inputs:",
     ]
     lines.extend(f"- {item.name}: {item.status} ({item.detail})" for item in report.evidence_inputs)

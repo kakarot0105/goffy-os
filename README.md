@@ -448,6 +448,8 @@ unlock, flash, erase, or reboot commands:
 This writes `.goffy-validation/rom-feasibility-current.json`,
 `.goffy-validation/rom-0-manual-action-packet.md`,
 `.goffy-validation/rom-0-manual-action-packet.json`, and
+`.goffy-validation/rom-bootloader-visibility-guide.md`,
+`.goffy-validation/rom-bootloader-visibility-guide.json`, and
 `.goffy-validation/rom-0-refresh-report.json`. It consumes existing evidence
 files only when they validate cleanly; invalid evidence fails closed in the
 refresh report. A blocked ROM state returns a blocked report instead of top-level
@@ -466,13 +468,15 @@ Then generate a local manual-gates template before editing evidence by hand:
 Both files stay under `.goffy-validation`, default to blocked values, and do not
 authorize unlock, flash, erase, root, or boot-image changes.
 
-Generate the manual bootloader visibility guide first. It writes JSON/Markdown
-under `.goffy-validation`, explains the physical-phone step, and still blocks
-ROM readiness until visibility is actually recorded:
+The refresh command generates the manual bootloader visibility guide as part of
+the packet. To regenerate only that guide, run:
 
 ```bash
 .venv/bin/python scripts/create_rom_bootloader_visibility_guide.py
 ```
+
+The guide explains the physical-phone bootloader step and still blocks ROM
+readiness until visibility is actually recorded.
 
 To record host fastboot readiness without changing phone state:
 

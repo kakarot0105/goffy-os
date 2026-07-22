@@ -136,14 +136,15 @@ next?" packet for the human checks, run:
 The packet is read-only/template-only. It summarizes missing OEM/Motorola
 unlock eligibility, stock-restore evidence, read-only fastboot evidence, and
 official GSI candidate evidence, links those actions to the typed GOFFY evidence
-helpers, redacts the device
+helpers, regenerates the manual bootloader visibility guide, redacts the device
 serial placeholder, and rejects any unlock, flash, erase, or bootloader-reboot
 command authority. The refresh command reports `BLOCKED` while ROM gates are
-missing or the bootloader probe is still locked; that is expected and safer than
+missing, the bootloader probe is still locked, or manual bootloader-mode
+fastboot visibility has not been recorded; that is expected and safer than
 claiming success before ROM-0 is ready.
 
-To generate the manual bootloader visibility guide without rebooting the phone,
-run:
+To regenerate only the manual bootloader visibility guide without rebooting the
+phone, run:
 
 ```bash
 .venv/bin/python scripts/create_rom_bootloader_visibility_guide.py
