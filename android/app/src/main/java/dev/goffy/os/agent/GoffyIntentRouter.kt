@@ -25,13 +25,18 @@ import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_ALL_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
+import dev.goffy.os.protocol.PhoneMemoryRememberArguments
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.ToolArguments
+import dev.goffy.os.protocol.matchesMemoryTextContract
 import dev.goffy.os.protocol.matchesNoteTextContract
 import java.util.Locale
 
@@ -104,6 +109,20 @@ object GoffyIntentRouter {
         pattern = "^(?:create|make)(?: me)? a note (?:saying|that says)\\s+",
         option = RegexOption.IGNORE_CASE,
     )
+    private val memoryRememberPrefix = Regex(
+        pattern = "^(?:remember|save to memory) (?:that\\s+)?",
+        option = RegexOption.IGNORE_CASE,
+    )
+    private val memoryListCommands = setOf(
+        "what do you remember",
+        "show my memories",
+        "list my memories",
+    )
+    private val memoryForgetAllCommands = setOf(
+        "forget all memories",
+        "clear all memories",
+        "delete all memories",
+    )
     private val timerCreateCommand = Regex(
         pattern = "^(?:set|start|create)(?: me)? a timer for ([0-9]+) " +
             "(second|seconds|minute|minutes|hour|hours)[.!?]?$",
@@ -119,6 +138,7 @@ object GoffyIntentRouter {
         command: String,
         localModelFallback: LocalModelIntentFallback = DisabledLocalModelIntentFallback,
     ): RoutingDecision {
+        memoryRememberPlan(command)?.let { return RoutingDecision.Routed(it) }
         noteCreatePlan(command)?.let { return RoutingDecision.Routed(it) }
         val normalized = command.trim().replace(whitespace, " ")
         val plan = when {
@@ -133,6 +153,8 @@ object GoffyIntentRouter {
             normalized.lowercase(Locale.US) in macClipboardReadCommands -> macClipboardReadPlan(normalized)
             batteryStatusCommand.matches(normalized) -> batteryStatusPlan(normalized)
             deviceInfoCommand.matches(normalized) -> deviceInfoPlan(normalized)
+            normalized.lowercase(Locale.US) in memoryListCommands -> memoryListPlan(normalized)
+            normalized.lowercase(Locale.US) in memoryForgetAllCommands -> memoryForgetAllPlan(normalized)
             flashlightSetCommand.matches(normalized) -> flashlightSetPlan(normalized)
             timerCreateCommand.matches(normalized) -> timerCreatePlan(normalized)
                 ?: return unsupported(normalized, localModelFallback)
@@ -173,6 +195,49 @@ object GoffyIntentRouter {
             arguments = PhoneNoteCreateArguments(text),
         )
     }
+
+    private fun memoryRememberPlan(command: String): GoffyExecutionPlan? {
+        val trimmed = command.trim()
+        val prefix = memoryRememberPrefix.find(trimmed) ?: return null
+        val text = trimmed.substring(prefix.range.last + 1).trim()
+        if (!text.matchesMemoryTextContract()) return null
+        return GoffyExecutionPlan(
+            command = trimmed,
+            executionTarget = ExecutionTarget.PHONE,
+            toolName = PHONE_MEMORY_REMEMBER_TOOL,
+            permission = phonePermission(PHONE_MEMORY_REMEMBER_TOOL),
+            successCriteria = listOf(
+                "The exact approved memory text is stored in app-private storage",
+                "The stored row is re-read with user-approved provenance",
+                "The memory remains inspectable and deletable from local phone tools",
+            ),
+            arguments = PhoneMemoryRememberArguments(text),
+        )
+    }
+
+    private fun memoryListPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = command,
+        executionTarget = ExecutionTarget.PHONE,
+        toolName = PHONE_MEMORY_LIST_TOOL,
+        permission = phonePermission(PHONE_MEMORY_LIST_TOOL),
+        successCriteria = listOf(
+            "GOFFY reads only app-private user-approved memories",
+            "The result is bounded and indicates whether it was truncated",
+            "Each returned memory includes inspectable provenance",
+        ),
+    )
+
+    private fun memoryForgetAllPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = command,
+        executionTarget = ExecutionTarget.PHONE,
+        toolName = PHONE_MEMORY_FORGET_ALL_TOOL,
+        permission = phonePermission(PHONE_MEMORY_FORGET_ALL_TOOL),
+        successCriteria = listOf(
+            "GOFFY deletes only app-private user-approved memories after approval",
+            "The delete count is captured",
+            "The remaining memory count is verified as zero",
+        ),
+    )
 
     private fun timerCreatePlan(command: String): GoffyExecutionPlan? {
         val match = timerCreateCommand.matchEntire(command) ?: return null

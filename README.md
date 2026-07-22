@@ -12,7 +12,7 @@ the capability boundary.
 > repo now treats ROM/GSI feasibility for the exact Moto G 2025 `kansas` target
 > as the primary product track, with the launcher/app layer kept for safe
 > validation and fallback. The current repo implements five
-> offline PHONE actions, discovery-gated SAFE Mac status/process/file-list actions, an
+> offline PHONE actions, user-approved local PHONE memory, discovery-gated SAFE Mac status/process/file-list actions, an
 > approved-repo SAFE Git status MCP tool, an opt-in SAFE Mac clipboard-read MCP
 > tool, an official MCP
 > Streamable HTTP boundary, stable Hub paired-device credentials, Keystore-backed
@@ -67,6 +67,9 @@ the capability boundary.
 - Permission-free, allowlisted `SAFE phone.battery.status` execution
 - Privacy-minimized, offline `SAFE phone.device.info` execution
 - Approval-gated `CONFIRM phone.note.create` with app-private SQLite persistence
+- Approval-gated `CONFIRM phone.memory.remember`, bounded `SAFE phone.memory.list`,
+  and approval-gated destructive `CONFIRM phone.memory.forget_all` in app-private
+  SQLite with inspectable provenance
 - Approval-gated `CONFIRM phone.timer.create` through an allowlisted system Clock
 - Approval-gated `CONFIRM phone.flashlight.set` with CameraManager callback verification
 - Immutable, bounded PHONE capability registry with MCP-shaped closed schemas

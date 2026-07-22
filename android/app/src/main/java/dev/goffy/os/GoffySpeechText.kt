@@ -13,6 +13,9 @@ import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PhoneFlashlightState
+import dev.goffy.os.protocol.PhoneMemoryForgotten
+import dev.goffy.os.protocol.PhoneMemoryList
+import dev.goffy.os.protocol.PhoneMemoryRemembered
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PhoneOcrRead
 import dev.goffy.os.protocol.PhoneQrRead
@@ -66,6 +69,12 @@ private fun ToolResultContent.speakableText(verified: Boolean): String =
         is PhoneDeviceInfo -> deviceInfoSpeech()
         is PhoneFlashlightState ->
             "Flashlight is ${if (enabled) "on" else "off"}. State ${if (verified) "verified" else "observed"}."
+        is PhoneMemoryForgotten ->
+            "Deleted $deletedCount local memories. Remaining count is $remainingCount."
+        is PhoneMemoryList ->
+            "Local memory returned ${entries.size} entries out of $count. I will not read memory text aloud."
+        is PhoneMemoryRemembered ->
+            "Local memory $memoryId was stored with approved provenance. I will not read the memory text aloud."
         is PhoneNoteCreated -> noteCreatedSpeech(verified)
         is PhoneOcrRead ->
             "OCR read $lineCount lines. " +

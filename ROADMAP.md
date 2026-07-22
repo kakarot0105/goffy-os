@@ -175,6 +175,11 @@
      over WebSocket
    - [ ] Hardware-attested or per-use user-authenticated Android approval keys
 6. Inspectable and deletable user-approved memory
+   - [x] Phone-local user-approved memory create/list/forget-all foundation
+   - [x] Memory text excluded from persistent terminal audit records
+   - [ ] Per-memory edit and delete controls
+   - [ ] User-facing retention policy controls
+   - [ ] Hub-visible memory export/import policy
 7. Polished, accessible, battery-aware GOFFY UI
    - [x] Jarvis-style home/ROM UX design contract
      (`docs/architecture/goffy-os-design.md`)

@@ -12,6 +12,9 @@ EXPECTED_PERMISSIONS = {
     "phone.battery.status": PermissionLevel.SAFE,
     "phone.device.info": PermissionLevel.SAFE,
     "phone.flashlight.set": PermissionLevel.CONFIRM,
+    "phone.memory.forget_all": PermissionLevel.CONFIRM,
+    "phone.memory.list": PermissionLevel.SAFE,
+    "phone.memory.remember": PermissionLevel.CONFIRM,
     "phone.note.create": PermissionLevel.CONFIRM,
     "phone.ocr.read": PermissionLevel.SAFE,
     "phone.qr.read": PermissionLevel.SAFE,
@@ -28,7 +31,9 @@ def test_phone_capability_fixture_is_typed_sorted_and_permission_preserving() ->
     for capability in capabilities:
         assert capability.meta.execution_target is ExecutionTarget.PHONE
         assert capability.meta.permission is EXPECTED_PERMISSIONS[capability.name]
-        assert capability.annotations.destructive_hint is False
+        assert capability.annotations.destructive_hint is (
+            capability.name == "phone.memory.forget_all"
+        )
         assert capability.annotations.open_world_hint is False
         if capability.meta.permission is PermissionLevel.SAFE:
             assert capability.annotations.read_only_hint is True
@@ -66,6 +71,35 @@ def test_phone_capability_schemas_accept_canonical_examples() -> None:
         "phone.note.create": (
             {"text": "Buy milk"},
             {"noteId": 1, "text": "Buy milk", "createdAtEpochMillis": 1},
+        ),
+        "phone.memory.forget_all": (
+            {},
+            {"deletedCount": 1, "remainingCount": 0},
+        ),
+        "phone.memory.list": (
+            {},
+            {
+                "status": "available",
+                "count": 1,
+                "truncated": False,
+                "entries": [
+                    {
+                        "memoryId": 1,
+                        "text": "favorite project is GOFFY",
+                        "createdAtEpochMillis": 1,
+                        "provenance": "user_approved_phone_command",
+                    }
+                ],
+            },
+        ),
+        "phone.memory.remember": (
+            {"text": "favorite project is GOFFY"},
+            {
+                "memoryId": 1,
+                "text": "favorite project is GOFFY",
+                "createdAtEpochMillis": 1,
+                "provenance": "user_approved_phone_command",
+            },
         ),
         "phone.ocr.read": (
             {},

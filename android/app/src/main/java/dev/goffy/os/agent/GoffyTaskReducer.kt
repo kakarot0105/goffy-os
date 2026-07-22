@@ -24,6 +24,12 @@ import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
 import dev.goffy.os.protocol.PhoneFlashlightState
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_ALL_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
+import dev.goffy.os.protocol.PhoneMemoryForgotten
+import dev.goffy.os.protocol.PhoneMemoryList
+import dev.goffy.os.protocol.PhoneMemoryRemembered
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneOcrRead
@@ -544,6 +550,20 @@ data class TaskTimelineState(
             approvalGranted &&
             content is PhoneNoteCreated &&
             content.matchesToolContract()
+        PHONE_MEMORY_REMEMBER_TOOL -> executionTarget == ExecutionTarget.PHONE &&
+            permission == PermissionLevel.CONFIRM &&
+            approvalGranted &&
+            content is PhoneMemoryRemembered &&
+            content.matchesToolContract()
+        PHONE_MEMORY_LIST_TOOL -> executionTarget == ExecutionTarget.PHONE &&
+            permission == PermissionLevel.SAFE &&
+            content is PhoneMemoryList &&
+            content.matchesToolContract()
+        PHONE_MEMORY_FORGET_ALL_TOOL -> executionTarget == ExecutionTarget.PHONE &&
+            permission == PermissionLevel.CONFIRM &&
+            approvalGranted &&
+            content is PhoneMemoryForgotten &&
+            content.matchesToolContract()
         PHONE_OCR_READ_TOOL -> executionTarget == ExecutionTarget.PHONE &&
             permission == PermissionLevel.SAFE &&
             content is PhoneOcrRead &&
@@ -655,11 +675,21 @@ private fun ToolResultContent.summaryText(): String = when (this) {
     is PhoneFlashlightState ->
         "Flashlight ${if (enabled) "on" else "off"}; state observed" +
             if (stateChanged) " after state change" else " (already requested state)"
+    is PhoneMemoryForgotten -> "Deleted $deletedCount local memories; $remainingCount remain"
+    is PhoneMemoryList -> memoryListSummary()
+    is PhoneMemoryRemembered -> "Memory #$memoryId stored with approved provenance"
     is PhoneNoteCreated -> "Note #$noteId stored: $text"
     is PhoneOcrRead -> ocrReadSummary()
     is PhoneQrRead -> qrReadSummary()
     is PhoneTimerDispatched -> "Timer intent for $durationSeconds seconds dispatched to $clockPackage"
 }
+
+private fun PhoneMemoryList.memoryListSummary(): String =
+    if (count == 0) {
+        "No local memories stored"
+    } else {
+        "Read ${entries.size} of $count local memories" + if (truncated) " (truncated)" else ""
+    }
 
 private fun PhoneOcrRead.ocrReadSummary(): String =
     if (redacted) {

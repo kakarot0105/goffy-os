@@ -49,6 +49,7 @@ import dev.goffy.os.ocr.OcrTextSummarizer
 import dev.goffy.os.phone.AndroidBatteryStatusSource
 import dev.goffy.os.phone.AndroidDeviceInfoSource
 import dev.goffy.os.phone.AndroidFlashlightSource
+import dev.goffy.os.phone.AndroidSqliteMemoryStore
 import dev.goffy.os.phone.AndroidSqliteNoteStore
 import dev.goffy.os.phone.AndroidSystemTimerSource
 import dev.goffy.os.phone.DefaultPhoneToolGateway
@@ -60,6 +61,8 @@ import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.MacAppsOpenArguments
 import dev.goffy.os.protocol.NoToolArguments
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_ALL_TOOL
+import dev.goffy.os.protocol.PhoneMemoryRememberArguments
 import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
@@ -137,6 +140,7 @@ class GoffyViewModel internal constructor(
             noteStore = AndroidSqliteNoteStore(dependencies.context),
             timerSource = AndroidSystemTimerSource(dependencies.context),
             flashlightSource = AndroidFlashlightSource(dependencies.context),
+            memoryStore = AndroidSqliteMemoryStore(dependencies.context),
         ),
         codec = GoffyProtocolCodec(),
         allowInsecureLoopback = BuildConfig.DEBUG,
@@ -1153,19 +1157,26 @@ class GoffyViewModel internal constructor(
         }
     }
 
-    private fun GoffyExecutionPlan.approvalDescription(): String? = when (val value = arguments) {
-        is PhoneNoteCreateArguments ->
-            "Approve creating this private note: ${value.text.take(APPROVAL_PREVIEW_LENGTH)}"
-        is PhoneTimerCreateArguments ->
-            "Approve requesting a ${value.durationSeconds.displayDuration()} system Clock timer. " +
-                "GOFFY will request no second Clock confirmation screen."
-        is PhoneFlashlightSetArguments ->
-            "Approve turning ${if (value.enabled) "on" else "off"} the back-camera flashlight. " +
-                "GOFFY will not open the camera or capture images."
-        is MacAppsOpenArguments ->
-            "Approve opening ${value.displayName.take(APPROVAL_PREVIEW_LENGTH)} on your Mac. " +
-                "GOFFY will use only an approved bundle identifier and will not open files."
-        else -> null
+    private fun GoffyExecutionPlan.approvalDescription(): String? {
+        if (toolName == PHONE_MEMORY_FORGET_ALL_TOOL) {
+            return "Approve deleting all local GOFFY memories from this phone."
+        }
+        return when (val value = arguments) {
+            is PhoneMemoryRememberArguments ->
+                "Approve remembering this locally: ${value.text.take(APPROVAL_PREVIEW_LENGTH)}"
+            is PhoneNoteCreateArguments ->
+                "Approve creating this private note: ${value.text.take(APPROVAL_PREVIEW_LENGTH)}"
+            is PhoneTimerCreateArguments ->
+                "Approve requesting a ${value.durationSeconds.displayDuration()} system Clock timer. " +
+                    "GOFFY will request no second Clock confirmation screen."
+            is PhoneFlashlightSetArguments ->
+                "Approve turning ${if (value.enabled) "on" else "off"} the back-camera flashlight. " +
+                    "GOFFY will not open the camera or capture images."
+            is MacAppsOpenArguments ->
+                "Approve opening ${value.displayName.take(APPROVAL_PREVIEW_LENGTH)} on your Mac. " +
+                    "GOFFY will use only an approved bundle identifier and will not open files."
+            else -> null
+        }
     }
 
     private fun refreshLocalModelStatus() {

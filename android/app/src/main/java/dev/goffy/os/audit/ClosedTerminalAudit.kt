@@ -17,6 +17,9 @@ import dev.goffy.os.protocol.MAC_SYSTEM_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_ALL_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
@@ -241,6 +244,9 @@ private fun String?.displayCommand(): String = when (this) {
     PHONE_BATTERY_STATUS_TOOL -> "Recorded battery status task"
     PHONE_DEVICE_INFO_TOOL -> "Recorded device info task"
     PHONE_FLASHLIGHT_SET_TOOL -> "Recorded flashlight action task"
+    PHONE_MEMORY_FORGET_ALL_TOOL -> "Recorded memory deletion task"
+    PHONE_MEMORY_LIST_TOOL -> "Recorded memory inspection task"
+    PHONE_MEMORY_REMEMBER_TOOL -> "Recorded memory write task"
     PHONE_NOTE_CREATE_TOOL -> "Recorded private note task"
     PHONE_OCR_READ_TOOL -> "Recorded OCR read task"
     PHONE_QR_READ_TOOL -> "Recorded QR read task"
@@ -268,6 +274,9 @@ private val AUDIT_CAPABILITY_CONTRACTS = mapOf(
     PHONE_BATTERY_STATUS_TOOL to (ExecutionTarget.PHONE to AuditPermission.SAFE),
     PHONE_DEVICE_INFO_TOOL to (ExecutionTarget.PHONE to AuditPermission.SAFE),
     PHONE_FLASHLIGHT_SET_TOOL to (ExecutionTarget.PHONE to AuditPermission.CONFIRM),
+    PHONE_MEMORY_FORGET_ALL_TOOL to (ExecutionTarget.PHONE to AuditPermission.CONFIRM),
+    PHONE_MEMORY_LIST_TOOL to (ExecutionTarget.PHONE to AuditPermission.SAFE),
+    PHONE_MEMORY_REMEMBER_TOOL to (ExecutionTarget.PHONE to AuditPermission.CONFIRM),
     PHONE_NOTE_CREATE_TOOL to (ExecutionTarget.PHONE to AuditPermission.CONFIRM),
     PHONE_OCR_READ_TOOL to (ExecutionTarget.PHONE to AuditPermission.SAFE),
     PHONE_QR_READ_TOOL to (ExecutionTarget.PHONE to AuditPermission.SAFE),

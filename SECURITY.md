@@ -260,8 +260,14 @@ include real credentials or unrelated personal data.
   source, PHONE/MAC target, allowlisted tool or `null`, SAFE/CONFIRM permission
   or `null`, terminal phase, approval outcome, and bounded event kinds.
 - The Android audit never stores raw command text, typed arguments, note text,
-  row IDs, tool result data, device info, approval text, event messages, endpoint
-  or token values, free-form summaries, or verification checks.
+  memory text, row IDs, tool result data, device info, approval text, event
+  messages, endpoint or token values, free-form summaries, or verification
+  checks.
+- Android local memory is app-private, bounded to the newest 100 rows, and
+  created only through an explicit `CONFIRM phone.memory.remember` approval.
+  `SAFE phone.memory.list` is bounded to 20 returned rows with provenance, while
+  `CONFIRM phone.memory.forget_all` is the only destructive memory path and
+  verifies the remaining row count is zero.
 - Restored audit entries are display-only, result-free terminal cards. They
   cannot recreate a pending approval, active task, structured result, or
   execution authority.

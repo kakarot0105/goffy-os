@@ -164,6 +164,10 @@ data class PhoneNoteCreateArguments(
     val text: String,
 ) : ToolArguments
 
+data class PhoneMemoryRememberArguments(
+    val text: String,
+) : ToolArguments
+
 data class PhoneTimerCreateArguments(
     val durationSeconds: Int,
     val skipClockUi: Boolean,
@@ -342,6 +346,32 @@ data class PhoneNoteCreated(
     val noteId: Long,
     val text: String,
     val createdAtEpochMillis: Long,
+) : ToolResultContent
+
+data class PhoneMemoryRemembered(
+    val memoryId: Long,
+    val text: String,
+    val createdAtEpochMillis: Long,
+    val provenance: String,
+) : ToolResultContent
+
+data class PhoneMemoryEntry(
+    val memoryId: Long,
+    val text: String,
+    val createdAtEpochMillis: Long,
+    val provenance: String,
+)
+
+data class PhoneMemoryList(
+    val status: String,
+    val count: Int,
+    val truncated: Boolean,
+    val entries: List<PhoneMemoryEntry>,
+) : ToolResultContent
+
+data class PhoneMemoryForgotten(
+    val deletedCount: Int,
+    val remainingCount: Int,
 ) : ToolResultContent
 
 data class PhoneTimerDispatched(

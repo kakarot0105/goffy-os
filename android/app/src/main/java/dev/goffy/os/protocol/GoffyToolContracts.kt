@@ -225,6 +225,33 @@ fun PhoneNoteCreated.matchesToolContract(): Boolean =
         text.matchesNoteTextContract() &&
         createdAtEpochMillis > 0
 
+fun PhoneMemoryRememberArguments.matchesToolContract(): Boolean =
+    text.matchesMemoryTextContract()
+
+fun PhoneMemoryRemembered.matchesToolContract(): Boolean =
+    memoryId > 0 &&
+        text.matchesMemoryTextContract() &&
+        createdAtEpochMillis > 0 &&
+        provenance.matchesMemoryProvenanceContract()
+
+fun PhoneMemoryEntry.matchesToolContract(): Boolean =
+    memoryId > 0 &&
+        text.matchesMemoryTextContract() &&
+        createdAtEpochMillis > 0 &&
+        provenance.matchesMemoryProvenanceContract()
+
+fun PhoneMemoryList.matchesToolContract(): Boolean =
+    status == PHONE_MEMORY_STATUS_AVAILABLE &&
+        count in 0..MAX_PHONE_MEMORY_ROWS &&
+        entries.size <= MAX_PHONE_MEMORY_LIST_ENTRIES &&
+        entries.size <= count &&
+        truncated == (count > entries.size) &&
+        entries.all(PhoneMemoryEntry::matchesToolContract)
+
+fun PhoneMemoryForgotten.matchesToolContract(): Boolean =
+    deletedCount in 0..MAX_PHONE_MEMORY_ROWS &&
+        remainingCount == 0
+
 fun String.matchesNoteTextContract(): Boolean =
     isNotBlank() &&
         length <= MAX_NOTE_TEXT_LENGTH &&
@@ -232,6 +259,17 @@ fun String.matchesNoteTextContract(): Boolean =
             character.isISOControl() ||
                 Character.getType(character) == Character.FORMAT.toInt()
         }
+
+fun String.matchesMemoryTextContract(): Boolean =
+    isNotBlank() &&
+        length <= MAX_MEMORY_TEXT_LENGTH &&
+        none { character ->
+            character.isISOControl() ||
+                Character.getType(character) == Character.FORMAT.toInt()
+        }
+
+fun String.matchesMemoryProvenanceContract(): Boolean =
+    this == PHONE_MEMORY_PROVENANCE_USER_APPROVED
 
 fun PhoneTimerCreateArguments.matchesToolContract(): Boolean =
     durationSeconds in MIN_TIMER_SECONDS..MAX_TIMER_SECONDS && skipClockUi
@@ -380,6 +418,11 @@ const val MAX_MAC_CLIPBOARD_TEXT_LENGTH = 2_000
 const val MAX_MAC_CLIPBOARD_CHARACTER_COUNT = 100_000
 val MAC_CLIPBOARD_STATUS_VALUES = setOf("available", "empty", "unsupported")
 const val MAX_NOTE_TEXT_LENGTH = 2_000
+const val MAX_MEMORY_TEXT_LENGTH = 512
+const val MAX_PHONE_MEMORY_ROWS = 100
+const val MAX_PHONE_MEMORY_LIST_ENTRIES = 20
+const val PHONE_MEMORY_STATUS_AVAILABLE = "available"
+const val PHONE_MEMORY_PROVENANCE_USER_APPROVED = "user_approved_phone_command"
 const val PHONE_QR_STATUS_AVAILABLE = "available"
 const val MAX_QR_PREVIEW_LENGTH = 96
 const val MAX_QR_PAYLOAD_CHARACTER_COUNT = 10_000

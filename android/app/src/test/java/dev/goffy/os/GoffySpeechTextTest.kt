@@ -25,9 +25,12 @@ import dev.goffy.os.protocol.MacProcessEntry
 import dev.goffy.os.protocol.MacProcessesList
 import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_PROVENANCE_USER_APPROVED
+import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.PhoneBatteryStatus
+import dev.goffy.os.protocol.PhoneMemoryRemembered
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.ToolResultContent
 import java.util.UUID
@@ -92,6 +95,34 @@ class GoffySpeechTextTest {
         assertTrue(speechText.contains("Private note 7"))
         assertTrue(speechText.contains("will not read the note text aloud"))
         assertFalse(speechText.contains("secret launch phrase"))
+    }
+
+    @Test
+    fun localMemoryTextIsNeverSpoken() {
+        val state = GoffyUiState(
+            hubEndpoint = endpoint,
+            timeline = TaskTimelineState(
+                entries = listOf(
+                    entry(
+                        toolName = PHONE_MEMORY_REMEMBER_TOOL,
+                        target = ExecutionTarget.PHONE,
+                        permission = PermissionLevel.CONFIRM,
+                        result = PhoneMemoryRemembered(
+                            memoryId = 9,
+                            text = "secret memory phrase",
+                            createdAtEpochMillis = 1_720_000_000_000,
+                            provenance = PHONE_MEMORY_PROVENANCE_USER_APPROVED,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val speechText = requireNotNull(state.latestSpeakableText())
+
+        assertTrue(speechText.contains("Local memory 9"))
+        assertTrue(speechText.contains("will not read the memory text aloud"))
+        assertFalse(speechText.contains("secret memory phrase"))
     }
 
     @Test

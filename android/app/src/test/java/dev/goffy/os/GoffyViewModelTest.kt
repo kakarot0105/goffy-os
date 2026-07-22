@@ -45,6 +45,7 @@ import dev.goffy.os.localmodel.LocalModelRuntimeStatus
 import dev.goffy.os.localmodel.MutableLocalModelRuntimeSettingsSource
 import dev.goffy.os.phone.DefaultPhoneToolGateway
 import dev.goffy.os.phone.FlashlightSource
+import dev.goffy.os.phone.MemoryStore
 import dev.goffy.os.phone.PhoneToolGateway
 import dev.goffy.os.phone.NoteStore
 import dev.goffy.os.phone.TimerSource
@@ -72,7 +73,15 @@ import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PhoneFlashlightState
+import dev.goffy.os.protocol.PhoneMemoryEntry
+import dev.goffy.os.protocol.PhoneMemoryForgotten
+import dev.goffy.os.protocol.PhoneMemoryList
+import dev.goffy.os.protocol.PhoneMemoryRemembered
 import dev.goffy.os.protocol.PhoneNoteCreated
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_ALL_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_PROVENANCE_USER_APPROVED
+import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
 import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PhoneOcrRead
 import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
@@ -102,6 +111,7 @@ import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -1543,6 +1553,113 @@ class GoffyViewModelTest {
     }
 
     @Test
+    fun memoryRememberRequiresApprovalAndListShowsInspectableLocalMemory() = runTest(dispatcher) {
+        val memoryStore = RecordingMemoryStore()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            phoneGateway = phoneGateway(memoryStore = memoryStore),
+        )
+
+        viewModel.submitCommand("Remember that my favorite project is GOFFY")
+        runCurrent()
+
+        val pending = requireNotNull(viewModel.uiState.value.pendingApproval)
+        assertEquals(TaskPhase.AWAITING_APPROVAL, viewModel.uiState.value.timeline.entries.single().phase)
+        assertTrue(pending.description.contains("favorite project"))
+        assertEquals(0, memoryStore.remembers)
+
+        assertTrue(viewModel.approvePendingTask(pending.taskId))
+        advanceUntilIdle()
+        viewModel.submitCommand("What do you remember")
+        advanceUntilIdle()
+
+        val entries = viewModel.uiState.value.timeline.entries
+        assertEquals(1, memoryStore.remembers)
+        assertEquals(PHONE_MEMORY_REMEMBER_TOOL, entries.first().toolName)
+        assertEquals(TaskPhase.VERIFIED, entries.first().phase)
+        assertEquals("my favorite project is GOFFY", (entries.first().result as PhoneMemoryRemembered).text)
+        assertEquals(PHONE_MEMORY_LIST_TOOL, entries.last().toolName)
+        assertEquals(TaskPhase.VERIFIED, entries.last().phase)
+        val listed = entries.last().result as PhoneMemoryList
+        assertEquals(1, listed.count)
+        assertEquals("my favorite project is GOFFY", listed.entries.single().text)
+        assertEquals(PHONE_MEMORY_PROVENANCE_USER_APPROVED, listed.entries.single().provenance)
+    }
+
+    @Test
+    fun memoryForgetAllRequiresApprovalAndVerifiesDeletion() = runTest(dispatcher) {
+        val memoryStore = RecordingMemoryStore()
+        val taskIds = ArrayDeque(
+            listOf(
+                UUID.fromString("11111111-1111-4111-8111-111111111111"),
+                UUID.fromString("22222222-2222-4222-8222-222222222222"),
+                UUID.fromString("33333333-3333-4333-8333-333333333333"),
+            ),
+        )
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            phoneGateway = phoneGateway(memoryStore = memoryStore),
+            nextTaskId = { taskIds.removeFirst() },
+        )
+
+        viewModel.submitCommand("Remember that local memory is user approved")
+        runCurrent()
+        assertTrue(viewModel.approvePendingTask(viewModel.uiState.value.pendingApproval!!.taskId))
+        advanceUntilIdle()
+        viewModel.submitCommand("Forget all memories")
+        runCurrent()
+
+        val pending = requireNotNull(viewModel.uiState.value.pendingApproval)
+        assertTrue(pending.description.contains("deleting all local GOFFY memories"))
+        assertEquals(0, memoryStore.forgets)
+        assertTrue(viewModel.denyPendingTask(pending.taskId))
+        runCurrent()
+        assertEquals(0, memoryStore.forgets)
+
+        viewModel.submitCommand("Forget all memories")
+        runCurrent()
+        assertTrue(viewModel.approvePendingTask(viewModel.uiState.value.pendingApproval!!.taskId))
+        advanceUntilIdle()
+
+        val timeline = viewModel.uiState.value.timeline.entries
+        val verifiedForgetEntry = timeline.lastOrNull {
+            it.toolName == PHONE_MEMORY_FORGET_ALL_TOOL && it.phase == TaskPhase.VERIFIED
+        }
+        assertNotNull(
+            timeline.joinToString(prefix = "timeline=", separator = " | ") {
+                "${it.toolName}:${it.phase}:${it.summary}:${it.result}"
+            },
+            verifiedForgetEntry,
+        )
+        requireNotNull(verifiedForgetEntry)
+        val result = verifiedForgetEntry.result as PhoneMemoryForgotten
+        assertEquals(1, memoryStore.forgets)
+        assertEquals(1, result.deletedCount)
+        assertEquals(0, result.remainingCount)
+        assertEquals(TaskPhase.VERIFIED, verifiedForgetEntry.phase)
+        assertEquals(PHONE_MEMORY_FORGET_ALL_TOOL, verifiedForgetEntry.toolName)
+    }
+
+    @Test
+    fun persistedMemoryAuditNeverContainsMemoryText() = runTest(dispatcher) {
+        val auditStore = RecordingAuditStore()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            phoneGateway = phoneGateway(memoryStore = RecordingMemoryStore()),
+            auditStore = auditStore,
+        )
+
+        viewModel.submitCommand("Remember that launch code is private")
+        runCurrent()
+        assertTrue(viewModel.approvePendingTask(viewModel.uiState.value.pendingApproval!!.taskId))
+        advanceUntilIdle()
+
+        assertEquals(1, auditStore.upserts.size)
+        assertFalse(auditStore.upserts.single().toString().contains("launch code"))
+        assertEquals(PHONE_MEMORY_REMEMBER_TOOL, auditStore.upserts.single().toolName)
+    }
+
+    @Test
     fun auditWriteFailureIsVisibleWithoutRewritingVerifiedOutcome() = runTest(dispatcher) {
         val viewModel = createViewModel(
             gateway = FakeHubGateway { flowOf() },
@@ -1709,6 +1826,7 @@ class GoffyViewModelTest {
         approvalTtlMillis: Long = 60_000,
         allowDevelopmentTokenConfiguration: Boolean = true,
         nowMillis: () -> Long = System::currentTimeMillis,
+        nextTaskId: () -> UUID = { UUID.fromString("22222222-2222-4222-8222-222222222222") },
         tokenRotationReminderAgeMillis: Long = 30L * 24 * 60 * 60 * 1000,
         auditStore: TerminalAuditStore = RecordingAuditStore(),
         localModelFallback: LocalModelIntentFallback = LocalModelIntentFallback {
@@ -1748,7 +1866,7 @@ class GoffyViewModelTest {
             defaultEndpoint = endpoint,
             deviceId = "goffy-android-test",
             deviceDisplayName = "Moto G",
-            nextTaskId = { UUID.fromString("22222222-2222-4222-8222-222222222222") },
+            nextTaskId = nextTaskId,
             approvalTtlMillis = approvalTtlMillis,
             nowMillis = nowMillis,
             tokenRotationReminderAgeMillis = tokenRotationReminderAgeMillis,
@@ -1819,12 +1937,14 @@ class GoffyViewModelTest {
         noteStore: NoteStore = fakeNoteStore(),
         timerSource: TimerSource = fakeTimerSource(),
         flashlightSource: FlashlightSource = fakeFlashlightSource(),
+        memoryStore: MemoryStore = RecordingMemoryStore(),
     ): PhoneToolGateway = DefaultPhoneToolGateway(
         batteryStatusSource = { PhoneBatteryStatus(50, false) },
         deviceInfoSource = { validDeviceInfo() },
         noteStore = noteStore,
         timerSource = timerSource,
         flashlightSource = flashlightSource,
+        memoryStore = memoryStore,
         readDispatcher = dispatcher,
     )
 
@@ -2139,6 +2259,51 @@ class GoffyViewModelTest {
             creates += 1
             lastText = text
             return PhoneNoteCreated(1, text, 1_720_000_000_000)
+        }
+
+        override fun close() = Unit
+    }
+
+    private class RecordingMemoryStore : MemoryStore {
+        var remembers = 0
+        var forgets = 0
+        var lists = 0
+        private var nextId = 1L
+        private val memories = mutableListOf<PhoneMemoryEntry>()
+
+        override suspend fun remember(text: String, provenance: String): PhoneMemoryRemembered {
+            remembers += 1
+            val memory = PhoneMemoryEntry(
+                memoryId = nextId++,
+                text = text,
+                createdAtEpochMillis = 1_720_000_000_000 + remembers,
+                provenance = provenance,
+            )
+            memories.add(0, memory)
+            return PhoneMemoryRemembered(
+                memoryId = memory.memoryId,
+                text = memory.text,
+                createdAtEpochMillis = memory.createdAtEpochMillis,
+                provenance = memory.provenance,
+            )
+        }
+
+        override suspend fun list(maxEntries: Int): PhoneMemoryList {
+            lists += 1
+            val entries = memories.take(maxEntries)
+            return PhoneMemoryList(
+                status = "available",
+                count = memories.size,
+                truncated = memories.size > entries.size,
+                entries = entries,
+            )
+        }
+
+        override suspend fun forgetAll(): PhoneMemoryForgotten {
+            forgets += 1
+            val deleted = memories.size
+            memories.clear()
+            return PhoneMemoryForgotten(deleted, memories.size)
         }
 
         override fun close() = Unit

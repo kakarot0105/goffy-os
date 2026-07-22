@@ -11,6 +11,14 @@ import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PhoneFlashlightState
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_ALL_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_PROVENANCE_USER_APPROVED
+import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
+import dev.goffy.os.protocol.PhoneMemoryForgotten
+import dev.goffy.os.protocol.PhoneMemoryList
+import dev.goffy.os.protocol.PhoneMemoryRememberArguments
+import dev.goffy.os.protocol.PhoneMemoryRemembered
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneNoteCreated
@@ -56,6 +64,16 @@ interface NoteStore {
     fun close()
 }
 
+interface MemoryStore {
+    suspend fun remember(text: String, provenance: String): PhoneMemoryRemembered
+
+    suspend fun list(maxEntries: Int): PhoneMemoryList
+
+    suspend fun forgetAll(): PhoneMemoryForgotten
+
+    fun close()
+}
+
 sealed interface PhoneToolAuthorization {
     data object Safe : PhoneToolAuthorization
 
@@ -97,6 +115,7 @@ class DefaultPhoneToolGateway internal constructor(
     private val noteStore: NoteStore,
     private val timerSource: TimerSource,
     private val flashlightSource: FlashlightSource,
+    private val memoryStore: MemoryStore = UnavailableMemoryStore,
     private val readDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val actionDispatcher: CoroutineDispatcher = Dispatchers.Main.immediate,
     private val timeoutMillis: Long = DEFAULT_TIMEOUT_MILLIS,
@@ -205,6 +224,7 @@ class DefaultPhoneToolGateway internal constructor(
     override fun close() {
         consumedConfirmTaskIds.clear()
         noteStore.close()
+        memoryStore.close()
     }
 
     private fun GoffyExecutionPlan.toAllowedOperation(
@@ -320,6 +340,76 @@ class DefaultPhoneToolGateway internal constructor(
                     timeoutMillis = capability.metadata.timeoutMillis,
                 )
             }
+            PHONE_MEMORY_REMEMBER_TOOL -> {
+                val memoryArguments = arguments as? PhoneMemoryRememberArguments ?: return null
+                PhoneToolOperation(
+                    toolName = PHONE_MEMORY_REMEMBER_TOOL,
+                    acceptedMessage = "Approved memory write accepted on this phone.",
+                    completedMessage = "The app-private memory row was written and re-read.",
+                    failureMessage = "The memory could not be stored and verified",
+                    execute = {
+                        memoryStore.remember(
+                            memoryArguments.text,
+                            PHONE_MEMORY_PROVENANCE_USER_APPROVED,
+                        )
+                    },
+                    validate = { content ->
+                        content is PhoneMemoryRemembered &&
+                            content.text == memoryArguments.text &&
+                            content.matchesToolContract()
+                    },
+                    verification = PhoneToolVerification.Verified(
+                        summary = "The approved memory was stored and re-read successfully.",
+                        checks = listOf(
+                            "single-use approval",
+                            "app-private database",
+                            "exact text match",
+                            "inspectable provenance",
+                            "post-write row read",
+                        ),
+                    ),
+                    dispatcher = readDispatcher,
+                    timeoutMillis = capability.metadata.timeoutMillis,
+                )
+            }
+            PHONE_MEMORY_LIST_TOOL -> PhoneToolOperation(
+                toolName = PHONE_MEMORY_LIST_TOOL,
+                acceptedMessage = "Local memory inspection accepted on this phone.",
+                completedMessage = "App-private memories were read with a bounded result.",
+                failureMessage = "Local memories could not be read safely",
+                execute = { memoryStore.list(MAX_MEMORY_LIST_ENTRIES) },
+                validate = { content -> content is PhoneMemoryList && content.matchesToolContract() },
+                verification = PhoneToolVerification.Verified(
+                    summary = "Local memories matched the bounded inspectable contract.",
+                    checks = listOf(
+                        "phone tool allowlist",
+                        "app-private database",
+                        "bounded list size",
+                        "inspectable provenance",
+                    ),
+                ),
+                dispatcher = readDispatcher,
+                timeoutMillis = capability.metadata.timeoutMillis,
+            )
+            PHONE_MEMORY_FORGET_ALL_TOOL -> PhoneToolOperation(
+                toolName = PHONE_MEMORY_FORGET_ALL_TOOL,
+                acceptedMessage = "Approved memory deletion accepted on this phone.",
+                completedMessage = "All app-private memories were deleted and verified.",
+                failureMessage = "Local memories could not be deleted and verified",
+                execute = memoryStore::forgetAll,
+                validate = { content -> content is PhoneMemoryForgotten && content.matchesToolContract() },
+                verification = PhoneToolVerification.Verified(
+                    summary = "All local memories were deleted after explicit approval.",
+                    checks = listOf(
+                        "single-use approval",
+                        "app-private database",
+                        "delete count captured",
+                        "remaining count verified",
+                    ),
+                ),
+                dispatcher = readDispatcher,
+                timeoutMillis = capability.metadata.timeoutMillis,
+            )
             PHONE_TIMER_CREATE_TOOL -> {
                 val timerArguments = arguments as? PhoneTimerCreateArguments ?: return null
                 PhoneToolOperation(
@@ -396,5 +486,19 @@ class DefaultPhoneToolGateway internal constructor(
     private companion object {
         const val DEFAULT_TIMEOUT_MILLIS = 2_000L
         const val DEFAULT_FLASHLIGHT_TIMEOUT_MILLIS = 3_000L
+        const val MAX_MEMORY_LIST_ENTRIES = 20
     }
+}
+
+private object UnavailableMemoryStore : MemoryStore {
+    override suspend fun remember(text: String, provenance: String): PhoneMemoryRemembered =
+        error("memory store unavailable")
+
+    override suspend fun list(maxEntries: Int): PhoneMemoryList =
+        error("memory store unavailable")
+
+    override suspend fun forgetAll(): PhoneMemoryForgotten =
+        error("memory store unavailable")
+
+    override fun close() = Unit
 }

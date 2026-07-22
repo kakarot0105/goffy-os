@@ -6,6 +6,9 @@ import dev.goffy.os.protocol.MAX_NOTE_TEXT_LENGTH
 import dev.goffy.os.protocol.MAX_OCR_CHARACTER_COUNT
 import dev.goffy.os.protocol.MAX_OCR_LINE_COUNT
 import dev.goffy.os.protocol.MAX_OCR_PREVIEW_LENGTH
+import dev.goffy.os.protocol.MAX_MEMORY_TEXT_LENGTH
+import dev.goffy.os.protocol.MAX_PHONE_MEMORY_LIST_ENTRIES
+import dev.goffy.os.protocol.MAX_PHONE_MEMORY_ROWS
 import dev.goffy.os.protocol.MAX_QR_PAYLOAD_CHARACTER_COUNT
 import dev.goffy.os.protocol.MAX_QR_PREVIEW_LENGTH
 import dev.goffy.os.protocol.MAX_TIMER_SECONDS
@@ -14,6 +17,11 @@ import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_ALL_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_PROVENANCE_USER_APPROVED
+import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_STATUS_AVAILABLE
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PHONE_OCR_SCRIPTS
@@ -24,9 +32,11 @@ import dev.goffy.os.protocol.PHONE_QR_STATUS_AVAILABLE
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
 import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
+import dev.goffy.os.protocol.PhoneMemoryRememberArguments
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import dev.goffy.os.protocol.ToolArguments
+import dev.goffy.os.protocol.matchesMemoryTextContract
 import dev.goffy.os.protocol.matchesNoteTextContract
 import dev.goffy.os.protocol.matchesToolContract
 import kotlinx.serialization.json.JsonArray
@@ -154,6 +164,9 @@ class PhoneCapabilityRegistry internal constructor(
                     batteryCapability(defaultTimeoutMillis),
                     deviceCapability(defaultTimeoutMillis),
                     flashlightCapability(flashlightTimeoutMillis),
+                    memoryForgetAllCapability(defaultTimeoutMillis),
+                    memoryListCapability(defaultTimeoutMillis),
+                    memoryRememberCapability(defaultTimeoutMillis),
                     noteCapability(defaultTimeoutMillis),
                     ocrReadCapability(defaultTimeoutMillis),
                     qrReadCapability(defaultTimeoutMillis),
@@ -173,11 +186,18 @@ private fun validateDefinition(definition: PhoneCapabilityDefinition) {
     require(capability.metadata.executionTarget == ExecutionTarget.PHONE)
     require(capability.metadata.permission in setOf(PermissionLevel.SAFE, PermissionLevel.CONFIRM))
     require(capability.metadata.timeoutMillis in 1..MAX_TOOL_TIMEOUT_MILLIS)
-    require(!capability.annotations.destructiveHint)
     require(!capability.annotations.openWorldHint)
+    if (capability.annotations.destructiveHint) {
+        require(
+            capability.name == PHONE_MEMORY_FORGET_ALL_TOOL &&
+                capability.metadata.permission == PermissionLevel.CONFIRM,
+        )
+    }
     when (capability.metadata.permission) {
         PermissionLevel.SAFE -> require(
-            capability.annotations.readOnlyHint && capability.annotations.idempotentHint,
+            capability.annotations.readOnlyHint &&
+                capability.annotations.idempotentHint &&
+                !capability.annotations.destructiveHint,
         )
         PermissionLevel.CONFIRM -> require(!capability.annotations.readOnlyHint)
         PermissionLevel.SENSITIVE,
@@ -298,6 +318,83 @@ private fun noteCapability(timeoutMillis: Long): PhoneCapabilityDefinition =
         acceptsArguments = { arguments ->
             arguments is PhoneNoteCreateArguments && arguments.text.matchesNoteTextContract()
         },
+    )
+
+private fun memoryRememberCapability(timeoutMillis: Long): PhoneCapabilityDefinition =
+    definition(
+        name = PHONE_MEMORY_REMEMBER_TOOL,
+        title = "Remember approved phone memory",
+        description = "Store one user-approved memory in GOFFY app-private storage.",
+        permission = PermissionLevel.CONFIRM,
+        timeoutMillis = timeoutMillis,
+        readOnly = false,
+        idempotent = false,
+        inputSchema = objectSchema(
+            properties = mapOf("text" to stringSchema(maxLength = MAX_MEMORY_TEXT_LENGTH)),
+            required = listOf("text"),
+        ),
+        outputSchema = memoryEntrySchema(
+            required = listOf("memoryId", "text", "createdAtEpochMillis", "provenance"),
+        ),
+        acceptsArguments = { arguments ->
+            arguments is PhoneMemoryRememberArguments && arguments.text.matchesMemoryTextContract()
+        },
+    )
+
+private fun memoryListCapability(timeoutMillis: Long): PhoneCapabilityDefinition =
+    definition(
+        name = PHONE_MEMORY_LIST_TOOL,
+        title = "List approved phone memories",
+        description = "Read bounded user-approved memories stored locally on this phone.",
+        permission = PermissionLevel.SAFE,
+        timeoutMillis = timeoutMillis,
+        readOnly = true,
+        idempotent = true,
+        inputSchema = objectSchema(emptyMap()),
+        outputSchema = objectSchema(
+            properties = mapOf(
+                "status" to stringSchema(constant = PHONE_MEMORY_STATUS_AVAILABLE),
+                "count" to integerSchema(minimum = 0, maximum = MAX_PHONE_MEMORY_ROWS.toLong()),
+                "truncated" to booleanSchema(),
+                "entries" to arraySchema(
+                    itemSchema = memoryEntrySchema(
+                        required = listOf(
+                            "memoryId",
+                            "text",
+                            "createdAtEpochMillis",
+                            "provenance",
+                        ),
+                    ),
+                    maxItems = MAX_PHONE_MEMORY_LIST_ENTRIES,
+                ),
+            ),
+            required = listOf("status", "count", "truncated", "entries"),
+        ),
+        acceptsArguments = { it == NoToolArguments },
+    )
+
+private fun memoryForgetAllCapability(timeoutMillis: Long): PhoneCapabilityDefinition =
+    definition(
+        name = PHONE_MEMORY_FORGET_ALL_TOOL,
+        title = "Forget all phone memories",
+        description = "Delete all GOFFY user-approved phone memories after explicit approval.",
+        permission = PermissionLevel.CONFIRM,
+        timeoutMillis = timeoutMillis,
+        readOnly = false,
+        idempotent = false,
+        destructive = true,
+        inputSchema = objectSchema(emptyMap()),
+        outputSchema = objectSchema(
+            properties = mapOf(
+                "deletedCount" to integerSchema(
+                    minimum = 0,
+                    maximum = MAX_PHONE_MEMORY_ROWS.toLong(),
+                ),
+                "remainingCount" to integerSchema(minimum = 0, maximum = 0),
+            ),
+            required = listOf("deletedCount", "remainingCount"),
+        ),
+        acceptsArguments = { it == NoToolArguments },
     )
 
 private fun ocrReadCapability(timeoutMillis: Long): PhoneCapabilityDefinition =
@@ -437,6 +534,7 @@ private fun definition(
     inputSchema: JsonObject,
     outputSchema: JsonObject,
     acceptsArguments: (ToolArguments) -> Boolean,
+    destructive: Boolean = false,
 ): PhoneCapabilityDefinition = PhoneCapabilityDefinition(
     capability = GoffyToolCapability(
         name = name,
@@ -446,7 +544,7 @@ private fun definition(
         outputSchema = outputSchema,
         annotations = GoffyToolAnnotations(
             readOnlyHint = readOnly,
-            destructiveHint = false,
+            destructiveHint = destructive,
             idempotentHint = idempotent,
             openWorldHint = false,
         ),
@@ -473,6 +571,16 @@ private fun objectSchema(
     put("type", "object")
 }
 
+private fun memoryEntrySchema(required: List<String>): JsonObject = objectSchema(
+    properties = mapOf(
+        "memoryId" to integerSchema(minimum = 1),
+        "text" to stringSchema(maxLength = MAX_MEMORY_TEXT_LENGTH),
+        "createdAtEpochMillis" to integerSchema(minimum = 1),
+        "provenance" to stringSchema(constant = PHONE_MEMORY_PROVENANCE_USER_APPROVED),
+    ),
+    required = required,
+)
+
 private fun booleanSchema(constant: Boolean? = null): JsonObject = buildJsonObject {
     put("type", "boolean")
     constant?.let { put("const", it) }
@@ -496,6 +604,12 @@ private fun stringSchema(
     if (enumValues.isNotEmpty()) {
         put("enum", JsonArray(enumValues.map { JsonPrimitive(it) }))
     }
+}
+
+private fun arraySchema(itemSchema: JsonObject, maxItems: Int): JsonObject = buildJsonObject {
+    put("type", "array")
+    put("items", itemSchema)
+    put("maxItems", maxItems)
 }
 
 private fun nullableStringSchema(maxLength: Int): JsonObject = buildJsonObject {

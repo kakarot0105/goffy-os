@@ -84,6 +84,9 @@ import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PhoneFlashlightState
+import dev.goffy.os.protocol.PhoneMemoryForgotten
+import dev.goffy.os.protocol.PhoneMemoryList
+import dev.goffy.os.protocol.PhoneMemoryRemembered
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PhoneOcrRead
 import dev.goffy.os.protocol.PhoneQrRead
@@ -2308,6 +2311,62 @@ private fun TaskResult(result: ToolResultContent) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        is PhoneMemoryRemembered -> {
+            Text(
+                text = "MEMORY SAVED / #${result.memoryId}",
+                color = Signal,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+            )
+            Text(
+                text = result.text.take(MAX_MEMORY_PREVIEW_LENGTH),
+                color = Bone,
+                fontSize = 14.sp,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = result.provenance,
+                color = Mist,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+            )
+        }
+        is PhoneMemoryList -> {
+            Text(
+                text = "MEMORIES / ${result.count}" + if (result.truncated) " / truncated" else "",
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            if (result.entries.isEmpty()) {
+                Text("No local memories stored.", color = Mist, fontSize = 11.sp)
+            } else {
+                result.entries.take(5).forEach { entry ->
+                    Text(
+                        text = "#${entry.memoryId} / ${entry.text}",
+                        color = Mist,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+        is PhoneMemoryForgotten -> {
+            Text(
+                text = "MEMORIES DELETED / ${result.deletedCount}",
+                color = Warning,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = "remaining=${result.remainingCount}",
+                color = Signal,
+                fontSize = 11.sp,
+            )
+        }
         is PhoneOcrRead -> {
             Text(
                 text = stringResource(R.string.ocr_read_result, result.lineCount),
@@ -2411,4 +2470,5 @@ private const val MAX_ENDPOINT_LENGTH = 2_048
 private const val MAX_TOKEN_LENGTH = 4_096
 private const val MAX_PAIRING_CHALLENGE_LENGTH = 2_048
 private const val MAX_NOTE_PREVIEW_LENGTH = 256
+private const val MAX_MEMORY_PREVIEW_LENGTH = 256
 private const val MAX_HUB_AUDIT_UI_EVENTS = 5
