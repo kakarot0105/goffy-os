@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import androidx.test.platform.app.InstrumentationRegistry
 import java.io.File
+import java.security.MessageDigest
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -25,6 +26,7 @@ class TfliteTaskTextClassifierInstrumentedTest {
         assumeTrue("Pass -e modelPath to run the real TFLite classifier benchmark.", !modelPath.isNullOrBlank())
 
         val command = args.getString("command") ?: DEFAULT_TFLITE_COMMAND
+        val exampleId = args.getString("exampleId")
         val timeoutMillis = args.getString("timeoutMillis")
             ?.toLongOrNull()
             ?.coerceIn(5_000L, MAX_TFLITE_TIMEOUT_MILLIS)
@@ -47,12 +49,14 @@ class TfliteTaskTextClassifierInstrumentedTest {
             TfliteTaskTextBenchmarkResult.success(
                 modelFile = modelFile,
                 command = command,
+                exampleId = exampleId,
                 report = report,
             )
         } catch (throwable: Throwable) {
             TfliteTaskTextBenchmarkResult.failure(
                 modelFile = modelFile,
                 command = command,
+                exampleId = exampleId,
                 error = throwable,
             )
         }
@@ -71,6 +75,9 @@ private data class TfliteTaskTextBenchmarkResult(
     val androidSdk: Int,
     val modelPath: String,
     val modelBytes: Long,
+    val modelSha256: String,
+    val exampleId: String?,
+    val commandSha256: String,
     val commandChars: Int,
     val initMillis: Long?,
     val inferenceMillis: Long?,
@@ -93,6 +100,9 @@ private data class TfliteTaskTextBenchmarkResult(
             appendJson("androidSdk", androidSdk)
             appendJson("modelPath", modelPath)
             appendJson("modelBytes", modelBytes)
+            appendJson("modelSha256", modelSha256)
+            appendJson("exampleId", exampleId)
+            appendJson("commandSha256", commandSha256)
             appendJson("commandChars", commandChars)
             appendJson("initMillis", initMillis)
             appendJson("inferenceMillis", inferenceMillis)
@@ -113,6 +123,7 @@ private data class TfliteTaskTextBenchmarkResult(
         fun success(
             modelFile: File,
             command: String,
+            exampleId: String?,
             report: TfliteTaskTextClassificationReport,
         ): TfliteTaskTextBenchmarkResult {
             val observation = report.observation
@@ -125,6 +136,9 @@ private data class TfliteTaskTextBenchmarkResult(
                 androidSdk = Build.VERSION.SDK_INT,
                 modelPath = modelFile.absolutePath,
                 modelBytes = report.modelBytes,
+                modelSha256 = sha256Hex(modelFile),
+                exampleId = exampleId?.takeIf(String::isSafeBenchmarkText),
+                commandSha256 = command.sha256Hex(),
                 commandChars = report.commandChars,
                 initMillis = report.initMillis,
                 inferenceMillis = report.inferenceMillis,
@@ -148,6 +162,7 @@ private data class TfliteTaskTextBenchmarkResult(
         fun failure(
             modelFile: File,
             command: String,
+            exampleId: String?,
             error: Throwable,
         ): TfliteTaskTextBenchmarkResult =
             TfliteTaskTextBenchmarkResult(
@@ -156,6 +171,9 @@ private data class TfliteTaskTextBenchmarkResult(
                 androidSdk = Build.VERSION.SDK_INT,
                 modelPath = modelFile.absolutePath,
                 modelBytes = modelFile.length(),
+                modelSha256 = sha256Hex(modelFile),
+                exampleId = exampleId?.takeIf(String::isSafeBenchmarkText),
+                commandSha256 = command.sha256Hex(),
                 commandChars = command.length,
                 initMillis = null,
                 inferenceMillis = null,
@@ -206,6 +224,29 @@ private fun tfliteResultFile(context: Context, resultPath: String?): File {
 
 private fun File.startsWithPath(root: File): Boolean =
     path == root.path || path.startsWith(root.path + File.separator)
+
+private fun sha256Hex(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val read = input.read(buffer)
+            if (read == -1) break
+            digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().joinToString(separator = "") { byte -> "%02x".format(byte) }
+}
+
+private fun String.sha256Hex(): String =
+    MessageDigest.getInstance("SHA-256")
+        .digest(toByteArray(Charsets.UTF_8))
+        .joinToString(separator = "") { byte -> "%02x".format(byte) }
+
+private fun String.isSafeBenchmarkText(): Boolean =
+    isNotBlank() &&
+        length <= 120 &&
+        none { it.isISOControl() || Character.getType(it) == Character.FORMAT.toInt() }
 
 private fun StringBuilder.appendJson(key: String, value: String?, trailing: Boolean = true) {
     append("  \"")

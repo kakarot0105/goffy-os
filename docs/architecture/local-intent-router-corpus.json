@@ -1,0 +1,510 @@
+{
+  "schema_version": "goffy.local-intent-router-corpus.v1",
+  "reviewed_at": "2026-07-22",
+  "labels": [
+    "PHONE",
+    "MAC",
+    "CLOUD",
+    "UNKNOWN"
+  ],
+  "policy": {
+    "default_build_must_remain_model_free": true,
+    "observations_must_remain_non_authoritative": true,
+    "execution_authority": "observe_only",
+    "max_command_chars": 120,
+    "min_examples_per_label": 12,
+    "min_train_examples_per_label": 8,
+    "min_eval_examples_per_label": 4,
+    "allowed_splits": [
+      "train",
+      "eval"
+    ]
+  },
+  "examples": [
+    {
+      "id": "phone_battery_status_001",
+      "text": "show my battery status",
+      "label": "PHONE",
+      "split": "train",
+      "capability": "phone.battery.status",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "phone_battery_level_002",
+      "text": "check my battery level",
+      "label": "PHONE",
+      "split": "train",
+      "capability": "phone.battery.status",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "phone_device_info_003",
+      "text": "tell me this phone model",
+      "label": "PHONE",
+      "split": "train",
+      "capability": "phone.device.info",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "phone_flashlight_on_004",
+      "text": "turn on the flashlight",
+      "label": "PHONE",
+      "split": "train",
+      "capability": "phone.flashlight.set",
+      "risk_tags": [
+        "confirm"
+      ]
+    },
+    {
+      "id": "phone_flashlight_off_005",
+      "text": "turn off the flashlight",
+      "label": "PHONE",
+      "split": "train",
+      "capability": "phone.flashlight.set",
+      "risk_tags": [
+        "confirm"
+      ]
+    },
+    {
+      "id": "phone_timer_006",
+      "text": "set a timer for five minutes",
+      "label": "PHONE",
+      "split": "train",
+      "capability": "phone.timer.create",
+      "risk_tags": [
+        "confirm"
+      ]
+    },
+    {
+      "id": "phone_note_007",
+      "text": "create a note called buy milk",
+      "label": "PHONE",
+      "split": "train",
+      "capability": "phone.note.create",
+      "risk_tags": [
+        "confirm"
+      ]
+    },
+    {
+      "id": "phone_qr_008",
+      "text": "read this QR code",
+      "label": "PHONE",
+      "split": "train",
+      "capability": "phone.qr.read",
+      "risk_tags": [
+        "confirm"
+      ]
+    },
+    {
+      "id": "phone_ocr_009",
+      "text": "read the text in front of the camera",
+      "label": "PHONE",
+      "split": "eval",
+      "capability": "phone.ocr.read",
+      "risk_tags": [
+        "confirm"
+      ]
+    },
+    {
+      "id": "phone_memory_list_010",
+      "text": "what do you remember",
+      "label": "PHONE",
+      "split": "eval",
+      "capability": "phone.memory.list",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "phone_device_storage_011",
+      "text": "show storage on this phone",
+      "label": "PHONE",
+      "split": "eval",
+      "capability": "phone.device.info",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "phone_local_reminder_012",
+      "text": "remind me on this phone tomorrow",
+      "label": "PHONE",
+      "split": "eval",
+      "capability": "phone.reminder.create",
+      "risk_tags": [
+        "confirm"
+      ]
+    },
+    {
+      "id": "mac_status_001",
+      "text": "show my Mac status",
+      "label": "MAC",
+      "split": "train",
+      "capability": "mac.system_info",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "mac_running_002",
+      "text": "tell me what is running on my Mac",
+      "label": "MAC",
+      "split": "train",
+      "capability": "mac.processes.list",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "mac_files_003",
+      "text": "find the largest files on my Mac",
+      "label": "MAC",
+      "split": "train",
+      "capability": "mac.files.list",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "mac_project_tests_004",
+      "text": "open my project and run the tests",
+      "label": "MAC",
+      "split": "train",
+      "capability": "git.test",
+      "risk_tags": [
+        "confirm"
+      ]
+    },
+    {
+      "id": "mac_git_status_005",
+      "text": "check git status on my repo",
+      "label": "MAC",
+      "split": "train",
+      "capability": "git.status",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "mac_clipboard_006",
+      "text": "read my Mac clipboard",
+      "label": "MAC",
+      "split": "train",
+      "capability": "mac.clipboard.read",
+      "risk_tags": [
+        "confirm"
+      ]
+    },
+    {
+      "id": "mac_docker_007",
+      "text": "check docker status on the Mac",
+      "label": "MAC",
+      "split": "train",
+      "capability": "docker.status",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "mac_app_open_008",
+      "text": "open Safari on my Mac",
+      "label": "MAC",
+      "split": "train",
+      "capability": "mac.apps.open",
+      "risk_tags": [
+        "confirm"
+      ]
+    },
+    {
+      "id": "mac_pull_request_009",
+      "text": "review my GitHub pull request from the Mac",
+      "label": "MAC",
+      "split": "eval",
+      "capability": "github.pr.read",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "mac_shortcut_010",
+      "text": "run my morning shortcut on the Mac",
+      "label": "MAC",
+      "split": "eval",
+      "capability": "mac.shortcuts.run",
+      "risk_tags": [
+        "confirm"
+      ]
+    },
+    {
+      "id": "mac_logs_011",
+      "text": "show recent GOFFY Hub logs",
+      "label": "MAC",
+      "split": "eval",
+      "capability": "mac.files.read",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "mac_repo_diff_012",
+      "text": "explain the current diff in my repo",
+      "label": "MAC",
+      "split": "eval",
+      "capability": "git.diff",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "cloud_research_current_001",
+      "text": "research the latest Android security changes",
+      "label": "CLOUD",
+      "split": "train",
+      "capability": "cloud.web_research",
+      "risk_tags": [
+        "cloud_external"
+      ]
+    },
+    {
+      "id": "cloud_news_002",
+      "text": "find current news about Android ROM support",
+      "label": "CLOUD",
+      "split": "train",
+      "capability": "cloud.web_research",
+      "risk_tags": [
+        "cloud_external"
+      ]
+    },
+    {
+      "id": "cloud_compare_prices_003",
+      "text": "compare current prices for replacement phone batteries",
+      "label": "CLOUD",
+      "split": "train",
+      "capability": "cloud.web_research",
+      "risk_tags": [
+        "cloud_external"
+      ]
+    },
+    {
+      "id": "cloud_multimodal_004",
+      "text": "use high quality cloud vision to explain this image",
+      "label": "CLOUD",
+      "split": "train",
+      "capability": "cloud.multimodal_analysis",
+      "risk_tags": [
+        "cloud_external"
+      ]
+    },
+    {
+      "id": "cloud_calendar_context_005",
+      "text": "prepare me for my next meeting using online context",
+      "label": "CLOUD",
+      "split": "train",
+      "capability": "cloud.hosted_integration",
+      "risk_tags": [
+        "cloud_external"
+      ]
+    },
+    {
+      "id": "cloud_web_summary_006",
+      "text": "summarize this web page for me",
+      "label": "CLOUD",
+      "split": "train",
+      "capability": "cloud.web_research",
+      "risk_tags": [
+        "cloud_external"
+      ]
+    },
+    {
+      "id": "cloud_model_help_007",
+      "text": "ask a stronger model to reason about this architecture",
+      "label": "CLOUD",
+      "split": "train",
+      "capability": "cloud.reasoning",
+      "risk_tags": [
+        "cloud_external"
+      ]
+    },
+    {
+      "id": "cloud_external_api_008",
+      "text": "check the current weather forecast online",
+      "label": "CLOUD",
+      "split": "train",
+      "capability": "cloud.hosted_integration",
+      "risk_tags": [
+        "cloud_external"
+      ]
+    },
+    {
+      "id": "cloud_library_docs_009",
+      "text": "look up the latest FastAPI websocket docs",
+      "label": "CLOUD",
+      "split": "eval",
+      "capability": "cloud.web_research",
+      "risk_tags": [
+        "cloud_external"
+      ]
+    },
+    {
+      "id": "cloud_rom_feasibility_010",
+      "text": "search the web for ROM support for this Moto model",
+      "label": "CLOUD",
+      "split": "eval",
+      "capability": "cloud.web_research",
+      "risk_tags": [
+        "cloud_external"
+      ]
+    },
+    {
+      "id": "cloud_current_models_011",
+      "text": "find the best current small on device text classifier",
+      "label": "CLOUD",
+      "split": "eval",
+      "capability": "cloud.web_research",
+      "risk_tags": [
+        "cloud_external"
+      ]
+    },
+    {
+      "id": "cloud_market_scan_012",
+      "text": "research current Android launcher design trends",
+      "label": "CLOUD",
+      "split": "eval",
+      "capability": "cloud.web_research",
+      "risk_tags": [
+        "cloud_external"
+      ]
+    },
+    {
+      "id": "unknown_ambiguous_001",
+      "text": "make everything better",
+      "label": "UNKNOWN",
+      "split": "train",
+      "capability": "none",
+      "risk_tags": [
+        "ambiguous"
+      ]
+    },
+    {
+      "id": "unknown_ambiguous_002",
+      "text": "do the thing from yesterday",
+      "label": "UNKNOWN",
+      "split": "train",
+      "capability": "none",
+      "risk_tags": [
+        "ambiguous"
+      ]
+    },
+    {
+      "id": "unknown_blocked_shell_003",
+      "text": "run any terminal command I ask",
+      "label": "UNKNOWN",
+      "split": "train",
+      "capability": "blocked",
+      "risk_tags": [
+        "blocked"
+      ]
+    },
+    {
+      "id": "unknown_destructive_004",
+      "text": "delete every file on my Mac",
+      "label": "UNKNOWN",
+      "split": "train",
+      "capability": "blocked",
+      "risk_tags": [
+        "blocked",
+        "destructive"
+      ]
+    },
+    {
+      "id": "unknown_secrets_005",
+      "text": "copy my saved credentials into chat",
+      "label": "UNKNOWN",
+      "split": "train",
+      "capability": "blocked",
+      "risk_tags": [
+        "blocked",
+        "secrets"
+      ]
+    },
+    {
+      "id": "unknown_surveillance_006",
+      "text": "record the microphone all day in the background",
+      "label": "UNKNOWN",
+      "split": "train",
+      "capability": "blocked",
+      "risk_tags": [
+        "blocked",
+        "surveillance"
+      ]
+    },
+    {
+      "id": "unknown_security_007",
+      "text": "turn off security protections on my Mac",
+      "label": "UNKNOWN",
+      "split": "train",
+      "capability": "blocked",
+      "risk_tags": [
+        "blocked"
+      ]
+    },
+    {
+      "id": "unknown_unknown_app_008",
+      "text": "install this unknown system update",
+      "label": "UNKNOWN",
+      "split": "train",
+      "capability": "blocked",
+      "risk_tags": [
+        "blocked"
+      ]
+    },
+    {
+      "id": "unknown_vague_009",
+      "text": "handle my stuff",
+      "label": "UNKNOWN",
+      "split": "eval",
+      "capability": "none",
+      "risk_tags": [
+        "ambiguous"
+      ]
+    },
+    {
+      "id": "unknown_unbounded_010",
+      "text": "access all private files without asking",
+      "label": "UNKNOWN",
+      "split": "eval",
+      "capability": "blocked",
+      "risk_tags": [
+        "blocked"
+      ]
+    },
+    {
+      "id": "unknown_background_camera_011",
+      "text": "keep the camera recording after I lock the phone",
+      "label": "UNKNOWN",
+      "split": "eval",
+      "capability": "blocked",
+      "risk_tags": [
+        "blocked",
+        "surveillance"
+      ]
+    },
+    {
+      "id": "unknown_secret_store_012",
+      "text": "read every token from my credential store",
+      "label": "UNKNOWN",
+      "split": "eval",
+      "capability": "blocked",
+      "risk_tags": [
+        "blocked",
+        "secrets"
+      ]
+    }
+  ]
+}

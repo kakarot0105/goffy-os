@@ -316,7 +316,8 @@ APK install/model push on the connected Moto:
   --execute \
   --confirm-device-mutation \
   --model /path/to/tiny-router.tflite \
-  --command "show my battery status"
+  --command "read the text in front of the camera" \
+  --example-id phone_ocr_009
 ```
 
 The benchmark JSON gate requires a `PASS`, at least one category, inference
@@ -324,6 +325,58 @@ timing, a terminal `Candidate` or `Rejected` observation, and
 `nonAuthoritative=true`. It does not accept the classifier for production by
 itself; the next missing evidence is a physical Moto run plus routing-quality,
 idle-memory, and APK-delta review.
+
+The seed local intent-router corpus lives at
+`docs/architecture/local-intent-router-corpus.json`. It covers PHONE, MAC, CLOUD,
+and UNKNOWN labels with separate `train` and `eval` splits, keeps blocked or
+ambiguous requests in UNKNOWN, and is verified as a normal repo gate:
+
+```bash
+.venv/bin/python scripts/verify_local_intent_router_corpus.py
+```
+
+This corpus is not a model asset and is not packaged into Android builds. It is
+the reproducible contract for training or selecting a tiny Task Text-compatible
+`.tflite` router. The local Python environment intentionally does not require
+TensorFlow, Model Maker, or TFLite Support in the standard dev install; those
+remain optional export-time tools because Google documents Model Maker as the
+path for average-word-vector text classifiers and Task Library integration, but
+those packages are too heavy for GOFFY's normal verifier.
+
+After collecting physical Moto benchmark JSON artifacts for the `eval` split,
+create an evidence manifest with schema
+`goffy.tflite-task-text-routing-quality-evidence.v1`:
+
+```json
+{
+  "schema_version": "goffy.tflite-task-text-routing-quality-evidence.v1",
+  "model_file": "models/tiny-router.tflite",
+  "model_sha256": "<lowercase-sha256>",
+  "model_bytes": 4096,
+  "results": [
+    {
+      "example_id": "phone_ocr_009",
+      "artifact": "results/phone_ocr_009.json"
+    }
+  ]
+}
+```
+
+Then run the routing-quality gate:
+
+```bash
+.venv/bin/python scripts/verify_tflite_task_text_routing_quality.py \
+  /path/to/routing-quality-evidence.json
+```
+
+The gate requires every `eval` example to have a benchmark artifact, route
+examples to produce the expected PHONE/MAC/CLOUD candidate at confidence 0.70 or
+higher, UNKNOWN examples to be rejected, every result to be non-authoritative,
+and each inference to stay within the 250 ms Moto budget. The verifier hashes
+the `model_file`, checks its size against the 8 MiB limit, requires every
+artifact to embed matching `modelSha256`/`modelBytes`, and binds each artifact to
+the corpus row with `exampleId` plus `commandSha256` so benchmark output cannot
+be replayed across examples or attributed to a different model.
 
 ## Reuse-First Scan
 

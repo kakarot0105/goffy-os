@@ -12,11 +12,13 @@ from scripts.run_moto_g_tflite_task_text_benchmark import (
     StepStatus,
     build_report,
     classifier_json_step,
+    command_sha256,
     is_allowed_device_model_path,
     resolve_device_model_path,
 )
 
 SERIAL = "ZY32LBQLMQ"
+MODEL_SHA = "8cbbb42f2d62dcf85898a5f729e15a772f60f8b8321bb5f38ce42c6e6e04e87a"
 ADB_DEVICES = (
     "List of devices attached\n"
     f"{SERIAL} device usb:2-1.2 product:kansas_g_sys model:moto_g___2025 device:kansas\n"
@@ -182,7 +184,8 @@ def test_execute_runs_fixed_modeldebug_instrumentation_and_pulls_result(
             destination.write_text(
                 (
                     '{"status":"PASS","categoryCount":2,"topLabel":"PHONE",'
-                    '"topScore":0.91,"inferenceMillis":12,'
+                    f'"topScore":0.91,"modelBytes":4096,"modelSha256":"{MODEL_SHA}",'
+                    f'"commandSha256":"{command_sha256(command_text)}","inferenceMillis":12,'
                     '"observationType":"Candidate","observationRoute":"PHONE",'
                     '"observationConfidence":0.91,"nonAuthoritative":true}\n'
                 ),
@@ -232,10 +235,13 @@ def test_classifier_json_requires_non_authoritative_output(tmp_path: Path) -> No
 
 def test_classifier_json_requires_rejection_reason(tmp_path: Path) -> None:
     artifact = tmp_path / "tflite-task-text-classifier.json"
+    command_hash = command_sha256("rejected command")
     artifact.write_text(
         (
             '{"status":"PASS","categoryCount":1,"topLabel":"NOTES",'
-            '"topScore":0.91,"inferenceMillis":12,'
+            f'"topScore":0.91,"modelBytes":4096,"modelSha256":"{MODEL_SHA}",'
+            f'"commandSha256":"{command_hash}",'
+            '"inferenceMillis":12,'
             '"observationType":"Rejected","nonAuthoritative":true}\n'
         ),
         encoding="utf-8",
@@ -249,10 +255,13 @@ def test_classifier_json_requires_rejection_reason(tmp_path: Path) -> None:
 
 def test_classifier_json_requires_candidate_confidence_gate(tmp_path: Path) -> None:
     artifact = tmp_path / "tflite-task-text-classifier.json"
+    command_hash = command_sha256("low confidence command")
     artifact.write_text(
         (
             '{"status":"PASS","categoryCount":1,"topLabel":"PHONE",'
-            '"topScore":0.51,"inferenceMillis":12,'
+            f'"topScore":0.51,"modelBytes":4096,"modelSha256":"{MODEL_SHA}",'
+            f'"commandSha256":"{command_hash}",'
+            '"inferenceMillis":12,'
             '"observationType":"Candidate","observationRoute":"PHONE",'
             '"observationConfidence":0.51,"nonAuthoritative":true}\n'
         ),

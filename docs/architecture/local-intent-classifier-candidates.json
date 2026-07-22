@@ -89,7 +89,7 @@
         "Requires a trained model with metadata; no model asset is accepted until Moto benchmark evidence passes.",
         "Native/runtime APK impact must be measured in modelDebug before any default-build consideration."
       ],
-      "next_action": "Run the modelDebug benchmark with a tiny metadata-backed classifier on the Moto G, then validate routing quality, APK delta, latency, and idle memory."
+      "next_action": "Train, export, or obtain a tiny metadata-backed classifier, run the modelDebug benchmark on the Moto G against the eval corpus, then validate routing quality, APK delta, latency, and idle memory."
     },
     {
       "id": "mediapipe_text_classifier",

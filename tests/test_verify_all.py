@@ -178,6 +178,7 @@ def test_verifier_runs_rom_system_app_validation(tmp_path: Path) -> None:
 
     assert report.ok
     assert rom_system_app_command("python") in seen
+    assert ("python", "scripts/verify_local_intent_router_corpus.py") in seen
 
 
 def test_verifier_fails_when_android_gradle_is_skipped_on_ready_toolchain(

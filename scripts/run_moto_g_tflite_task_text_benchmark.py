@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import posixpath
 import re
@@ -46,6 +47,7 @@ DEVICE_RESULT_PATH = (
 DEFAULT_COMMAND = "show my battery status"
 MAX_MODEL_BYTES = 8 * 1024 * 1024
 MAX_COMMAND_CHARS = 160
+SAFE_EXAMPLE_ID = re.compile(r"^[a-z0-9][a-z0-9_]{2,80}$")
 SAFE_MODEL_BASENAME = re.compile(r"^[A-Za-z0-9._-]+\.tflite$")
 ALLOWED_DEVICE_MODEL_PREFIXES = (
     "/sdcard/Android/data/dev.goffy.os.model/files/models/",
@@ -225,6 +227,7 @@ def build_report(
     model: Path | None = None,
     device_model_path: str | None = None,
     command_text: str = DEFAULT_COMMAND,
+    example_id: str | None = None,
     runner: CommandRunner = default_command_runner,
     output_directory: Path | None = None,
     device_serial: str | None = None,
@@ -253,6 +256,7 @@ def build_report(
         model=resolved_model,
         device_model_path=device_model_path,
         command_text=command_text,
+        example_id=example_id,
     )
     if blockers:
         return gated_failure(
@@ -315,6 +319,7 @@ def build_report(
             model=resolved_model,
             device_model_path=require_device_model_path(planned_device_path),
             command_text=command_text,
+            example_id=example_id,
             runner=runner,
             timeout_seconds=timeout_seconds,
             result_artifact=result_artifact,
@@ -372,6 +377,7 @@ def execution_blockers(
     model: Path | None,
     device_model_path: str | None,
     command_text: str,
+    example_id: str | None,
 ) -> tuple[str, ...]:
     blockers: list[str] = []
     if not confirm_device_mutation:
@@ -380,6 +386,8 @@ def execution_blockers(
         blockers.append("provide --model or --device-model-path")
     if is_blank_or_too_long(command_text):
         blockers.append(f"command must be 1..{MAX_COMMAND_CHARS} characters")
+    if example_id is not None and SAFE_EXAMPLE_ID.fullmatch(example_id) is None:
+        blockers.append("example id must be safe lower snake case")
     if model is not None:
         blockers.extend(validate_host_model(model))
     if device_model_path is not None and not is_allowed_device_model_path(device_model_path):
@@ -438,6 +446,7 @@ def run_benchmark_steps(
     model: Path | None,
     device_model_path: str,
     command_text: str,
+    example_id: str | None,
     runner: CommandRunner,
     timeout_seconds: int,
     result_artifact: Path,
@@ -529,6 +538,7 @@ def run_benchmark_steps(
             "-e",
             "command",
             command_text,
+            *instrumentation_example_args(example_id),
             "-e",
             "resultPath",
             DEVICE_RESULT_PATH,
@@ -552,6 +562,7 @@ def run_benchmark_steps(
             "-e",
             "command",
             "<command>",
+            *instrumentation_example_args("<example-id>" if example_id else None),
             "-e",
             "resultPath",
             DEVICE_RESULT_PATH,
@@ -599,6 +610,10 @@ def display_adb_shell_command(adb: Path, *remote_args: str) -> tuple[str, ...]:
 
 def quote_remote_args(remote_args: Sequence[str]) -> str:
     return " ".join(shlex.quote(arg) for arg in remote_args)
+
+
+def instrumentation_example_args(example_id: str | None) -> tuple[str, ...]:
+    return ("-e", "exampleId", example_id) if example_id else ()
 
 
 def run_step(
@@ -672,6 +687,19 @@ def validate_classifier_json_payload(payload: dict[str, object]) -> str | None:
         return "classifier benchmark JSON did not report any categories"
     if payload.get("nonAuthoritative") is not True:
         return "classifier benchmark JSON did not prove non-authoritative output"
+    model_bytes = payload.get("modelBytes")
+    if (
+        isinstance(model_bytes, bool)
+        or not isinstance(model_bytes, int)
+        or not (1 <= model_bytes <= MAX_MODEL_BYTES)
+    ):
+        return "classifier benchmark JSON did not include bounded modelBytes"
+    model_sha = payload.get("modelSha256")
+    if not isinstance(model_sha, str) or not is_sha256(model_sha):
+        return "classifier benchmark JSON did not include modelSha256"
+    command_sha = payload.get("commandSha256")
+    if not isinstance(command_sha, str) or not is_sha256(command_sha):
+        return "classifier benchmark JSON did not include commandSha256"
     inference_millis = payload.get("inferenceMillis")
     if isinstance(inference_millis, bool) or not isinstance(inference_millis, int | float):
         return "classifier benchmark JSON did not include inference timing"
@@ -694,6 +722,14 @@ def validate_classifier_json_payload(payload: dict[str, object]) -> str | None:
         ):
             return "classifier benchmark JSON candidate did not meet the confidence gate"
     return None
+
+
+def is_sha256(value: str) -> bool:
+    return len(value) == 64 and all(char in "0123456789abcdef" for char in value)
+
+
+def command_sha256(command: str) -> str:
+    return hashlib.sha256(command.encode("utf-8")).hexdigest()
 
 
 def classifier_json_summary(payload: dict[str, object]) -> str:
@@ -769,6 +805,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Use an already-pushed .tflite model under GOFFY modelDebug app-owned storage.",
     )
     parser.add_argument("--command", default=DEFAULT_COMMAND, help="Short command to classify.")
+    parser.add_argument(
+        "--example-id",
+        help="Optional corpus example id to embed in the benchmark artifact.",
+    )
     parser.add_argument("--device-serial", help="ADB serial when more than one device is attached.")
     parser.add_argument("--output-directory", type=Path, help="Artifact output directory.")
     parser.add_argument("--timeout-seconds", type=int, default=180)
@@ -784,6 +824,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         model=args.model,
         device_model_path=args.device_model_path,
         command_text=args.command,
+        example_id=args.example_id,
         output_directory=args.output_directory,
         device_serial=args.device_serial,
         timeout_seconds=args.timeout_seconds,

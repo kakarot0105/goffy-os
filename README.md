@@ -59,9 +59,10 @@ the capability boundary.
 > TensorFlow Lite Task Text selected only as a modelDebug prototype candidate.
 > Its pinned dependency now resolves and builds in an isolated Android probe, and
 > `modelDebug` now compiles a Task Text classifier bridge plus a variant-scoped
-> Moto benchmark harness. Classifier acceptance remains blocked until a tiny
-> `.tflite` model produces physical Moto latency, idle-memory, APK-budget, and
-> routing-quality evidence.
+> Moto benchmark harness. The seed PHONE/MAC/CLOUD/UNKNOWN router corpus and
+> routing-quality evidence verifier are now in-repo. Classifier acceptance
+> remains blocked until a tiny `.tflite` model produces physical Moto latency,
+> idle-memory, APK-budget, and routing-quality evidence.
 > Default GOFFY LITE still does not ship or load the LiteRT-LM runtime. Automatic
 > rotation scheduling, Android retrieval for Hub audit, certificate-backed Hub
 > identity proof, trusted LAN operation, bootloader unlock eligibility, stock
@@ -104,6 +105,8 @@ the capability boundary.
 - Optional TensorFlow Lite Task Text dependency probe for the classifier path;
   the pinned dependency builds in isolation and the `modelDebug` classifier
   bridge/benchmark harness compiles without adding a default runtime dependency
+- Seed local intent-router corpus plus an opt-in routing-quality verifier for
+  physical Moto Task Text benchmark evidence
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
@@ -455,11 +458,12 @@ already signed artifact only.
 
 This runs formatting, linting, type checks, Python tests, package build,
 security scan, pairing smoke verification, Android environment preflight, and
-Android Gradle plus the GOFFY LITE release APK budget/payload guard, default
-debug/release LiteRT-LM dependency guard, TensorFlow Lite Task Text dependency
-guard, optional LiteRT-LM provider compile gate, optional `modelDebug` Task Text
-classifier compile/package gate, and merged-manifest security validation when
-the local JDK/SDK/adb prerequisites are present.
+Android Gradle plus the local intent-router corpus guard, GOFFY LITE release APK
+budget/payload guard, default debug/release LiteRT-LM dependency guard,
+TensorFlow Lite Task Text dependency guard, optional LiteRT-LM provider compile
+gate, optional `modelDebug` Task Text classifier compile/package gate, and
+merged-manifest security validation when the local JDK/SDK/adb prerequisites are
+present.
 Use `--allow-missing-android` only when you intentionally want the Python/Hub
 checks to pass while Android Gradle remains blocked by local tooling.
 
