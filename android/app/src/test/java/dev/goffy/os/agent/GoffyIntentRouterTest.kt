@@ -6,6 +6,7 @@ import dev.goffy.os.localmodel.LocalModelIntentObservation
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatusArguments
+import dev.goffy.os.protocol.GOFFY_ROM_STATUS_TOOL
 import dev.goffy.os.protocol.MAC_APPS_LIST_TOOL
 import dev.goffy.os.protocol.MAC_APPS_OPEN_TOOL
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
@@ -48,6 +49,22 @@ class GoffyIntentRouterTest {
         assertEquals(PermissionLevel.SAFE, plan.permission)
         assertEquals("mac.system_info", plan.toolName)
         assertEquals(2, plan.successCriteria.size)
+    }
+
+    @Test
+    fun routesGoffyRomStatusToSafeMacTool() {
+        val decision = GoffyIntentRouter.route("What are we building now can you explain?")
+
+        assertTrue(decision is RoutingDecision.Routed)
+        val plan = (decision as RoutingDecision.Routed).plan
+        assertEquals(ExecutionTarget.MAC, plan.executionTarget)
+        assertEquals(PermissionLevel.SAFE, plan.permission)
+        assertEquals(GOFFY_ROM_STATUS_TOOL, plan.toolName)
+        assertEquals(3, plan.successCriteria.size)
+        assertTrue(GoffyIntentRouter.route("Show GOFFY ROM status") is RoutingDecision.Routed)
+        assertTrue(GoffyIntentRouter.route("Is the ROM ready?") is RoutingDecision.Routed)
+        assertTrue(GoffyIntentRouter.route("Explain GOFFY OS status") is RoutingDecision.Routed)
+        assertTrue(GoffyIntentRouter.route("Show OS status") is RoutingDecision.Unsupported)
     }
 
     @Test

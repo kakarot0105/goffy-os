@@ -212,6 +212,25 @@ restart. Unknown, foreign, and evicted cursors replay no retained history; they
 receive a fresh re-list signal and attach to the current session's live tail. No
 network health probe or busy polling is used by the current default Mac tools.
 
+## GOFFY ROM Status
+
+`goffy.rom.status` is enabled by default as a SAFE, read-only status tool. It
+reads only fixed ROM-0 validation artifact names under the configured GOFFY repo
+root: `.goffy-validation/rom-0-refresh-report.json` and optional
+`.goffy-validation/rom-0-operator-checklist.json`. The default root is the Hub
+process working directory; override it only with an existing absolute directory:
+
+```bash
+export GOFFY_ROM_STATUS_ROOT="$HOME/Documents/GitHub/goffy-os"
+```
+
+The tool returns bounded status, blocker count, visible blockers, stale-report
+state, and next action. It never accepts user-supplied paths, exposes raw
+artifact paths, executes shell commands, or grants unlock, reboot, flash, erase,
+wipe, boot, or shell authority. Missing, stale, malformed, or unsafe-display
+artifacts produce schema-valid blocked/missing/invalid status instead of a ready
+claim.
+
 ## Mac Process List
 
 `mac.processes.list` is enabled by default on macOS Hub hosts as a SAFE,

@@ -6,6 +6,7 @@ import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.agent.TaskTimelineEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
+import dev.goffy.os.protocol.GOFFY_ROM_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
@@ -238,6 +239,40 @@ class ClosedTerminalAuditTest {
         assertEquals(null, restored.result)
         assertFalse(restored.approvalGranted)
         assertFalse(restored.toString().contains(secretPath))
+    }
+
+    @Test
+    fun goffyRomStatusAuditRoundTripsAsDisplayOnlySafeMacTask() {
+        val blockerDetail = "exact stock restore evidence is missing"
+        val entry = TaskTimelineEntry(
+            id = UUID.fromString("77777777-7777-4777-8777-777777777777"),
+            command = "Show GOFFY ROM status",
+            executionTarget = ExecutionTarget.MAC,
+            toolName = GOFFY_ROM_STATUS_TOOL,
+            phase = TaskPhase.VERIFIED,
+            summary = "GOFFY ROM-0 BLOCKED: $blockerDetail",
+            events = listOf(
+                TaskTimelineEvent(TaskEventKind.OBSERVE, "Observed ROM command"),
+                TaskTimelineEvent(TaskEventKind.RESULT, blockerDetail),
+                TaskTimelineEvent(TaskEventKind.VERIFY, "Verified ROM status"),
+            ),
+            result = null,
+            permission = PermissionLevel.SAFE,
+            approvalGranted = false,
+        )
+
+        val record = entry.toClosedTerminalAuditRecord(recordedAtEpochMillis = 1_720_000_000_000)
+
+        assertNotNull(record)
+        assertEquals(GOFFY_ROM_STATUS_TOOL, record?.toolName)
+        assertEquals(AuditPermission.SAFE, record?.permission)
+        assertFalse(record.toString().contains(blockerDetail))
+
+        val restored = requireNotNull(record).toTimelineEntry()
+        assertEquals("Recorded GOFFY ROM status task", restored.command)
+        assertEquals(GOFFY_ROM_STATUS_TOOL, restored.toolName)
+        assertEquals(null, restored.result)
+        assertFalse(restored.toString().contains(blockerDetail))
     }
 
     @Test

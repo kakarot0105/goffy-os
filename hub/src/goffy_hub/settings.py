@@ -36,6 +36,7 @@ class HubSettings(BaseModel):
     mac_app_allowlist: tuple[str, ...] = Field(default=(), max_length=25)
     mac_app_open_enabled: bool = False
     mac_clipboard_read_enabled: bool = False
+    rom_status_root: Path = Field(default_factory=Path.cwd)
 
     @model_validator(mode="after")
     def guard_network_binding(self) -> HubSettings:
@@ -100,6 +101,14 @@ class HubSettings(BaseModel):
         self.git_repo_roots = tuple(resolved_git_roots)
         if self.mac_app_open_enabled and not self.mac_app_allowlist:
             raise ValueError("GOFFY_MAC_APP_OPEN_ENABLED requires GOFFY_MAC_APP_ALLOWLIST")
+        if not self.rom_status_root.is_absolute():
+            raise ValueError("GOFFY_ROM_STATUS_ROOT must be an absolute directory")
+        try:
+            self.rom_status_root = self.rom_status_root.expanduser().resolve(strict=True)
+        except OSError as exc:
+            raise ValueError("GOFFY_ROM_STATUS_ROOT must be an existing directory") from exc
+        if not self.rom_status_root.is_dir():
+            raise ValueError("GOFFY_ROM_STATUS_ROOT must be an existing directory")
         return self
 
     @property
@@ -163,6 +172,7 @@ class HubSettings(BaseModel):
             mac_app_allowlist=_comma_separated("GOFFY_MAC_APP_ALLOWLIST"),
             mac_app_open_enabled=_boolean_environment("GOFFY_MAC_APP_OPEN_ENABLED"),
             mac_clipboard_read_enabled=_boolean_environment("GOFFY_MAC_CLIPBOARD_READ_ENABLED"),
+            rom_status_root=_optional_path("GOFFY_ROM_STATUS_ROOT") or Path.cwd(),
         )
 
 

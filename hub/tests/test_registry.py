@@ -85,7 +85,7 @@ def test_registry_exposes_mcp_shaped_metadata() -> None:
         tool.model_dump(mode="json", by_alias=True, exclude_none=True)
         for tool in registry.describe()
     ]
-    assert len(tools) == 2
+    assert {item["name"] for item in tools} >= {"goffy.rom.status", "mac.system_info"}
     tool = next(item for item in tools if item["name"] == "mac.system_info")
     assert set(tool) == {
         "name",

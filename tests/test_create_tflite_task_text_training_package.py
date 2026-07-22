@@ -21,14 +21,14 @@ def test_training_package_exports_model_maker_dataset_and_manifest(tmp_path: Pat
 
     assert report.ok
     assert report.status == "CREATED"
-    assert report.train_rows == 32
-    assert report.eval_rows == 16
+    assert report.train_rows == 33
+    assert report.eval_rows == 17
     assert report.labels == ("CLOUD", "MAC", "PHONE", "UNKNOWN")
 
     train_rows = read_csv_rows(output / package.TRAIN_CSV)
     dev_rows = read_csv_rows(output / package.DEV_CSV)
-    assert len(train_rows) == 32
-    assert len(dev_rows) == 16
+    assert len(train_rows) == 33
+    assert len(dev_rows) == 17
     assert set(train_rows[0]) == {"sentence", "label"}
     assert {row["label"] for row in train_rows + dev_rows} == set(report.labels)
 
@@ -55,13 +55,13 @@ def test_training_package_exports_model_maker_dataset_and_manifest(tmp_path: Pat
     assert manifest["policy"]["max_model_bytes"] == 8 * 1024 * 1024
     assert manifest["dataset"]["train_counts"] == {
         "CLOUD": 8,
-        "MAC": 8,
+        "MAC": 9,
         "PHONE": 8,
         "UNKNOWN": 8,
     }
     assert manifest["dataset"]["eval_counts"] == {
         "CLOUD": 4,
-        "MAC": 4,
+        "MAC": 5,
         "PHONE": 4,
         "UNKNOWN": 4,
     }

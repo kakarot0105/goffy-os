@@ -19,6 +19,7 @@ import kotlinx.serialization.json.put
 
 const val GOFFY_PROTOCOL_VERSION = "0.2.0"
 const val MCP_PROTOCOL_VERSION = "2025-11-25"
+const val GOFFY_ROM_STATUS_TOOL_VERSION = "1.0.0"
 const val MAC_SYSTEM_INFO_TOOL_VERSION = "1.0.0"
 const val MAC_FILES_LARGEST_TOOL_VERSION = "1.0.0"
 const val MAC_FILES_LIST_TOOL_VERSION = "1.0.0"
@@ -126,6 +127,27 @@ sealed interface ToolResultContent
 sealed interface ToolArguments
 
 data object NoToolArguments : ToolArguments
+
+data class GoffyRomStatus(
+    val status: String,
+    val milestone: String,
+    val summary: String,
+    val generatedAt: String,
+    val refreshSchemaVersion: String,
+    val refreshStatus: String,
+    val packetStatus: String,
+    val bootloaderVisibilityStatus: String,
+    val operatorChecklistStatus: String,
+    val romReady: Boolean,
+    val destructiveActions: String,
+    val blockerCount: Int,
+    val blockers: List<String>,
+    val blockersTruncated: Boolean,
+    val nextAction: String,
+    val staleReport: Boolean,
+    val checkedRefreshReport: Boolean,
+    val checkedOperatorChecklist: Boolean,
+) : ToolResultContent
 
 data class MacProcessesListArguments(
     val maxEntries: Int = DEFAULT_MAC_PROCESS_ENTRIES,
@@ -585,6 +607,12 @@ class GoffyProtocolCodec(
 
     private fun encodeToolArguments(toolName: String, arguments: ToolArguments): JsonObject =
         when (toolName) {
+            GOFFY_ROM_STATUS_TOOL -> {
+                if (arguments !is NoToolArguments) {
+                    throw ProtocolException("goffy.rom.status does not accept arguments")
+                }
+                JsonObject(emptyMap())
+            }
             MAC_SYSTEM_INFO_TOOL -> {
                 if (arguments !is NoToolArguments) {
                     throw ProtocolException("mac.system_info does not accept arguments")
@@ -837,6 +865,10 @@ class GoffyProtocolCodec(
         tool.requireBoundedString("title", 1, 128)
         tool.requireBoundedString("description", 1, 512)
         when (toolName) {
+            GOFFY_ROM_STATUS_TOOL -> {
+                validateGoffyRomStatusInputSchema(tool.requireObject("inputSchema"))
+                validateGoffyRomStatusOutputSchema(tool.requireObject("outputSchema"))
+            }
             MAC_SYSTEM_INFO_TOOL -> {
                 validateSystemInfoInputSchema(tool.requireObject("inputSchema"))
                 validateSystemInfoOutputSchema(tool.requireObject("outputSchema"))
@@ -875,6 +907,7 @@ class GoffyProtocolCodec(
         metadata.requireKeys(GOFFY_METADATA_KEYS)
         val toolVersion = metadata.requireString("dev.goffy/toolVersion")
         val expectedToolVersion = when (toolName) {
+            GOFFY_ROM_STATUS_TOOL -> GOFFY_ROM_STATUS_TOOL_VERSION
             MAC_SYSTEM_INFO_TOOL -> MAC_SYSTEM_INFO_TOOL_VERSION
             MAC_FILES_LARGEST_TOOL -> MAC_FILES_LARGEST_TOOL_VERSION
             MAC_FILES_LIST_TOOL -> MAC_FILES_LIST_TOOL_VERSION
@@ -935,6 +968,104 @@ class GoffyProtocolCodec(
             }
         }
         schema.requireArray("required").requireExactStrings(SYSTEM_INFO_KEYS, "required")
+    }
+
+    private fun validateGoffyRomStatusInputSchema(schema: JsonObject) {
+        schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS)
+        validateObjectSchemaRoot(schema)
+        schema.requireObject("properties").requireKeys(emptySet())
+    }
+
+    private fun validateGoffyRomStatusOutputSchema(schema: JsonObject) {
+        schema.requireKeys(OUTPUT_SCHEMA_KEYS)
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(GOFFY_ROM_STATUS_OUTPUT_KEYS)
+        schema.requireArray("required").requireExactStrings(
+            GOFFY_ROM_STATUS_OUTPUT_KEYS,
+            "ROM status required",
+        )
+
+        properties.requireObject("status").also { status ->
+            status.requireKeys(ENUM_STRING_SCHEMA_KEYS)
+            status.requireType("string")
+            status.requireArray("enum").requireExactStrings(
+                GOFFY_ROM_STATUS_VALUES,
+                "ROM status enum",
+            )
+        }
+        properties.requireObject("milestone").also { milestone ->
+            milestone.requireKeys(setOf("const", "type"))
+            milestone.requireType("string")
+            milestone.requireString("const").requireExactString(GOFFY_ROM_MILESTONE, "milestone")
+        }
+        properties.requireObject("destructiveActions").also { destructive ->
+            destructive.requireKeys(setOf("const", "type"))
+            destructive.requireType("string")
+            destructive.requireString("const").requireExactString(
+                "withheld",
+                "destructiveActions",
+            )
+        }
+        properties.requireObject("summary").validateBoundedStringSchema(
+            "summary",
+            1,
+            MAX_GOFFY_ROM_SUMMARY_LENGTH,
+        )
+        properties.requireObject("generatedAt").validateBoundedStringSchema(
+            "generatedAt",
+            1,
+            MAX_GOFFY_ROM_TIMESTAMP_LENGTH,
+        )
+        properties.requireObject("refreshSchemaVersion").validateBoundedStringSchema(
+            "refreshSchemaVersion",
+            1,
+            MAX_GOFFY_ROM_SCHEMA_LENGTH,
+        )
+        setOf(
+            "refreshStatus",
+            "packetStatus",
+            "bootloaderVisibilityStatus",
+            "operatorChecklistStatus",
+        ).forEach { field ->
+            properties.requireObject(field).validateBoundedStringSchema(
+                field,
+                1,
+                MAX_GOFFY_ROM_STATUS_LENGTH,
+            )
+        }
+        properties.requireObject("blockerCount").validateBoundedIntInclusiveSchema(
+            "blockerCount",
+            0,
+            MAX_GOFFY_ROM_BLOCKER_COUNT,
+        )
+        properties.requireObject("blockers").also { blockers ->
+            blockers.requireKeys(ARRAY_STRING_SCHEMA_KEYS + "maxItems")
+            blockers.requireType("array")
+            blockers.requireInt("maxItems").requireExactValue(
+                MAX_GOFFY_ROM_BLOCKERS,
+                "blockers maxItems",
+            )
+            blockers.requireObject("items").validateBoundedStringSchema(
+                "blocker",
+                1,
+                MAX_GOFFY_ROM_BLOCKER_LENGTH,
+            )
+        }
+        properties.requireObject("nextAction").validateBoundedStringSchema(
+            "nextAction",
+            1,
+            MAX_GOFFY_ROM_NEXT_ACTION_LENGTH,
+        )
+        setOf(
+            "romReady",
+            "blockersTruncated",
+            "staleReport",
+            "checkedRefreshReport",
+            "checkedOperatorChecklist",
+        ).forEach { field ->
+            properties.requireObject(field).requireTypeOnly("boolean")
+        }
     }
 
     private fun validateMacFilesLargestInputSchema(schema: JsonObject) {
@@ -1667,6 +1798,12 @@ class GoffyProtocolCodec(
         val target = payload.requireExecutionTarget()
         val content = payload.requireObject("structuredContent")
         val decodedContent = when (toolName) {
+            GOFFY_ROM_STATUS_TOOL -> {
+                if (target != ExecutionTarget.MAC) {
+                    throw ProtocolException("goffy.rom.status returned an unexpected execution target")
+                }
+                decodeGoffyRomStatus(content)
+            }
             MAC_SYSTEM_INFO_TOOL -> {
                 if (target != ExecutionTarget.MAC) {
                     throw ProtocolException("mac.system_info returned an unexpected execution target")
@@ -1727,6 +1864,80 @@ class GoffyProtocolCodec(
             executionTarget = target,
             content = decodedContent,
         )
+    }
+
+    private fun decodeGoffyRomStatus(content: JsonObject): GoffyRomStatus {
+        content.requireKeys(GOFFY_ROM_STATUS_OUTPUT_KEYS)
+        val blockers = content.requireArray("blockers").map { element ->
+            val blocker = element.stringValueOrNull()
+                ?: throw ProtocolException("ROM status blockers must be strings")
+            requireBounded("blocker", blocker, 1, MAX_GOFFY_ROM_BLOCKER_LENGTH)
+            blocker
+        }
+        if (blockers.size > MAX_GOFFY_ROM_BLOCKERS) {
+            throw ProtocolException("ROM status has too many blockers")
+        }
+        val status = content.requireString("status").also { value ->
+            if (value !in GOFFY_ROM_STATUS_VALUES) {
+                throw ProtocolException("unsupported ROM status")
+            }
+        }
+        val result = GoffyRomStatus(
+            status = status,
+            milestone = content.requireBoundedString("milestone", 1, GOFFY_ROM_MILESTONE.length),
+            summary = content.requireBoundedString("summary", 1, MAX_GOFFY_ROM_SUMMARY_LENGTH),
+            generatedAt = content.requireBoundedString(
+                "generatedAt",
+                1,
+                MAX_GOFFY_ROM_TIMESTAMP_LENGTH,
+            ),
+            refreshSchemaVersion = content.requireBoundedString(
+                "refreshSchemaVersion",
+                1,
+                MAX_GOFFY_ROM_SCHEMA_LENGTH,
+            ),
+            refreshStatus = content.requireBoundedString(
+                "refreshStatus",
+                1,
+                MAX_GOFFY_ROM_STATUS_LENGTH,
+            ),
+            packetStatus = content.requireBoundedString(
+                "packetStatus",
+                1,
+                MAX_GOFFY_ROM_STATUS_LENGTH,
+            ),
+            bootloaderVisibilityStatus = content.requireBoundedString(
+                "bootloaderVisibilityStatus",
+                1,
+                MAX_GOFFY_ROM_STATUS_LENGTH,
+            ),
+            operatorChecklistStatus = content.requireBoundedString(
+                "operatorChecklistStatus",
+                1,
+                MAX_GOFFY_ROM_STATUS_LENGTH,
+            ),
+            romReady = content.requireBoolean("romReady"),
+            destructiveActions = content.requireBoundedString("destructiveActions", 1, 16),
+            blockerCount = content.requireBoundedInt(
+                "blockerCount",
+                0,
+                MAX_GOFFY_ROM_BLOCKER_COUNT,
+            ),
+            blockers = blockers,
+            blockersTruncated = content.requireBoolean("blockersTruncated"),
+            nextAction = content.requireBoundedString(
+                "nextAction",
+                1,
+                MAX_GOFFY_ROM_NEXT_ACTION_LENGTH,
+            ),
+            staleReport = content.requireBoolean("staleReport"),
+            checkedRefreshReport = content.requireBoolean("checkedRefreshReport"),
+            checkedOperatorChecklist = content.requireBoolean("checkedOperatorChecklist"),
+        )
+        if (!result.matchesToolContract()) {
+            throw ProtocolException("ROM status result failed local policy")
+        }
+        return result
     }
 
     private fun decodeError(payload: JsonObject): ExecutionEvent.Error {
@@ -2403,6 +2614,26 @@ private val APPROVAL_REQUEST_KEYS = setOf(
     "issuedAtEpochMillis",
     "expiresAtEpochMillis",
 )
+private val GOFFY_ROM_STATUS_OUTPUT_KEYS = setOf(
+    "status",
+    "milestone",
+    "summary",
+    "generatedAt",
+    "refreshSchemaVersion",
+    "refreshStatus",
+    "packetStatus",
+    "bootloaderVisibilityStatus",
+    "operatorChecklistStatus",
+    "romReady",
+    "destructiveActions",
+    "blockerCount",
+    "blockers",
+    "blockersTruncated",
+    "nextAction",
+    "staleReport",
+    "checkedRefreshReport",
+    "checkedOperatorChecklist",
+)
 private val SYSTEM_INFO_KEYS = setOf("status", "operatingSystem", "architecture")
 private val MAC_FILES_LIST_INPUT_KEYS = setOf(
     "rootIndex",
@@ -2585,6 +2816,7 @@ private val STRING_MAX_SCHEMA_KEYS = setOf("type", "maxLength")
 private val BOOLEAN_SCHEMA_KEYS = setOf("type")
 private val INTEGER_BOUNDED_SCHEMA_KEYS = setOf("type", "minimum")
 private val ARRAY_REF_SCHEMA_KEYS = setOf("type", "items")
+private val ARRAY_STRING_SCHEMA_KEYS = setOf("type", "items")
 private val OBJECT_DEFINITION_KEYS = setOf("type", "additionalProperties", "properties", "required")
 private val ENUM_STRING_SCHEMA_KEYS = setOf("type", "enum")
 private val NULLABLE_SCHEMA_KEYS = setOf("anyOf", "default")

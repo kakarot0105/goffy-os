@@ -12,7 +12,9 @@ the capability boundary.
 > repo now treats ROM/GSI feasibility for the exact Moto G 2025 `kansas`
 > / `XT2513V` target as the primary product track, with the launcher/app layer
 > kept for safe validation and fallback. The current repo implements offline
-> PHONE actions, exact-ID user-approved local PHONE memory controls, discovery-gated SAFE Mac status/process/file-list actions, an
+> PHONE actions, exact-ID user-approved local PHONE memory controls,
+> discovery-gated SAFE Mac status/process/file-list actions, read-only GOFFY ROM
+> status, an
 > approved-repo SAFE Git status MCP tool, an opt-in SAFE Mac clipboard-read MCP
 > tool, an official MCP
 > Streamable HTTP boundary, stable Hub paired-device credentials, Keystore-backed
@@ -128,6 +130,8 @@ the capability boundary.
   routing-quality gate
 - Reuse-first Task Text export-image audit evidence generator that consumes
   Trivy or Grype JSON and blocks critical, high, or medium findings
+- Read-only `SAFE goffy.rom.status` Hub/MCP tool plus Android routes for
+  `Show GOFFY ROM status` and `What are we building now?`
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
@@ -163,6 +167,10 @@ the capability boundary.
 - Persistent, hash-chained paired-mode Hub operator audit storage with integrity
   reporting
 - Allowlisted, read-only `SAFE mac.system_info` tool
+- Default read-only `SAFE goffy.rom.status` tool for bounded ROM-0 readiness
+  status from fixed local GOFFY validation artifacts; it exposes no artifact
+  paths and grants no unlock, reboot, flash, erase, wipe, boot, or shell
+  authority
 - macOS-gated, allowlisted, read-only `SAFE mac.processes.list` tool for bounded running
   process metadata, including an Android `What's running on my Mac` route that
   does not request command lines, executable paths, environment variables, open

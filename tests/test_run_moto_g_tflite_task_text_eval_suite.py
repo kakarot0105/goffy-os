@@ -45,7 +45,7 @@ def test_plan_mode_does_not_execute_eval_commands(
     assert report.ok
     assert not report.executed
     assert report.status == "PLANNED"
-    assert report.example_count == 16
+    assert report.example_count == 17
     assert all(example.status is suite.StepStatus.PLANNED for example in report.examples)
     assert seen == []
 
@@ -91,7 +91,7 @@ def test_execute_runs_eval_split_and_writes_quality_manifest(
     assert fake_runner.install_count == 2
     assert fake_runner.prepare_count == 1
     assert fake_runner.push_count == 1
-    assert fake_runner.instrument_count == 16
+    assert fake_runner.instrument_count == 17
     assert report.evidence_manifest is not None
 
     manifest = json.loads(Path(report.evidence_manifest).read_text(encoding="utf-8"))
@@ -99,7 +99,7 @@ def test_execute_runs_eval_split_and_writes_quality_manifest(
     assert manifest["model_file"] == "models/tiny-router.tflite"
     assert manifest["model_sha256"] == sha256_file(tmp_path / "evidence/models/tiny-router.tflite")
     assert manifest["model_bytes"] == model.stat().st_size
-    assert len(manifest["results"]) == 16
+    assert len(manifest["results"]) == 17
 
 
 def test_execute_reports_quality_failure_for_unknown_false_positive(

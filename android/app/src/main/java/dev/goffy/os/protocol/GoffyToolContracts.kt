@@ -2,6 +2,33 @@ package dev.goffy.os.protocol
 
 import java.util.Locale
 
+fun GoffyRomStatus.matchesToolContract(): Boolean =
+    status in GOFFY_ROM_STATUS_VALUES &&
+        milestone == GOFFY_ROM_MILESTONE &&
+        summary.isSafeRomStatusField(MAX_GOFFY_ROM_SUMMARY_LENGTH) &&
+        generatedAt.isSafeRomStatusField(MAX_GOFFY_ROM_TIMESTAMP_LENGTH) &&
+        refreshSchemaVersion.isSafeRomStatusField(MAX_GOFFY_ROM_SCHEMA_LENGTH) &&
+        refreshStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
+        packetStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
+        bootloaderVisibilityStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
+        operatorChecklistStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
+        destructiveActions == "withheld" &&
+        blockerCount in 0..MAX_GOFFY_ROM_BLOCKER_COUNT &&
+        blockers.size <= MAX_GOFFY_ROM_BLOCKERS &&
+        blockers.size <= blockerCount &&
+        (if (blockersTruncated) blockers.size < blockerCount else blockers.size == blockerCount) &&
+        blockers.all { it.isSafeRomStatusField(MAX_GOFFY_ROM_BLOCKER_LENGTH) } &&
+        nextAction.isSafeRomStatusField(MAX_GOFFY_ROM_NEXT_ACTION_LENGTH) &&
+        (!romReady || status == "available") &&
+        (!romReady || blockerCount == 0) &&
+        (!romReady || !staleReport) &&
+        (!romReady || checkedRefreshReport) &&
+        (!romReady || checkedOperatorChecklist) &&
+        (!romReady || refreshStatus == GOFFY_ROM_READY_STATUS) &&
+        (!romReady || packetStatus == GOFFY_ROM_READY_STATUS) &&
+        (!romReady || operatorChecklistStatus == GOFFY_ROM_READY_STATUS) &&
+        (romReady || blockerCount > 0)
+
 fun PhoneBatteryStatus.matchesToolContract(): Boolean =
     levelPercent in MIN_BATTERY_PERCENT..MAX_BATTERY_PERCENT
 
@@ -381,8 +408,25 @@ private fun String.isSafeDisplayField(maximum: Int): Boolean =
                 Character.getType(character) == Character.FORMAT.toInt()
         }
 
+private fun String.isSafeRomStatusField(maximum: Int): Boolean =
+    isSafeDisplayField(maximum) &&
+        !contains("/", ignoreCase = false) &&
+        !contains("\\", ignoreCase = false) &&
+        !contains("file://", ignoreCase = true)
+
 private const val MIN_BATTERY_PERCENT = 0
 private const val MAX_BATTERY_PERCENT = 100
+const val GOFFY_ROM_MILESTONE = "ROM-0"
+const val MAX_GOFFY_ROM_SUMMARY_LENGTH = 192
+const val MAX_GOFFY_ROM_TIMESTAMP_LENGTH = 64
+const val MAX_GOFFY_ROM_SCHEMA_LENGTH = 64
+const val MAX_GOFFY_ROM_STATUS_LENGTH = 96
+const val MAX_GOFFY_ROM_BLOCKERS = 8
+const val MAX_GOFFY_ROM_BLOCKER_LENGTH = 160
+const val MAX_GOFFY_ROM_NEXT_ACTION_LENGTH = 192
+const val MAX_GOFFY_ROM_BLOCKER_COUNT = 10_000
+const val GOFFY_ROM_READY_STATUS = "READY_FOR_ROM0_READINESS_REVIEW"
+val GOFFY_ROM_STATUS_VALUES = setOf("available", "missing", "invalid")
 private const val MAX_DEVICE_NAME_LENGTH = 128
 private const val MAX_ANDROID_RELEASE_LENGTH = 64
 private const val MIN_SUPPORTED_SDK = 26

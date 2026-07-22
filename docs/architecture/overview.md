@@ -7,9 +7,9 @@ ROM feasibility is proven. Across both forms, GOFFY separates intent, policy,
 transport, and capability execution so no model or UI can directly acquire
 ambient authority. The current runtime has five offline PHONE tools, default
 authenticated MAC status/process metadata tools, optional approved-root MAC file
-metadata tools, optional Git status, optional Mac clipboard text read, and a
-redacted Android-local audit trail for terminal tasks, not a general command
-channel.
+metadata tools, default GOFFY ROM-0 status, optional Git status, optional Mac
+clipboard text read, and a redacted Android-local audit trail for terminal
+tasks, not a general command channel.
 
 ROM packaging treats GOFFY as a non-privileged system app with an explicit
 home-surface contract: `.MainActivity` must stay exported for `MAIN/LAUNCHER`
@@ -32,6 +32,7 @@ deterministic router
                          |            |-> discover locally allowlisted tool
                          |            `-> invoke only after compatibility gate
                          `--------------> FastAPI Hub -> SAFE mac.system_info
+                                                      -> SAFE goffy.rom.status
                                                       -> SAFE mac.processes.list
                                                       -> optional SAFE mac.files.list
                                                       -> optional SAFE mac.files.largest
@@ -147,6 +148,11 @@ approval state, active work, and execution authority are not revived.
     only, and excludes command lines, executable paths, environment variables,
     open files, network data, current working directories, and user names.
     Android rejects path-like names and does not speak process names aloud.
+36. `goffy.rom.status` is a default SAFE metadata tool that reads only fixed
+    `.goffy-validation` ROM-0 artifact names under the configured repo root. It
+    returns bounded status, blocker, stale-report, and next-action fields, and
+    never accepts user-supplied paths or grants unlock, reboot, flash, erase,
+    wipe, boot, or shell authority.
 
 ## Performance posture
 

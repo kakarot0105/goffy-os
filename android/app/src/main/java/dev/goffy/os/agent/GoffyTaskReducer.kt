@@ -3,6 +3,8 @@ package dev.goffy.os.agent
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
+import dev.goffy.os.protocol.GOFFY_ROM_STATUS_TOOL
+import dev.goffy.os.protocol.GoffyRomStatus
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.MacAppOpened
 import dev.goffy.os.protocol.MacAppsList
@@ -515,6 +517,9 @@ data class TaskTimelineState(
     }
 
     private fun TaskTimelineEntry.acceptsContent(content: ToolResultContent): Boolean = when (toolName) {
+        GOFFY_ROM_STATUS_TOOL -> executionTarget == ExecutionTarget.MAC &&
+            content is GoffyRomStatus &&
+            content.matchesToolContract()
         GIT_STATUS_TOOL -> executionTarget == ExecutionTarget.MAC &&
             content is GitStatus &&
             content.matchesToolContract()
@@ -676,6 +681,7 @@ private fun LocalModelIntentObservation.nonExecutableSummary(): String = when (t
 private fun Float.displayConfidence(): String = String.format(Locale.US, "%.2f", this)
 
 private fun ToolResultContent.summaryText(): String = when (this) {
+    is GoffyRomStatus -> goffyRomStatusSummary()
     is GitStatus -> gitStatusSummary()
     is MacAppsList -> macAppsSummary()
     is MacAppOpened -> "Mac app $displayName opened and verified as running"
@@ -698,6 +704,16 @@ private fun ToolResultContent.summaryText(): String = when (this) {
     is PhoneOcrRead -> ocrReadSummary()
     is PhoneQrRead -> qrReadSummary()
     is PhoneTimerDispatched -> "Timer intent for $durationSeconds seconds dispatched to $clockPackage"
+}
+
+private fun GoffyRomStatus.goffyRomStatusSummary(): String {
+    val blockerLabel = if (blockerCount == 1) "1 blocker" else "$blockerCount blockers"
+    val staleLabel = if (staleReport) "; refresh stale" else ""
+    return if (romReady) {
+        "GOFFY ROM-0 is ready for manual readiness review"
+    } else {
+        "GOFFY ROM-0 $refreshStatus: $blockerLabel remain$staleLabel"
+    }
 }
 
 private fun PhoneMemoryList.memoryListSummary(): String =

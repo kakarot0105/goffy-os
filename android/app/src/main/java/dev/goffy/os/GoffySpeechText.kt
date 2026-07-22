@@ -3,6 +3,7 @@ package dev.goffy.os
 import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.GoffyRomStatus
 import dev.goffy.os.protocol.MacAppOpened
 import dev.goffy.os.protocol.MacAppsList
 import dev.goffy.os.protocol.MacClipboardRead
@@ -49,6 +50,7 @@ private fun ToolResultContent.speakableText(verified: Boolean): String =
                 "Git status for $repoName has " +
                     "${stagedCount + unstagedCount + untrackedCount + conflictCount} changes."
             }
+        is GoffyRomStatus -> romStatusSpeech()
         is MacClipboardRead -> clipboardSpeech()
         is MacAppsList ->
             "Mac approved app catalog returned ${entries.size} apps out of $appCount. " +
@@ -100,6 +102,26 @@ private fun ToolResultContent.speakableText(verified: Boolean): String =
             "Timer request for $durationSeconds seconds was sent to $clockPackage. " +
                 "Final timer state is owned by the Clock app."
     }.toBoundedSpeechText()
+
+private fun GoffyRomStatus.romStatusSpeech(): String =
+    if (romReady) {
+        "GOFFY ROM zero is ready for manual readiness review. Destructive actions remain withheld."
+    } else {
+        val safeNextAction = if (nextAction.isSafeRomStatusSpeechText()) {
+            "Next action is $nextAction. "
+        } else {
+            "Next action is hidden because it contained unsafe path-like text. "
+        }
+        "GOFFY ROM zero status is $refreshStatus with $blockerCount blockers. " +
+            safeNextAction +
+            "Destructive actions remain withheld."
+    }
+
+private fun String.isSafeRomStatusSpeechText(): Boolean =
+    isNotBlank() &&
+        !contains("/", ignoreCase = false) &&
+        !contains("\\", ignoreCase = false) &&
+        !contains("file://", ignoreCase = true)
 
 private fun MacClipboardRead.clipboardSpeech(): String = when (status) {
     "available" -> "Mac clipboard returned bounded text. I will not read clipboard contents aloud."

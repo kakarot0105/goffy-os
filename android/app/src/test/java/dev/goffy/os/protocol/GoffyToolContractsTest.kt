@@ -6,6 +6,91 @@ import org.junit.Test
 
 class GoffyToolContractsTest {
     @Test
+    fun goffyRomStatusContractRequiresBoundedNonAuthorizingMetadata() {
+        val valid = validRomStatus()
+
+        assertTrue(valid.matchesToolContract())
+        assertFalse(valid.copy(status = "ready").matchesToolContract())
+        assertFalse(valid.copy(milestone = "ROM-1").matchesToolContract())
+        assertFalse(valid.copy(destructiveActions = "allowed").matchesToolContract())
+        assertFalse(valid.copy(romReady = true, blockerCount = 1).matchesToolContract())
+        assertFalse(valid.copy(blockerCount = 0, blockers = emptyList()).matchesToolContract())
+        assertFalse(
+            valid.copy(
+                blockers = listOf("/Users/example/private/rom-stock-restore-evidence.json"),
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(nextAction = "file:///Users/example/private/rom-stock-restore-evidence.json")
+                .matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                summary = "ROM-0 is ready for a manual readiness review",
+                refreshStatus = "BLOCKED",
+                packetStatus = GOFFY_ROM_READY_STATUS,
+                operatorChecklistStatus = GOFFY_ROM_READY_STATUS,
+                romReady = true,
+                blockerCount = 0,
+                blockers = emptyList(),
+                nextAction = "Review ROM-0 readiness manually",
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                summary = "ROM-0 is ready for a manual readiness review",
+                refreshStatus = GOFFY_ROM_READY_STATUS,
+                packetStatus = "BLOCKED_MANUAL_EVIDENCE",
+                operatorChecklistStatus = GOFFY_ROM_READY_STATUS,
+                romReady = true,
+                blockerCount = 0,
+                blockers = emptyList(),
+                nextAction = "Review ROM-0 readiness manually",
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                summary = "ROM-0 is ready for a manual readiness review",
+                refreshStatus = GOFFY_ROM_READY_STATUS,
+                packetStatus = GOFFY_ROM_READY_STATUS,
+                operatorChecklistStatus = "BLOCKED_EVIDENCE",
+                romReady = true,
+                blockerCount = 0,
+                blockers = emptyList(),
+                nextAction = "Review ROM-0 readiness manually",
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                summary = "ROM-0 is ready for a manual readiness review",
+                refreshStatus = GOFFY_ROM_READY_STATUS,
+                packetStatus = GOFFY_ROM_READY_STATUS,
+                operatorChecklistStatus = GOFFY_ROM_READY_STATUS,
+                romReady = true,
+                blockerCount = 0,
+                blockers = emptyList(),
+                staleReport = true,
+                nextAction = "Review ROM-0 readiness manually",
+            ).matchesToolContract(),
+        )
+        assertFalse(valid.copy(blockerCount = 3, blockersTruncated = false).matchesToolContract())
+        assertFalse(valid.copy(blockers = listOf("safe", "bad\u202Eblocker")).matchesToolContract())
+        assertTrue(
+            valid
+                .copy(
+                    summary = "ROM-0 is ready for a manual readiness review",
+                    refreshStatus = GOFFY_ROM_READY_STATUS,
+                    packetStatus = GOFFY_ROM_READY_STATUS,
+                    operatorChecklistStatus = GOFFY_ROM_READY_STATUS,
+                    romReady = true,
+                    blockerCount = 0,
+                    blockers = emptyList(),
+                    nextAction = "Review ROM-0 readiness manually",
+                ).matchesToolContract(),
+        )
+    }
+
+    @Test
     fun batteryContractAcceptsOnlyPercentages() {
         assertTrue(PhoneBatteryStatus(0, false).matchesToolContract())
         assertTrue(PhoneBatteryStatus(100, true).matchesToolContract())
@@ -222,6 +307,27 @@ class GoffyToolContractsTest {
         model = "moto g",
         androidRelease = "15",
         sdkInt = 35,
+    )
+
+    private fun validRomStatus(): GoffyRomStatus = GoffyRomStatus(
+        status = "available",
+        milestone = GOFFY_ROM_MILESTONE,
+        summary = "ROM-0 is BLOCKED; 1 blocker remains",
+        generatedAt = "2026-07-22T15:00:00Z",
+        refreshSchemaVersion = "goffy.rom0-refresh-report.v3",
+        refreshStatus = "BLOCKED",
+        packetStatus = "BLOCKED_MANUAL_EVIDENCE",
+        bootloaderVisibilityStatus = "READY_FOR_MANUAL_BOOTLOADER_CHECK",
+        operatorChecklistStatus = "BLOCKED_EVIDENCE",
+        romReady = false,
+        destructiveActions = "withheld",
+        blockerCount = 1,
+        blockers = listOf("exact stock restore evidence is missing"),
+        blockersTruncated = false,
+        nextAction = "exact stock restore evidence is missing",
+        staleReport = false,
+        checkedRefreshReport = true,
+        checkedOperatorChecklist = true,
     )
 
     private fun validLargestFiles(): MacFilesLargest = MacFilesLargest(

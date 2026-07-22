@@ -70,6 +70,11 @@ review both published checksums during any wrapper upgrade.
   Hub advertises schema-compatible `SAFE mac.clipboard.read`. Android sends no
   arguments, shows bounded text in the visible timeline, rejects file URL text at
   the codec/reducer boundary, and does not read clipboard contents aloud.
+- `Show GOFFY ROM status`, `Check GOFFY ROM status`, `Explain GOFFY OS status`,
+  `Is GOFFY ROM ready?`, and `What are we building now?` route to MAC only when
+  the Hub advertises schema-compatible `SAFE goffy.rom.status`. Android sends no
+  arguments, displays bounded ROM-0 status, blockers, and next action, and never
+  requests unlock, reboot, flash, erase, wipe, boot, or shell authority.
 - Battery commands such as `Show my battery status` and `What's my phone battery
   level?` run entirely on PHONE without a Hub link.
 - While GOFFY is foregrounded, dock mode keeps the screen awake only when Android

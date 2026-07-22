@@ -76,6 +76,7 @@ import dev.goffy.os.ocr.ForegroundOcrScanner
 import dev.goffy.os.qr.ForegroundQrScanner
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.GoffyRomStatus
 import dev.goffy.os.protocol.MacAppOpened
 import dev.goffy.os.protocol.MacAppsList
 import dev.goffy.os.protocol.MacClipboardRead
@@ -2331,6 +2332,44 @@ private fun TaskResult(result: ToolResultContent) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+        }
+        is GoffyRomStatus -> {
+            Text(
+                text = "GOFFY ${result.milestone} / ${result.status.uppercase()}",
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = if (result.romReady) {
+                    "ready for manual review / destructive actions withheld"
+                } else {
+                    "${result.refreshStatus} / ${result.blockerCount} blocker(s)" +
+                        if (result.staleReport) " / stale" else ""
+                },
+                color = Signal,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            result.blockers.take(3).forEach { blocker ->
+                Text(
+                    text = "BLOCKER / $blocker",
+                    color = Mist,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = "NEXT / ${result.nextAction}",
+                color = Mist,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         is MacSystemInfo -> {
             Text(

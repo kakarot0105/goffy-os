@@ -155,6 +155,12 @@ The checklist is non-destructive. It consumes
 `.goffy-validation`, and explicitly blocks any unlock, DSU, flash, or boot
 decision from advancing before exact stock restore evidence exists.
 
+The phone can now ask the Hub for a bounded version of this local state through
+`goffy.rom.status`. In Android, use `Show GOFFY ROM status`, `Check GOFFY ROM
+status`, `Is GOFFY ROM ready?`, or `What are we building now?`. This route is
+read-only status reporting. It does not authorize or perform unlocking,
+rebooting, flashing, erasing, wiping, booting, or shell execution.
+
 To regenerate only the manual bootloader visibility guide without rebooting the
 phone, run:
 

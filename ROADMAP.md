@@ -44,6 +44,7 @@
 - [x] One-command ROM-0 refresh emits the bootloader visibility guide and status
 - [x] Ordered ROM-0 operator checklist blocks skipped stock-restore and bootloader gates
 - [x] One-command ROM-0 refresh emits the operator checklist and status
+- [x] Android-visible `SAFE goffy.rom.status` route for read-only ROM-0 readiness status
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Manual bootloader-mode fastboot visibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist

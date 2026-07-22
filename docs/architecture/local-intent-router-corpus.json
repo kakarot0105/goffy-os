@@ -152,6 +152,16 @@
       ]
     },
     {
+      "id": "mac_goffy_rom_status_013",
+      "text": "show GOFFY ROM status",
+      "label": "MAC",
+      "split": "train",
+      "capability": "goffy.rom.status",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
       "id": "mac_running_002",
       "text": "tell me what is running on my Mac",
       "label": "MAC",
@@ -257,6 +267,16 @@
       "label": "MAC",
       "split": "eval",
       "capability": "git.diff",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "mac_goffy_building_now_014",
+      "text": "what are we building now",
+      "label": "MAC",
+      "split": "eval",
+      "capability": "goffy.rom.status",
       "risk_tags": [
         "safe"
       ]
