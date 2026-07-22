@@ -690,6 +690,40 @@ DEBUG_LINK_CONFIGURED_UI_XML = "\n".join(
 )
 
 
+PAIRED_HUB_LINK_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="SECURE HUB LINK" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,120][205,162]" />',
+        '  <node text="ws://127.0.0.1:8787/ws/v1" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,162][297,204]" />',
+        '  <node text="HUB ID / 01:23:45:67:89:ab:cd:ef" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,214][480,250]" />',
+        '  <node text="Edit" class="android.widget.TextView" enabled="true" '
+        'bounds="[585,145][633,180]" />',
+        '  <node text="" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,700][660,840]" />',
+        "</hierarchy>",
+    ]
+)
+
+
+UNPAIRED_HUB_LINK_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="SECURE HUB LINK" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,120][205,162]" />',
+        '  <node text="NOT CONFIGURED" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,162][233,204]" />',
+        '  <node text="Edit" class="android.widget.TextView" enabled="true" '
+        'bounds="[585,145][633,180]" />',
+        "</hierarchy>",
+    ]
+)
+
+
 def adb_args(command: Sequence[str]) -> tuple[str, ...]:
     if len(command) >= 3 and command[1] == "-s":
         return tuple(command[3:])
@@ -890,6 +924,48 @@ def test_plan_mode_includes_memory_smoke_when_requested(
     assert all(step.status is StepStatus.PLANNED for step in report.steps)
 
 
+def test_plan_mode_includes_paired_hub_gate_when_requested(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(smoke, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+
+    report = build_report(root=tmp_path, include_mac=True, require_paired_hub=True)
+
+    step_names = [step.name for step in report.steps]
+    assert report.ok
+    assert not report.executed
+    assert "Verify paired Hub link" in step_names
+    assert "Configure debug Hub link" not in step_names
+    assert all(step.status is StepStatus.PLANNED for step in report.steps)
+
+
+def test_plan_mode_rejects_paired_hub_debug_token_combination(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(smoke, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+    token_file = tmp_path / ".goffy-validation" / "runtime" / "dev-hub-token"
+
+    report = build_report(
+        root=tmp_path,
+        include_mac=True,
+        require_paired_hub=True,
+        debug_hub_token_file=token_file,
+    )
+
+    assert not report.ok
+    assert not report.executed
+    assert report.steps == (
+        DeviceSmokeStep(
+            name="Option gate",
+            status=StepStatus.FAIL,
+            detail="paired Hub verification cannot be combined with debug Hub token setup",
+            remediation="Fix the incompatible smoke-runner flags and retry.",
+        ),
+    )
+
+
 def test_execute_requires_explicit_device_mutation_confirmation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -944,6 +1020,59 @@ def test_execute_rejects_non_smoke_commands(
         "execute mode only supports the fixed PHONE smoke command",
         "execute mode only supports the fixed MAC smoke commands",
     }
+
+
+def test_require_paired_hub_requires_include_mac(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(smoke, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
+    apk.parent.mkdir(parents=True)
+    apk.write_bytes(b"apk")
+
+    report = build_report(
+        root=tmp_path,
+        execute=True,
+        confirm_device_mutation=True,
+        require_paired_hub=True,
+        trusted_root=tmp_path,
+    )
+
+    assert not report.ok
+    assert any(
+        step.detail == "paired Hub verification is only supported with --include-mac"
+        for step in report.steps
+    )
+
+
+def test_require_paired_hub_rejects_debug_token_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(smoke, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
+    apk.parent.mkdir(parents=True)
+    apk.write_bytes(b"apk")
+    token_file = tmp_path / ".goffy-validation" / "runtime" / "dev-hub-token"
+    token_file.parent.mkdir(parents=True)
+    token_file.write_text("abcdef0123456789abcdef0123456789", encoding="utf-8")
+
+    report = build_report(
+        root=tmp_path,
+        execute=True,
+        confirm_device_mutation=True,
+        include_mac=True,
+        require_paired_hub=True,
+        debug_hub_token_file=token_file,
+        trusted_root=tmp_path,
+    )
+
+    assert not report.ok
+    assert any(
+        step.detail == "paired Hub verification cannot be combined with debug Hub token setup"
+        for step in report.steps
+    )
 
 
 def test_execute_requires_single_or_explicit_moto_g_target(
@@ -2185,6 +2314,152 @@ def test_include_mac_can_smoke_goffy_rom_status_command(
     assert smoke.mac_tool_for_smoke(smoke.DEFAULT_MAC_ROM_STATUS_COMMAND) == "goffy.rom.status"
     assert any(
         step.name == "MAC command smoke" and step.status is StepStatus.OK for step in report.steps
+    )
+
+
+def test_paired_hub_link_detection_distinguishes_restored_and_unpaired_states() -> None:
+    assert smoke.paired_hub_link_visible(PAIRED_HUB_LINK_UI_XML)
+    assert not smoke.paired_hub_link_visible(UNPAIRED_HUB_LINK_UI_XML)
+    assert not smoke.paired_hub_link_visible(DEBUG_LINK_CONFIGURED_UI_XML)
+    assert smoke.unpaired_hub_link_visible(UNPAIRED_HUB_LINK_UI_XML)
+    assert smoke.unpaired_hub_link_visible(DEBUG_SETUP_UI_XML)
+
+
+def test_verify_required_paired_hub_link_reveals_and_accepts_paired_card(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    output_directory = tmp_path / "artifacts"
+    output_directory.mkdir()
+    ui_outputs = iter((BASE_UI_XML, PAIRED_HUB_LINK_UI_XML))
+    seen: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        seen.append(tuple(command))
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            try:
+                return CommandResult(0, next(ui_outputs), "")
+            except StopIteration:
+                return CommandResult(0, PAIRED_HUB_LINK_UI_XML, "")
+        return CommandResult(0, "ok", "")
+
+    result = smoke.verify_required_paired_hub_link(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        output_directory=output_directory,
+    )
+
+    assert result.status is StepStatus.OK
+    assert result.artifact == "paired-hub-link.xml"
+    assert (output_directory / "paired-hub-link.xml").read_text(
+        encoding="utf-8"
+    ) == PAIRED_HUB_LINK_UI_XML
+    assert (
+        str(adb),
+        "-s",
+        SERIAL,
+        "shell",
+        "input",
+        "swipe",
+        "360",
+        "1450",
+        "360",
+        "650",
+        "450",
+    ) in seen
+
+
+def test_verify_required_paired_hub_link_fails_for_unpaired_card(tmp_path: Path) -> None:
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    output_directory = tmp_path / "artifacts"
+    output_directory.mkdir()
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            return CommandResult(0, UNPAIRED_HUB_LINK_UI_XML, "")
+        return CommandResult(0, "ok", "")
+
+    result = smoke.verify_required_paired_hub_link(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        output_directory=output_directory,
+    )
+
+    assert result.status is StepStatus.FAIL
+    assert result.detail == "phone does not show a restored paired Hub link after restart"
+    assert result.artifact == "paired-hub-link.xml"
+    assert (output_directory / "paired-hub-link.xml").read_text(
+        encoding="utf-8"
+    ) == UNPAIRED_HUB_LINK_UI_XML
+
+
+def test_paired_hub_link_artifact_redacts_setup_field_values(tmp_path: Path) -> None:
+    secret = "secret-pairing-bundle-or-token-1234567890"  # noqa: S105
+    sensitive_xml = DEBUG_SETUP_UI_XML.replace(
+        '  <node text="" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,776][660,871]" />',
+        f'  <node text="{secret}" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,776][660,871]" />',
+    )
+
+    smoke.write_paired_hub_link_artifact(tmp_path, sensitive_xml)
+
+    artifact = (tmp_path / "paired-hub-link.xml").read_text(encoding="utf-8")
+    assert secret not in artifact
+    assert smoke.HUB_SETUP_VALUE_PLACEHOLDER in artifact
+    assert smoke.DEBUG_HUB_ENDPOINT in artifact
+    ET.fromstring(artifact)  # noqa: S314
+
+
+def test_include_mac_require_paired_hub_fails_before_mac_command_when_unpaired(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
+    apk.parent.mkdir(parents=True)
+    apk.write_bytes(b"apk")
+    monkeypatch.setattr(smoke, "trusted_adb_path", lambda: adb)
+    seen: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        seen.append(tuple(command))
+        target = target_runner(command)
+        if target is not None:
+            return target
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            return CommandResult(0, UNPAIRED_HUB_LINK_UI_XML, "")
+        return CommandResult(0, "ok", "")
+
+    report = build_report(
+        root=tmp_path,
+        execute=True,
+        confirm_device_mutation=True,
+        include_mac=True,
+        require_paired_hub=True,
+        runner=runner,
+        trusted_root=tmp_path,
+        output_directory=tmp_path / "artifacts",
+    )
+
+    assert not report.ok
+    assert any(
+        step.name == "Verify paired Hub link" and step.status is StepStatus.FAIL
+        for step in report.steps
+    )
+    assert not any(
+        adb_args(command) == ("shell", "input", "text", "check%smy%sMac%sstatus")
+        for command in seen
     )
 
 

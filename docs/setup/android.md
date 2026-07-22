@@ -338,8 +338,25 @@ device-map markers from `after-launch.xml` into `home-surface.xml`, types only
 expected markers, captures a screenshot, and saves bounded GOFFY process logcat
 under `.goffy-validation/device-smoke/`. Add
 `--include-mac` only when the Hub is already running and the phone's saved Hub
-link is valid, or pass a short-lived local debug token file under
-`.goffy-validation`:
+link is valid. To verify the production-like paired path, require GOFFY to
+restore the paired Hub link after the forced app restart before the MAC command
+is typed:
+
+```bash
+.venv/bin/python scripts/run_moto_g_device_smoke.py \
+  --execute \
+  --confirm-device-mutation \
+  --include-mac \
+  --require-paired-hub \
+  --mac-command "Show GOFFY ROM status"
+```
+
+`--require-paired-hub` is mutually exclusive with `--debug-hub-token-file`. It
+does not inject pairing state; it only verifies the visible Hub card shows a
+restored paired localhost link before the MAC smoke proceeds.
+
+For legacy USB development smoke, pass a short-lived local debug token file
+under `.goffy-validation`:
 
 ```bash
 .venv/bin/python scripts/run_moto_g_device_smoke.py \

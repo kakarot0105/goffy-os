@@ -51,6 +51,7 @@ SEND_BOTTOM_SAFE_MARGIN_PX = 96
 MOTO_G_MODEL_PATTERN = re.compile(r"\bmoto\s*g\b|moto_g", re.IGNORECASE)
 DEVICE_SERIAL_PLACEHOLDER = "<device-serial>"
 DEBUG_HUB_TOKEN_PLACEHOLDER = "REDACTED_DEBUG_HUB_TOKEN"  # noqa: S105
+HUB_SETUP_VALUE_PLACEHOLDER = "REDACTED_HUB_SETUP_VALUE"
 MAC_SMOKE_MARKERS = {
     DEFAULT_MAC_COMMAND.casefold(): (
         "VERIFIED",
@@ -275,6 +276,7 @@ def planned_steps(
     memory_text: str,
     memory_remember_command: str,
     debug_hub_token_file: Path | None,
+    require_paired_hub: bool,
 ) -> tuple[DeviceSmokeStep, ...]:
     adb_path = adb or Path("<adb>")
     apk = root / DEBUG_APK_RELATIVE_PATH
@@ -376,6 +378,18 @@ def planned_steps(
             ]
         )
     if include_mac:
+        if require_paired_hub:
+            steps.append(
+                DeviceSmokeStep(
+                    name="Verify paired Hub link",
+                    status=StepStatus.PLANNED,
+                    mutates_device=True,
+                    detail=(
+                        "would require a restored paired Hub link after restart before "
+                        "submitting a MAC command"
+                    ),
+                )
+            )
         if debug_hub_token_file is not None:
             steps.append(
                 DeviceSmokeStep(
@@ -439,12 +453,36 @@ def build_report(
     trusted_root: Path = ROOT,
     device_serial: str | None = None,
     debug_hub_token_file: Path | None = None,
+    require_paired_hub: bool = False,
     memory_text: str | None = None,
 ) -> DeviceSmokeReport:
     resolved_root = root.resolve()
     adb = trusted_adb_path()
     resolved_memory_text = memory_text or default_memory_smoke_text()
     remember_command = memory_remember_command(resolved_memory_text)
+    option_errors = option_blockers(
+        include_mac=include_mac,
+        debug_hub_token_file=debug_hub_token_file,
+        require_paired_hub=require_paired_hub,
+    )
+    if option_errors:
+        return DeviceSmokeReport(
+            executed=False,
+            ok=False,
+            output_directory=None,
+            phone_command=phone_command,
+            mac_command=mac_command if include_mac else None,
+            steps=tuple(
+                DeviceSmokeStep(
+                    name="Option gate",
+                    status=StepStatus.FAIL,
+                    detail=error,
+                    remediation="Fix the incompatible smoke-runner flags and retry.",
+                )
+                for error in option_errors
+            ),
+            repo_root=resolved_root,
+        )
     if not execute:
         return DeviceSmokeReport(
             executed=False,
@@ -462,6 +500,7 @@ def build_report(
                 memory_text=resolved_memory_text,
                 memory_remember_command=remember_command,
                 debug_hub_token_file=debug_hub_token_file,
+                require_paired_hub=require_paired_hub,
             ),
             repo_root=resolved_root,
         )
@@ -478,6 +517,7 @@ def build_report(
         memory_remember_command=remember_command,
         trusted_root=trusted_root,
         debug_hub_token_file=debug_hub_token_file,
+        require_paired_hub=require_paired_hub,
     )
     if blockers:
         return DeviceSmokeReport(
@@ -548,6 +588,24 @@ def build_report(
         )
 
     steps.extend(run_launch_steps(resolved_root, adb, target, runner, timeout_seconds))
+    if include_mac and require_paired_hub:
+        paired_hub = verify_required_paired_hub_link(
+            adb=adb,
+            target=target,
+            root=resolved_root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            output_directory=artifacts,
+        )
+        steps.append(paired_hub)
+        if paired_hub.status is StepStatus.FAIL:
+            return executed_report(
+                root=resolved_root,
+                output_directory=artifacts,
+                phone_command=phone_command,
+                mac_command=mac_command if include_mac else None,
+                steps=steps,
+            )
     if include_mac and debug_hub_token_file is not None:
         configure_debug_hub = configure_debug_hub_link(
             adb=adb,
@@ -817,6 +875,7 @@ def execution_blockers(
     memory_remember_command: str,
     trusted_root: Path,
     debug_hub_token_file: Path | None,
+    require_paired_hub: bool,
 ) -> tuple[str, ...]:
     blockers: list[str] = []
     if not confirm_device_mutation:
@@ -832,6 +891,10 @@ def execution_blockers(
             blockers.append("memory smoke commands must stay distinct")
     if include_mac and mac_command.casefold() not in MAC_SMOKE_MARKERS:
         blockers.append("execute mode only supports the fixed MAC smoke commands")
+    if require_paired_hub and not include_mac:
+        blockers.append("paired Hub verification is only supported with --include-mac")
+    if require_paired_hub and debug_hub_token_file is not None:
+        blockers.append("paired Hub verification cannot be combined with debug Hub token setup")
     if root.resolve() != trusted_root.resolve():
         blockers.append(
             "repo-root/mutating mode only supports the checked-out GOFFY repository root"
@@ -852,6 +915,22 @@ def execution_blockers(
     apk = root / DEBUG_APK_RELATIVE_PATH
     if not apk.is_file():
         blockers.append("android/debug APK missing")
+    return tuple(blockers)
+
+
+def option_blockers(
+    *,
+    include_mac: bool,
+    debug_hub_token_file: Path | None,
+    require_paired_hub: bool,
+) -> tuple[str, ...]:
+    blockers: list[str] = []
+    if require_paired_hub and not include_mac:
+        blockers.append("paired Hub verification is only supported with --include-mac")
+    if require_paired_hub and debug_hub_token_file is not None:
+        blockers.append("paired Hub verification cannot be combined with debug Hub token setup")
+    if debug_hub_token_file is not None and not include_mac:
+        blockers.append("debug Hub token file is only supported with --include-mac")
     return tuple(blockers)
 
 
@@ -1149,7 +1228,10 @@ def collapse_setup_card_if_expanded(
 
 def setup_card_expanded(xml_text: str) -> bool:
     nodes = nodes_from_xml(xml_text)
-    has_endpoint = any(node.text == DEBUG_HUB_ENDPOINT for node in nodes)
+    has_endpoint = any(
+        node.text == DEBUG_HUB_ENDPOINT and node.class_name == "android.widget.EditText"
+        for node in nodes
+    )
     has_secret_field = any(node.password for node in nodes)
     has_pairing_label = any(
         node.text in {"Pairing bundle JSON", "Development bearer token"} for node in nodes
@@ -1567,6 +1649,144 @@ def read_debug_hub_token(root: Path, token_file: Path) -> tuple[str, DeviceSmoke
             ),
         )
     return token, None
+
+
+def verify_required_paired_hub_link(
+    *,
+    adb: Path,
+    target: DeviceTarget,
+    root: Path,
+    runner: CommandRunner,
+    timeout_seconds: int,
+    output_directory: Path,
+) -> DeviceSmokeStep:
+    ui_text = latest_ui_text(
+        adb=adb,
+        target=target,
+        root=root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+    )
+    for attempt in range(len(DEBUG_HUB_SETUP_REVEAL_SWIPES) + 1):
+        if paired_hub_link_visible(ui_text):
+            write_paired_hub_link_artifact(output_directory, ui_text)
+            return DeviceSmokeStep(
+                name="Verify paired Hub link",
+                status=StepStatus.OK,
+                mutates_device=True,
+                detail="verified restored paired Hub link before MAC smoke",
+                artifact="paired-hub-link.xml",
+            )
+        if unpaired_hub_link_visible(ui_text):
+            write_paired_hub_link_artifact(output_directory, ui_text)
+            return DeviceSmokeStep(
+                name="Verify paired Hub link",
+                status=StepStatus.FAIL,
+                mutates_device=True,
+                detail="phone does not show a restored paired Hub link after restart",
+                remediation=(
+                    "Pair the phone through the foreground QR/bundle flow, restart GOFFY, "
+                    "and retry without --debug-hub-token-file."
+                ),
+                artifact="paired-hub-link.xml",
+            )
+        if attempt == len(DEBUG_HUB_SETUP_REVEAL_SWIPES):
+            break
+        start_x, start_y, end_x, end_y, duration_ms = DEBUG_HUB_SETUP_REVEAL_SWIPES[attempt]
+        reveal = execute_step(
+            name="Verify paired Hub link: Reveal Hub link card",
+            command=adb_command(
+                adb,
+                target,
+                "shell",
+                "input",
+                "swipe",
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                duration_ms,
+            ),
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            mutates_device=True,
+            display_command=display_adb_command(
+                adb,
+                "shell",
+                "input",
+                "swipe",
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                duration_ms,
+            ),
+        )
+        if reveal.status is not StepStatus.OK:
+            return reveal
+        time.sleep(1)
+        ui_text = latest_ui_text(
+            adb=adb,
+            target=target,
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+        )
+
+    write_paired_hub_link_artifact(output_directory, ui_text)
+    return DeviceSmokeStep(
+        name="Verify paired Hub link",
+        status=StepStatus.FAIL,
+        mutates_device=True,
+        detail="paired Hub link state was not visible after bounded scroll",
+        remediation="Inspect paired-hub-link.xml and confirm GOFFY launched to the HOME shell.",
+        artifact="paired-hub-link.xml",
+    )
+
+
+def write_paired_hub_link_artifact(output_directory: Path, ui_text: str) -> None:
+    (output_directory / "paired-hub-link.xml").write_text(
+        redact_hub_setup_values(ui_text),
+        encoding="utf-8",
+    )
+
+
+def redact_hub_setup_values(ui_text: str) -> str:
+    try:
+        root = ET.fromstring(ui_text)  # noqa: S314
+    except ET.ParseError:
+        return '<redacted reason="unparseable-ui-xml" />'
+
+    redacted = False
+    for element in root.iter("node"):
+        if element.attrib.get("class") != "android.widget.EditText":
+            continue
+        text = element.attrib.get("text", "")
+        if text and text != DEBUG_HUB_ENDPOINT:
+            element.set("text", HUB_SETUP_VALUE_PLACEHOLDER)
+            redacted = True
+    if not redacted:
+        return ui_text
+    return ET.tostring(root, encoding="unicode")
+
+
+def paired_hub_link_visible(xml_text: str) -> bool:
+    nodes = nodes_from_xml(xml_text)
+    return (
+        has_exact_text(nodes, "SECURE HUB LINK")
+        and has_exact_text(nodes, DEBUG_HUB_ENDPOINT)
+        and has_text_prefix(nodes, "HUB ID / ")
+        and not has_exact_text(nodes, "NOT CONFIGURED")
+        and not setup_card_expanded(xml_text)
+    )
+
+
+def unpaired_hub_link_visible(xml_text: str) -> bool:
+    nodes = nodes_from_xml(xml_text)
+    return has_exact_text(nodes, "SECURE HUB LINK") and (
+        has_exact_text(nodes, "NOT CONFIGURED") or setup_card_expanded(xml_text)
+    )
 
 
 def submit_and_verify_command(
@@ -3004,6 +3224,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             "the fixed localhost debug Hub link before --include-mac."
         ),
     )
+    parser.add_argument(
+        "--require-paired-hub",
+        action="store_true",
+        help=(
+            "Require a restored paired Hub link before --include-mac instead of "
+            "configuring the debug Hub token path."
+        ),
+    )
     parser.add_argument("--phone-command", default=DEFAULT_PHONE_COMMAND)
     parser.add_argument("--mac-command", default=DEFAULT_MAC_COMMAND)
     parser.add_argument(
@@ -3029,6 +3257,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         wait_timeout_seconds=args.wait_timeout_seconds,
         device_serial=args.device_serial,
         debug_hub_token_file=args.debug_hub_token_file,
+        require_paired_hub=args.require_paired_hub,
     )
     print(render_json(report) if args.json else render_text(report))
     return 0 if report.ok else 1

@@ -89,6 +89,7 @@
 - [x] Task-state reducer and progress/result/verification timeline rendering
 - [x] Shared fixture plus Android/Python failure, retry, and cancellation tests
 - [x] Moto G physical localhost debug verification (`adb reverse` flow)
+- [x] Production-like device-smoke gate requiring restored paired Hub link
 
 ## Milestone 2: Phone engine - in progress
 
