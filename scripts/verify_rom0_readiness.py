@@ -39,6 +39,14 @@ READINESS_SCHEMA_VERSION = "goffy.rom0-readiness.v1"
 DEFAULT_AOSP_ROOT = Path("<aosp-root>")
 EXPECTED_CODENAME = "kansas"
 EXPECTED_PRODUCT = "kansas_g_sys"
+TARGET_DEVICE_EVIDENCE_KEYS = (
+    "model",
+    "codename",
+    "product",
+    "hardware_sku",
+    "build_fingerprint",
+    "carrier",
+)
 
 
 class Rom0ReadinessStatus(StrEnum):
@@ -77,10 +85,17 @@ def build_readiness_report(
     root: Path = ROOT,
     evidence_root: Path = ROOT,
 ) -> Rom0ReadinessReport:
+    rom_descriptors = validate_rom_descriptors(root=root)
+    rom_probe = validate_probe_evidence(probe_json)
+    manual_gates = validate_manual_gate_evidence(
+        manual_gates_json,
+        evidence_root=evidence_root,
+        probe_evidence=rom_probe.evidence or {},
+    )
     sections = (
-        validate_rom_descriptors(root=root),
-        validate_probe_evidence(probe_json),
-        validate_manual_gate_evidence(manual_gates_json, evidence_root=evidence_root),
+        rom_descriptors,
+        rom_probe,
+        manual_gates,
         validate_release_signing_plan_evidence(
             signing_plan_json,
             signed_apk=signed_apk,
@@ -143,6 +158,7 @@ def validate_probe_evidence(path: Path | None) -> ReadinessSection:
     boot = mapping_value(payload.get("boot"))
     treble = mapping_value(payload.get("treble"))
     dsu = mapping_value(payload.get("dsu"))
+    properties = mapping_value(payload.get("properties"))
     if device.get("codename") != EXPECTED_CODENAME:
         blockers.append("ROM probe codename does not match kansas")
     if device.get("product") != EXPECTED_PRODUCT:
@@ -155,22 +171,35 @@ def validate_probe_evidence(path: Path | None) -> ReadinessSection:
         blockers.append("ROM probe does not show dynamic partitions")
     if dsu.get("package_installed") != "true":
         warnings.append("ROM probe did not confirm DSU package availability")
+    evidence = {
+        "model": device.get("model", ""),
+        "codename": device.get("codename", ""),
+        "product": device.get("product", ""),
+        "hardware_sku": device.get("hardware_sku", ""),
+        "build_fingerprint": properties.get("ro.build.fingerprint", ""),
+        "carrier": device.get("carrier", ""),
+        "bootloader": boot.get("vbmeta_device_state", ""),
+        "rom_path": str(payload.get("rom_path", "")),
+    }
+    for key in TARGET_DEVICE_EVIDENCE_KEYS:
+        if not evidence[key]:
+            blockers.append(f"ROM probe target_device.{key} is missing")
 
     return ReadinessSection(
         name="rom_probe",
         ok=not blockers,
         blockers=tuple(blockers),
         warnings=tuple(warnings),
-        evidence={
-            "codename": device.get("codename", ""),
-            "product": device.get("product", ""),
-            "bootloader": boot.get("vbmeta_device_state", ""),
-            "rom_path": str(payload.get("rom_path", "")),
-        },
+        evidence=evidence,
     )
 
 
-def validate_manual_gate_evidence(path: Path | None, *, evidence_root: Path) -> ReadinessSection:
+def validate_manual_gate_evidence(
+    path: Path | None,
+    *,
+    evidence_root: Path,
+    probe_evidence: Mapping[str, str] | None = None,
+) -> ReadinessSection:
     if path is None:
         return ReadinessSection(
             name="manual_gates",
@@ -179,13 +208,18 @@ def validate_manual_gate_evidence(path: Path | None, *, evidence_root: Path) -> 
         )
     try:
         payload = load_manual_gates(path)
-        report = validate_manual_gates(payload, root=evidence_root)
+        report = validate_manual_gates(
+            payload,
+            root=evidence_root,
+            expected_target_device=probe_evidence,
+        )
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         return ReadinessSection(name="manual_gates", ok=False, blockers=(str(exc),))
+    blockers = list(report.blockers)
     return ReadinessSection(
         name="manual_gates",
-        ok=report.ok,
-        blockers=report.blockers,
+        ok=not blockers,
+        blockers=tuple(dict.fromkeys(blockers)),
         warnings=report.warnings,
         evidence=report.accepted_evidence,
     )
@@ -340,9 +374,10 @@ def validate_aosp_import_evidence(
         (item for item in report.files if item.destination.endswith("GoffyOS.apk")),
         None,
     )
+    apk_sha256 = (apk_entry.sha256 or "") if apk_entry else ""
     evidence = {
-        "aosp_root": report.aosp_root,
-        "apk_sha256": apk_entry.sha256 if apk_entry else "",
+        "aosp_root": report.aosp_root or "",
+        "apk_sha256": apk_sha256,
         "apk_signature_schemes": ",".join(apk_entry.apk_signature_schemes) if apk_entry else "",
     }
     return ReadinessSection(

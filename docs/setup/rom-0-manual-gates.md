@@ -35,19 +35,22 @@ It may also consume already-created redacted evidence:
 Create a local JSON file under `.goffy-validation/`, not in the repo:
 
 ```bash
-.venv/bin/python scripts/create_rom_manual_gates_template.py
+.venv/bin/python scripts/create_rom_manual_gates_template.py \
+  --probe-json .goffy-validation/rom-feasibility-current.json
 ```
 
 This writes `.goffy-validation/rom-0-manual-gates.template.json` with safe
 blocked defaults: backup and OEM unlock are `false`, Motorola eligibility is
-`unknown`, and destructive approval is `not_requested`. It never runs ADB,
-fastboot, unlock, flash, root, shell, or network actions.
+`unknown`, destructive approval is `not_requested`, and `target_device` is
+seeded from the latest read-only ROM probe. It never runs ADB, fastboot, unlock,
+flash, root, shell, or network actions.
 
 After creating stock-restore evidence, seed the template with the exact
-redacted restore and unlock-eligibility fields:
+redacted restore, unlock-eligibility, and target-device fields:
 
 ```bash
 .venv/bin/python scripts/create_rom_manual_gates_template.py \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
   --unlock-eligibility-evidence .goffy-validation/rom-unlock-eligibility-evidence.json \
   --stock-restore-evidence .goffy-validation/rom-stock-restore-evidence.json \
   --output .goffy-validation/rom-0-manual-gates.json
@@ -65,6 +68,14 @@ unless `--stdout` is used for review.
   "oem_unlocking_enabled": true,
   "motorola_unlock_eligibility": "eligible",
   "destructive_approval": "not_requested",
+  "target_device": {
+    "model": "moto g - 2025",
+    "codename": "kansas",
+    "product": "kansas_g_sys",
+    "hardware_sku": "XT2513V",
+    "build_fingerprint": "motorola/kansas_g_sys/kansas:16/W1VKS36H.9-12-9-8-2/ebe4e3-2b6752:user/release-keys",
+    "carrier": "tracfone"
+  },
   "stock_restore": {
     "source_url": "https://en-us.support.motorola.com/app/softwarefix",
     "archive_name": "exact-firmware-archive-name.zip",
@@ -80,7 +91,9 @@ with identifiers, or carrier-account data.
 ## Validate Evidence
 
 ```bash
-.venv/bin/python scripts/validate_rom_manual_gates.py .goffy-validation/rom-0-manual-gates.json
+.venv/bin/python scripts/validate_rom_manual_gates.py \
+  .goffy-validation/rom-0-manual-gates.json \
+  --probe-json .goffy-validation/rom-feasibility-current.json
 ```
 
 The validator:
@@ -89,6 +102,12 @@ The validator:
 - Requires backup confirmation.
 - Requires OEM unlocking to be enabled.
 - Requires Motorola unlock eligibility to be recorded as `eligible`.
+- Requires the public target-device baseline from the ROM probe: model,
+  codename, product, hardware SKU, build fingerprint, and carrier/channel.
+- Fails closed without the ROM probe baseline and requires every
+  `target_device` value to match that probe.
+- Requires codename `kansas`, product `kansas_g_sys`, and a build fingerprint
+  containing `kansas_g_sys`.
 - Requires an HTTPS stock restore source.
 - Requires a firmware archive filename, not a path.
 - Requires a 64-character SHA-256.
@@ -97,8 +116,14 @@ The validator:
   `docs/setup/kansas-stock-rollback.template.md`.
 - Requires the rollback Markdown to include the exact archive filename and
   SHA-256 from the JSON evidence.
+- Requires the rollback Markdown to include the exact public target-device
+  values from the JSON evidence.
 - Rejects sensitive keys such as `imei`, `serial`, `token`, `password`,
-  `secret`, and `credential`.
+  `secret`, `credential`, `meid`, `iccid`, and similar private identifiers.
+- Rejects unknown `target_device` keys instead of preserving free-form device
+  metadata.
+- Rejects unknown `stock_restore` keys instead of preserving local archive paths
+  or free-form restore metadata.
 - Never runs `adb`, `fastboot`, shell commands, unlock commands, flash commands,
   root tools, or network calls.
 
@@ -169,10 +194,14 @@ SHA-256, and rollback document.
 ## Rollback Doc Requirements
 
 Start from [`kansas-stock-rollback.template.md`](kansas-stock-rollback.template.md).
+Keep filled rollback documents uncommitted unless a human security review has
+confirmed that they contain only public ROM-0 baseline evidence and no private
+identifiers.
 
 The rollback Markdown should record:
 
-- Exact phone model, codename, product, Android release, build, and carrier.
+- Exact phone model, codename, product, hardware SKU, build fingerprint, Android
+  release/build, and carrier.
 - Restore source URL.
 - Firmware archive name.
 - SHA-256 command output.

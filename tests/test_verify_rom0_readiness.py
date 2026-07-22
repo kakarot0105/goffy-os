@@ -9,6 +9,8 @@ from scripts.rom_feasibility_probe import JSON_SCHEMA_VERSION as PROBE_SCHEMA_VE
 from scripts.validate_rom_manual_gates import JSON_SCHEMA_VERSION as MANUAL_SCHEMA_VERSION
 from scripts.validate_rom_manual_gates import ROLLBACK_REQUIRED_HEADINGS
 from scripts.verify_rom0_readiness import (
+    ReadinessSection,
+    Rom0ReadinessReport,
     Rom0ReadinessStatus,
     build_readiness_report,
     render_markdown,
@@ -16,6 +18,18 @@ from scripts.verify_rom0_readiness import (
     validate_release_signing_plan_evidence,
 )
 from scripts.verify_rom_release_apk import JSON_SCHEMA_VERSION as APK_VERIFICATION_SCHEMA_VERSION
+
+BUILD_FINGERPRINT = (
+    "motorola/kansas_g_sys/kansas:16/W1VKS36H.9-12-9-8-2/ebe4e3-2b6752:user/release-keys"
+)
+TARGET_DEVICE = {
+    "model": "moto g - 2025",
+    "codename": "kansas",
+    "product": "kansas_g_sys",
+    "hardware_sku": "XT2513V",
+    "build_fingerprint": BUILD_FINGERPRINT,
+    "carrier": "tracfone",
+}
 
 
 def test_rom0_readiness_blocks_without_external_evidence() -> None:
@@ -65,9 +79,9 @@ def test_rom0_readiness_accepts_complete_non_destructive_evidence(tmp_path: Path
     assert report.ok
     assert report.status is Rom0ReadinessStatus.READY_FOR_HUMAN_REVIEW
     assert report.destructive_actions == "withheld"
-    assert section(report, "release_signing_plan").evidence["keystore"] == "external"
-    assert section(report, "release_apk_verification").evidence["apk_signature_schemes"] == "v2"
-    assert section(report, "aosp_import").evidence["apk_signature_schemes"] == "v2"
+    assert evidence(report, "release_signing_plan")["keystore"] == "external"
+    assert evidence(report, "release_apk_verification")["apk_signature_schemes"] == "v2"
+    assert evidence(report, "aosp_import")["apk_signature_schemes"] == "v2"
     assert "does not authorize unlock" in render_markdown(report)
 
 
@@ -105,6 +119,88 @@ def test_rom0_readiness_surfaces_manual_gate_blockers(tmp_path: Path) -> None:
 
     assert not report.ok
     assert "backup_confirmed must be true" in section(report, "manual_gates").blockers
+
+
+def test_rom0_readiness_blocks_incomplete_probe_target_identity(tmp_path: Path) -> None:
+    probe = write_probe(tmp_path)
+    payload = json.loads(probe.read_text(encoding="utf-8"))
+    del payload["device"]["hardware_sku"]
+    probe.write_text(json.dumps(payload), encoding="utf-8")
+    rollback_doc = write_rollback_doc(tmp_path)
+    manual = write_manual_gates(tmp_path, rollback_doc)
+    apk = write_signed_apk(tmp_path)
+
+    report = build_readiness_report(
+        probe_json=probe,
+        manual_gates_json=manual,
+        signed_apk=apk,
+        aosp_root=tmp_path / "aosp",
+        evidence_root=tmp_path,
+    )
+
+    assert not report.ok
+    assert (
+        "ROM probe target_device.hardware_sku is missing"
+        in section(
+            report,
+            "rom_probe",
+        ).blockers
+    )
+
+
+def test_rom0_readiness_blocks_manual_gate_target_mismatch(tmp_path: Path) -> None:
+    probe = write_probe(tmp_path)
+    rollback_doc = write_rollback_doc(tmp_path)
+    manual = write_manual_gates(
+        tmp_path,
+        rollback_doc,
+        target_device={**TARGET_DEVICE, "hardware_sku": "XT2513-OTHER"},
+    )
+    apk = write_signed_apk(tmp_path)
+
+    report = build_readiness_report(
+        probe_json=probe,
+        manual_gates_json=manual,
+        signed_apk=apk,
+        aosp_root=tmp_path / "aosp",
+        evidence_root=tmp_path,
+    )
+
+    assert not report.ok
+    assert (
+        "target_device.hardware_sku must match ROM probe"
+        in section(
+            report,
+            "manual_gates",
+        ).blockers
+    )
+
+
+def test_rom0_readiness_blocks_unsupported_stock_restore_keys(tmp_path: Path) -> None:
+    probe = write_probe(tmp_path)
+    rollback_doc = write_rollback_doc(tmp_path)
+    manual = write_manual_gates(tmp_path, rollback_doc)
+    payload = json.loads(manual.read_text(encoding="utf-8"))
+    payload["stock_restore"]["local_archive_path"] = "/Users/example/Downloads/kansas-stock.zip"
+    manual.write_text(json.dumps(payload), encoding="utf-8")
+    apk = write_signed_apk(tmp_path)
+
+    report = build_readiness_report(
+        probe_json=probe,
+        manual_gates_json=manual,
+        signed_apk=apk,
+        aosp_root=tmp_path / "aosp",
+        evidence_root=tmp_path,
+    )
+
+    assert not report.ok
+    assert (
+        "stock_restore contains unsupported keys: ['local_archive_path']"
+        in section(
+            report,
+            "manual_gates",
+        ).blockers
+    )
 
 
 def test_rom0_readiness_surfaces_signing_plan_blockers(tmp_path: Path) -> None:
@@ -185,8 +281,14 @@ def test_rom0_readiness_rejects_apk_verification_path_mismatch(tmp_path: Path) -
     assert "ROM release APK verification APK path does not match supplied APK" in result.blockers
 
 
-def section(report, name: str):
+def section(report: Rom0ReadinessReport, name: str) -> ReadinessSection:
     return next(item for item in report.sections if item.name == name)
+
+
+def evidence(report: Rom0ReadinessReport, name: str) -> dict[str, str]:
+    values = section(report, name).evidence
+    assert values is not None
+    return values
 
 
 def write_probe(tmp_path: Path, *, unlocked: bool = True) -> Path:
@@ -196,13 +298,20 @@ def write_probe(tmp_path: Path, *, unlocked: bool = True) -> Path:
             {
                 "schema_version": PROBE_SCHEMA_VERSION,
                 "ok": True,
-                "device": {"codename": "kansas", "product": "kansas_g_sys"},
+                "device": {
+                    "model": TARGET_DEVICE["model"],
+                    "codename": TARGET_DEVICE["codename"],
+                    "product": TARGET_DEVICE["product"],
+                    "hardware_sku": TARGET_DEVICE["hardware_sku"],
+                    "carrier": TARGET_DEVICE["carrier"],
+                },
                 "boot": {
                     "flash_locked": "0" if unlocked else "1",
                     "vbmeta_device_state": "unlocked" if unlocked else "locked",
                 },
                 "treble": {"enabled": "true", "dynamic_partitions": "true"},
                 "dsu": {"package_installed": "true"},
+                "properties": {"ro.build.fingerprint": BUILD_FINGERPRINT},
                 "rom_path": "GSI_OR_DSU_FIRST",
                 "blockers": [],
             }
@@ -212,7 +321,12 @@ def write_probe(tmp_path: Path, *, unlocked: bool = True) -> Path:
     return path
 
 
-def write_manual_gates(tmp_path: Path, rollback_doc: Path) -> Path:
+def write_manual_gates(
+    tmp_path: Path,
+    rollback_doc: Path,
+    *,
+    target_device: dict[str, str] | None = None,
+) -> Path:
     path = tmp_path / "manual.json"
     path.write_text(
         json.dumps(
@@ -222,6 +336,7 @@ def write_manual_gates(tmp_path: Path, rollback_doc: Path) -> Path:
                 "oem_unlocking_enabled": True,
                 "motorola_unlock_eligibility": "eligible",
                 "destructive_approval": "not_requested",
+                "target_device": target_device or TARGET_DEVICE,
                 "stock_restore": {
                     "source_url": "https://en-us.support.motorola.com/app/softwarefix",
                     "archive_name": "kansas-stock.zip",
@@ -245,6 +360,12 @@ def write_rollback_doc(tmp_path: Path) -> Path:
                 *ROLLBACK_REQUIRED_HEADINGS,
                 "kansas-stock.zip",
                 "a" * 64,
+                TARGET_DEVICE["model"],
+                TARGET_DEVICE["codename"],
+                TARGET_DEVICE["product"],
+                TARGET_DEVICE["hardware_sku"],
+                TARGET_DEVICE["build_fingerprint"],
+                TARGET_DEVICE["carrier"],
             ]
         ),
         encoding="utf-8",

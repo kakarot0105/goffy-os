@@ -31,6 +31,7 @@
 - [x] Redacted unlock-eligibility evidence helper for manual OEM/Motorola checks
 - [x] Read-only probe surfaces missing or disallowing OEM unlock property evidence
 - [x] Non-destructive ROM-0 manual action packet for restore/unlock evidence collection
+- [x] ROM-0 manual gates bind unlock/restore evidence to the exact public Moto target identity
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist
 - [ ] User-approved destructive unlock/flash decision point

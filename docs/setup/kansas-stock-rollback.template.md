@@ -9,6 +9,8 @@ unlock tokens, account data, screenshots with identifiers, or private paths.
 - Model: moto g - 2025
 - Codename: kansas
 - Product: kansas_g_sys
+- Hardware SKU: XT2513V
+- Build fingerprint:
 - Android release/build:
 - Carrier/channel:
 - ROM feasibility probe file:

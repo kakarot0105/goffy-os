@@ -24,6 +24,18 @@ from scripts.validate_rom_manual_gates import (
 )
 from scripts.validate_rom_manual_gates import validate_manual_gates
 
+BUILD_FINGERPRINT = (
+    "motorola/kansas_g_sys/kansas:16/W1VKS36H.9-12-9-8-2/ebe4e3-2b6752:user/release-keys"
+)
+TARGET_DEVICE = {
+    "model": "moto g - 2025",
+    "codename": "kansas",
+    "product": "kansas_g_sys",
+    "hardware_sku": "XT2513V",
+    "build_fingerprint": BUILD_FINGERPRINT,
+    "carrier": "tracfone",
+}
+
 
 def test_manual_gates_template_defaults_to_blocked_safe_values() -> None:
     template = create_manual_gates_template()
@@ -34,6 +46,14 @@ def test_manual_gates_template_defaults_to_blocked_safe_values() -> None:
     assert template["oem_unlocking_enabled"] is False
     assert template["motorola_unlock_eligibility"] == "unknown"
     assert template["destructive_approval"] == "not_requested"
+    assert template["target_device"] == {
+        "build_fingerprint": "",
+        "carrier": "",
+        "codename": "",
+        "hardware_sku": "",
+        "model": "",
+        "product": "",
+    }
     assert template["stock_restore"]["source_url"] == MOTOROLA_SOFTWARE_FIX_URL
     assert not report.ok
     assert "backup_confirmed must be true" in report.blockers
@@ -41,6 +61,17 @@ def test_manual_gates_template_defaults_to_blocked_safe_values() -> None:
     assert "Motorola bootloader unlock eligibility is not recorded as eligible" in report.blockers
     assert "stock_restore.archive_name must be a filename, not a path" in report.blockers
     assert "stock_restore.sha256 must be 64 hex characters" in report.blockers
+    assert "target_device.hardware_sku is required" in report.blockers
+
+
+def test_manual_gates_template_seeds_target_device_from_probe(tmp_path: Path) -> None:
+    probe = write_probe(tmp_path)
+
+    template = create_manual_gates_template(probe_json=probe)
+
+    assert template["target_device"] == TARGET_DEVICE
+    assert "XT2513V" in render_json(template)
+    assert BUILD_FINGERPRINT in render_json(template)
 
 
 def test_manual_gates_template_merges_stock_restore_evidence(tmp_path: Path) -> None:
@@ -177,6 +208,17 @@ def test_manual_gates_template_rejects_invalid_stock_restore_values(tmp_path: Pa
         raise AssertionError("expected ValueError")
 
 
+def test_manual_gates_template_rejects_sensitive_probe_keys(tmp_path: Path) -> None:
+    probe = write_probe(tmp_path, extra_device={"device_serial": "ZY32LBQLMQ"})
+
+    try:
+        create_manual_gates_template(probe_json=probe)
+    except ValueError as exc:
+        assert "sensitive key" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
 def test_manual_gates_template_output_is_limited_to_validation_dir(tmp_path: Path) -> None:
     payload = render_json(create_manual_gates_template())
     allowed = tmp_path / ".goffy-validation" / "rom-0-manual-gates.template.json"
@@ -198,6 +240,29 @@ def test_manual_gates_template_output_is_limited_to_validation_dir(tmp_path: Pat
         assert "output path must be under .goffy-validation" in str(exc)
     else:
         raise AssertionError("expected ValueError")
+
+
+def write_probe(tmp_path: Path, *, extra_device: dict[str, str] | None = None) -> Path:
+    device = {
+        "model": TARGET_DEVICE["model"],
+        "codename": TARGET_DEVICE["codename"],
+        "product": TARGET_DEVICE["product"],
+        "hardware_sku": TARGET_DEVICE["hardware_sku"],
+        "carrier": TARGET_DEVICE["carrier"],
+        **(extra_device or {}),
+    }
+    probe = tmp_path / "rom-feasibility-current.json"
+    probe.write_text(
+        json.dumps(
+            {
+                "schema_version": "goffy.rom-feasibility-probe.v1",
+                "device": device,
+                "properties": {"ro.build.fingerprint": BUILD_FINGERPRINT},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return probe
 
 
 def test_manual_gates_template_rejects_symlinked_validation_output_root(

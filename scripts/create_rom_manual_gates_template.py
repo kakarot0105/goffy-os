@@ -20,7 +20,9 @@ from scripts.create_rom_unlock_eligibility_evidence import (  # noqa: E402
 from scripts.validate_rom_manual_gates import (  # noqa: E402
     ARCHIVE_NAME_PATTERN,
     SHA256_PATTERN,
+    STOCK_RESTORE_KEYS,
     first_sensitive_key_path,
+    load_probe_target_device,
 )
 from scripts.validate_rom_manual_gates import (  # noqa: E402
     JSON_SCHEMA_VERSION as MANUAL_GATES_SCHEMA_VERSION,
@@ -29,11 +31,14 @@ from scripts.validate_rom_manual_gates import (  # noqa: E402
 VALIDATION_DIR = ROOT / ".goffy-validation"
 DEFAULT_OUTPUT = VALIDATION_DIR / "rom-0-manual-gates.template.json"
 MOTOROLA_SOFTWARE_FIX_URL = "https://en-us.support.motorola.com/app/softwarefix"
-STOCK_RESTORE_KEYS = frozenset(("source_url", "archive_name", "sha256", "rollback_doc"))
+TARGET_DEVICE_KEYS = frozenset(
+    ("model", "codename", "product", "hardware_sku", "build_fingerprint", "carrier")
+)
 
 
 def create_manual_gates_template(
     *,
+    probe_json: Path | None = None,
     stock_restore_evidence: Path | None = None,
     unlock_eligibility_evidence: Path | None = None,
 ) -> dict[str, Any]:
@@ -45,6 +50,9 @@ def create_manual_gates_template(
     }
     oem_unlocking_enabled = False
     motorola_unlock_eligibility = "unknown"
+    target_device = blank_target_device()
+    if probe_json is not None:
+        target_device = load_probe_target_device(probe_json)
     if stock_restore_evidence is not None:
         stock_restore = load_stock_restore_evidence(stock_restore_evidence)
     if unlock_eligibility_evidence is not None:
@@ -58,8 +66,13 @@ def create_manual_gates_template(
         "oem_unlocking_enabled": oem_unlocking_enabled,
         "motorola_unlock_eligibility": motorola_unlock_eligibility,
         "destructive_approval": "not_requested",
+        "target_device": target_device,
         "stock_restore": stock_restore,
     }
+
+
+def blank_target_device() -> dict[str, str]:
+    return {key: "" for key in sorted(TARGET_DEVICE_KEYS)}
 
 
 def load_stock_restore_evidence(path: Path) -> dict[str, str]:
@@ -155,6 +168,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--probe-json",
+        type=Path,
+        help=(
+            "Optional output from rom_feasibility_probe.py to bind manual gates to the "
+            "exact public Moto target identity."
+        ),
+    )
+    parser.add_argument(
         "--stock-restore-evidence",
         type=Path,
         help="Optional output from create_rom_stock_restore_evidence.py to seed stock_restore.",
@@ -185,6 +206,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         template = create_manual_gates_template(
+            probe_json=args.probe_json,
             stock_restore_evidence=args.stock_restore_evidence,
             unlock_eligibility_evidence=args.unlock_eligibility_evidence,
         )
