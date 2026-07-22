@@ -37,7 +37,9 @@
 - [x] Offline official Google GSI candidate evidence verifier with SHA-256 matching
 - [x] ROM-0 readiness reporter requires non-authorizing official GSI candidate evidence
 - [x] One-command read-only ROM-0 refresh for current probe and manual action packet
+- [x] Read-only host fastboot evidence helper without reboot/unlock/flash authority
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
+- [ ] Manual bootloader-mode fastboot visibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist
 - [ ] Local official Google GSI archive evidence captured from a real downloaded artifact
 - [ ] User-approved destructive unlock/flash decision point

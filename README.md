@@ -466,6 +466,22 @@ Then generate a local manual-gates template before editing evidence by hand:
 Both files stay under `.goffy-validation`, default to blocked values, and do not
 authorize unlock, flash, erase, root, or boot-image changes.
 
+To record host fastboot readiness without changing phone state:
+
+```bash
+.venv/bin/python scripts/create_rom_fastboot_evidence.py
+```
+
+If the human later manually enters bootloader mode, use only the read-only
+visibility check:
+
+```bash
+.venv/bin/python scripts/create_rom_fastboot_evidence.py --manual-bootloader-check
+```
+
+This records redacted fastboot evidence only. It never reboots the phone and
+never emits unlock, flash, erase, wipe, boot, or reboot commands.
+
 To record candidate integrity for the first official Google ARM64 GSI, first
 review Google's official GSI terms yourself. Only after personally accepting
 those terms, download the archive manually outside this repo, copy the SHA-256

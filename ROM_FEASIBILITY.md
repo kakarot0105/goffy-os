@@ -141,6 +141,23 @@ command authority. The refresh command reports `BLOCKED` while ROM gates are
 missing or the bootloader probe is still locked; that is expected and safer than
 claiming success before ROM-0 is ready.
 
+To record host fastboot readiness without rebooting the phone, run:
+
+```bash
+.venv/bin/python scripts/create_rom_fastboot_evidence.py
+```
+
+If the human later manually enters bootloader mode, the same helper can run
+`fastboot devices` as a read-only visibility check:
+
+```bash
+.venv/bin/python scripts/create_rom_fastboot_evidence.py --manual-bootloader-check
+```
+
+The evidence redacts serials and records only `fastboot --version` plus optional
+`fastboot devices` output. It never emits unlock, flash, erase, wipe, boot, or
+reboot commands.
+
 ## First ROM Milestone
 
 Milestone ROM-0 is feasibility, not flashing.
@@ -151,6 +168,8 @@ Acceptance criteria:
   unlock blockers.
 - Bootloader unlock eligibility result is recorded.
 - Stock restore path is documented with source URL and hash.
+- Host fastboot evidence is recorded, and manually entered bootloader visibility
+  is recorded before any destructive bootloader decision.
 - First GSI/DSU candidate list is selected with licenses and known Moto/MediaTek
   risks.
 - A no-flash planning checklist exists, with DSU staging templates emitted only
