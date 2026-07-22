@@ -226,6 +226,34 @@ logcat, or broaden ADB. For slow-but-safe diagnostics, pass
 `--max-observation-millis <limit>` to the collector only; the production
 acceptance verifier still defaults to 15 seconds unless explicitly overridden.
 
+## Lightweight Intent Classifier Candidate Gate
+
+The current LiteRT-LM evidence is safe but too slow and memory-heavy for a
+phone-first fallback. The next reusable model path is therefore a small
+classification model, not another text-generation LLM. GOFFY records that
+shortlist in
+`docs/architecture/local-intent-classifier-candidates.json` and verifies it with:
+
+```bash
+.venv/bin/python scripts/verify_local_intent_candidates.py
+```
+
+This registry is intentionally conservative. It keeps the zero-dependency micro
+fallback as the default baseline, selects TensorFlow Lite Task Text
+`NLClassifier` as the first prototype candidate, keeps MediaPipe Text Classifier
+as a pinned-version research backup, treats fastText as prior art only, and
+marks Granite 350M as rejected for production phone use based on physical Moto
+evidence. Prototype candidates must stay out of default `debug` and `release`
+builds, remain observe-only, use pinned dependencies, fit an 8 MiB model budget,
+add at most 2 MiB to any future default APK, finish single inferences within 250
+ms, stay under 16 MiB idle PSS, pass routing-quality gates, and collect physical
+Moto evidence before any production enablement claim.
+
+`scripts/verify_all.py` runs this gate before package build. This prevents a
+future dependency or model candidate from being documented as "selected" while
+silently bypassing license, dependency pinning, APK budget, latency, memory,
+audit, or non-authoritative-execution requirements.
+
 ## Reuse-First Scan
 
 Checked on 2026-07-20 and refreshed on 2026-07-21:

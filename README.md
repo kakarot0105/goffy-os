@@ -54,7 +54,11 @@ the capability boundary.
 > still blocked by 21.7-22.7 second observation latency and about 175 MB idle
 > PSS after 60 seconds. The acceptance verifier now reports rejected-run
 > elapsed/PSS/battery/model evidence as structured JSON while keeping the
-> production budgets unchanged.
+> production budgets unchanged. The next local-model path is now a
+> verifier-backed reuse-first lightweight intent-classifier registry, with
+> TensorFlow Lite Task Text selected only as a modelDebug prototype candidate
+> until physical Moto latency, idle-memory, APK-budget, and routing-quality gates
+> pass.
 > Default GOFFY LITE still does not ship or load the LiteRT-LM runtime. Automatic
 > rotation scheduling, Android retrieval for Hub audit, certificate-backed Hub
 > identity proof, trusted LAN operation, bootloader unlock eligibility, stock
@@ -91,6 +95,9 @@ the capability boundary.
   commit/read-back verification and bounded unsupported-command observation;
   executable model fallback remains disabled and the physical Moto G smoke
   verifies the non-executable timeline path
+- Reuse-first local intent-classifier candidate registry and verifier for the
+  next smaller on-phone model path; no classifier dependency or model asset is
+  included in default GOFFY LITE builds
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`

@@ -90,6 +90,7 @@ def python_steps(python: str) -> list[tuple[str, tuple[str, ...]]]:
         ("security scan", (python, "scripts/security_scan.py")),
         ("ROM system app", rom_system_app_command(python)),
         ("ROM product overlay", rom_product_overlay_command(python)),
+        ("local intent candidates", (python, "scripts/verify_local_intent_candidates.py")),
         ("package build", (python, "-m", "build")),
         ("pairing smoke", (python, "scripts/verify_pairing_flow.py")),
     ]

@@ -111,6 +111,7 @@
 - [x] Read-only Moto G `modelDebug` idle-cleanup evidence collector
 - [x] Repeated-run and idle-cleanup evidence for user-enabled Granite 350M LiteRT-LM observation execution
 - [x] Structured rejected-run evidence in the `modelDebug` production acceptance verifier
+- [x] Reuse-first lightweight intent-classifier candidate registry and verifier
 - [ ] Production acceptance for user-enabled LiteRT-LM observation execution within latency and idle-memory budgets
 
 ## Milestone 3: MCP core - in progress

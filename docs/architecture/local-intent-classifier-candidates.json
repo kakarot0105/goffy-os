@@ -1,0 +1,203 @@
+{
+  "schema_version": "goffy.local-intent-classifier-candidates.v1",
+  "reviewed_at": "2026-07-22",
+  "default_policy": {
+    "default_build_must_remain_model_free": true,
+    "observations_must_remain_non_authoritative": true,
+    "max_candidate_model_bytes": 8388608,
+    "max_default_apk_delta_bytes": 2097152,
+    "max_single_inference_millis": 250,
+    "max_idle_pss_kb": 16384
+  },
+  "required_prototype_gates": [
+    "license",
+    "pinned_dependency",
+    "apk_budget",
+    "latency",
+    "idle_memory",
+    "routing_quality",
+    "audit_non_authoritative",
+    "physical_moto_benchmark"
+  ],
+  "candidates": [
+    {
+      "id": "goffy_micro_intent_fallback",
+      "name": "GOFFY micro intent fallback",
+      "source_kind": "internal",
+      "source_urls": [
+        "internal:android/app/src/main/java/dev/goffy/os/localmodel/MicroIntentLocalModelFallback.kt"
+      ],
+      "license": "Apache-2.0",
+      "decision": "current_baseline",
+      "production_status": "active_non_executable",
+      "default_build_inclusion": "allowed",
+      "model_file_required": false,
+      "execution_authority": "observe_only",
+      "candidate_model_budget_bytes": 0,
+      "max_inference_millis": 0,
+      "max_idle_pss_kb": 0,
+      "required_gates": [
+        "routing_quality",
+        "audit_non_authoritative"
+      ],
+      "reasons": [
+        "Zero model bytes and zero external runtime dependencies.",
+        "Already wired as a non-executable PHONE/MAC/CLOUD hint for unsupported commands.",
+        "Keeps deterministic routing as the only executable authority."
+      ],
+      "risks": [
+        "Coverage is limited to small vocabulary matching and cannot understand broad phrasing."
+      ],
+      "next_action": "Keep as default fallback while benchmarking a smaller reusable classifier."
+    },
+    {
+      "id": "tflite_task_text_nlclassifier",
+      "name": "TensorFlow Lite Task Text NLClassifier",
+      "source_kind": "official_runtime",
+      "source_urls": [
+        "https://developers.google.com/edge/litert/libraries/task_library/overview",
+        "https://central.sonatype.com/artifact/org.tensorflow/tensorflow-lite-task-text",
+        "https://github.com/tensorflow/tflite-support"
+      ],
+      "license": "Apache-2.0",
+      "decision": "prototype_candidate",
+      "production_status": "blocked_until_physical_benchmark",
+      "default_build_inclusion": "blocked",
+      "model_file_required": true,
+      "execution_authority": "observe_only",
+      "candidate_model_budget_bytes": 8388608,
+      "max_inference_millis": 250,
+      "max_idle_pss_kb": 16384,
+      "dependency_coordinate": "org.tensorflow:tensorflow-lite-task-text:0.4.4",
+      "required_gates": [
+        "license",
+        "pinned_dependency",
+        "apk_budget",
+        "latency",
+        "idle_memory",
+        "routing_quality",
+        "audit_non_authoritative",
+        "physical_moto_benchmark"
+      ],
+      "reasons": [
+        "Purpose-built text classification API instead of a text-generation LLM.",
+        "Apache-2.0 dependency and official Android/mobile deployment path.",
+        "Supports a small custom intent model with labels such as PHONE, MAC, CLOUD, and UNKNOWN."
+      ],
+      "risks": [
+        "Latest artifact is old enough to require dependency and vulnerability review before import.",
+        "Requires a trained model with metadata; no model asset is accepted until Moto benchmark evidence passes.",
+        "Native/runtime APK impact must be measured in modelDebug before any default-build consideration."
+      ],
+      "next_action": "Build a modelDebug-only dependency probe and benchmark a tiny metadata-backed classifier."
+    },
+    {
+      "id": "mediapipe_text_classifier",
+      "name": "MediaPipe Text Classifier",
+      "source_kind": "official_runtime",
+      "source_urls": [
+        "https://developers.google.com/edge/mediapipe/solutions/text/text_classifier/android",
+        "https://github.com/google-ai-edge/mediapipe-samples"
+      ],
+      "license": "Apache-2.0",
+      "decision": "research_candidate",
+      "production_status": "blocked_until_dependency_pin_and_physical_benchmark",
+      "default_build_inclusion": "blocked",
+      "model_file_required": true,
+      "execution_authority": "observe_only",
+      "candidate_model_budget_bytes": 8388608,
+      "max_inference_millis": 250,
+      "max_idle_pss_kb": 16384,
+      "pinned_dependency_required": true,
+      "required_gates": [
+        "license",
+        "pinned_dependency",
+        "apk_budget",
+        "latency",
+        "idle_memory",
+        "routing_quality",
+        "audit_non_authoritative",
+        "physical_moto_benchmark"
+      ],
+      "reasons": [
+        "Official Android text-classification task with built-in preprocessing.",
+        "Useful backup path if TensorFlow Lite Task Text is not acceptable."
+      ],
+      "risks": [
+        "Documentation examples use dynamic Gradle versions; GOFFY requires a pinned version before probing.",
+        "MediaPipe dependency footprint may be larger than needed for a three-target intent classifier."
+      ],
+      "next_action": "Probe only after selecting an exact version and proving APK impact in modelDebug."
+    },
+    {
+      "id": "fasttext_sentence_classifier",
+      "name": "fastText sentence classifier",
+      "source_kind": "open_source_prior_art",
+      "source_urls": [
+        "https://github.com/facebookresearch/fastText",
+        "https://fasttext.cc/"
+      ],
+      "license": "MIT",
+      "decision": "prior_art_only",
+      "production_status": "not_imported",
+      "default_build_inclusion": "blocked",
+      "model_file_required": true,
+      "execution_authority": "not_imported",
+      "candidate_model_budget_bytes": 8388608,
+      "max_inference_millis": 250,
+      "max_idle_pss_kb": 16384,
+      "required_gates": [
+        "license",
+        "apk_budget",
+        "latency",
+        "idle_memory",
+        "routing_quality",
+        "audit_non_authoritative",
+        "physical_moto_benchmark"
+      ],
+      "reasons": [
+        "Strong lightweight text-classification prior art with mobile-size model compression ideas."
+      ],
+      "risks": [
+        "Native integration and maintenance risk are not justified before official Android classifier APIs are tried."
+      ],
+      "next_action": "Use as algorithmic prior art only; do not import code into the Android app."
+    },
+    {
+      "id": "litert_lm_granite_350m",
+      "name": "LiteRT-LM Granite 350M",
+      "source_kind": "measured_runtime",
+      "source_urls": [
+        "https://huggingface.co/litert-community/granite-4.0-350m-litert-lm",
+        "internal:.goffy-validation/modeldebug-observation-smoke/granite-run-3/modeldebug-observation-report.json",
+        "internal:.goffy-validation/modeldebug-observation-smoke/granite-idle-cleanup.json"
+      ],
+      "license": "Apache-2.0",
+      "decision": "rejected_for_phone",
+      "production_status": "blocked_by_physical_evidence",
+      "default_build_inclusion": "blocked",
+      "model_file_required": true,
+      "execution_authority": "observe_only",
+      "candidate_model_budget_bytes": 468209584,
+      "max_inference_millis": 22741,
+      "max_idle_pss_kb": 174823,
+      "required_gates": [
+        "license",
+        "apk_budget",
+        "latency",
+        "idle_memory",
+        "routing_quality",
+        "audit_non_authoritative",
+        "physical_moto_benchmark"
+      ],
+      "reasons": [
+        "Physical Moto G evidence shows safe non-executable behavior.",
+        "Rejected for production because latency and idle PSS exceed GOFFY LITE budgets."
+      ],
+      "risks": [
+        "Too slow and memory-heavy for always-ready phone intent fallback."
+      ],
+      "next_action": "Do not ship; retain only as benchmark evidence."
+    }
+  ]
+}
