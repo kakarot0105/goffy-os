@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sqlite3
 import stat
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -303,3 +305,57 @@ def test_persistent_operator_audit_assigns_sequences_from_database_tip(
     assert second.sequence == 2
     assert second.previous_hash == first.event_hash
     assert snapshot.integrity == "verified"
+
+
+def test_persistent_operator_audit_serializes_overlapping_writers(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "operator-audit.sqlite3"
+    writer_count = 4
+    events_per_writer = 5
+    logs = tuple(
+        OperatorAuditLog(
+            max_events=64,
+            database_path=database_path,
+            clock=lambda: datetime(2026, 7, 14, 12, 0, tzinfo=UTC),
+        )
+        for _ in range(writer_count)
+    )
+    start = threading.Barrier(writer_count)
+
+    def write_events(writer_index: int) -> tuple[int, ...]:
+        start.wait(timeout=5)
+        sequences: list[int] = []
+        for event_index in range(events_per_writer):
+            event = logs[writer_index].record(
+                source="mcp",
+                action="http.post",
+                outcome="succeeded",
+                principal_kind="paired",
+                detail_code=f"writer:{writer_index}:event:{event_index}",
+            )
+            sequences.append(event.sequence)
+        return tuple(sequences)
+
+    with ThreadPoolExecutor(max_workers=writer_count) as executor:
+        written_sequences = tuple(
+            sequence
+            for sequences in executor.map(write_events, range(writer_count))
+            for sequence in sequences
+        )
+
+    reopened = OperatorAuditLog(max_events=64, database_path=database_path)
+    snapshot = reopened.snapshot()
+    newest_first_sequences = [event.sequence for event in snapshot.events]
+    oldest_first_events = tuple(reversed(snapshot.events))
+
+    assert sorted(written_sequences) == list(range(1, writer_count * events_per_writer + 1))
+    assert newest_first_sequences == list(range(writer_count * events_per_writer, 0, -1))
+    assert snapshot.integrity == "verified"
+    assert oldest_first_events[0].previous_hash is not None
+    for previous, current in zip(
+        oldest_first_events[:-1],
+        oldest_first_events[1:],
+        strict=True,
+    ):
+        assert current.previous_hash == previous.event_hash
