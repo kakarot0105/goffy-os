@@ -115,6 +115,8 @@ the capability boundary.
 - Model Maker training-package generator for the verified local intent-router
   corpus; writes CSVs, labels, source-policy manifest, and an isolated optional
   training script without adding TensorFlow to the repo venv
+- Training-environment preflight for the generated package, Python 3.9/3.10
+  compatibility, optional pip dry-run, and Docker fallback visibility
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`

@@ -468,6 +468,13 @@ Files:
 - `{TRAINING_SCRIPT}`: Optional isolated/Colab training script.
 - `{MANIFEST}`: Corpus hash, file hashes, counts, source links, and safety policy.
 
+From the GOFFY repo, verify this package and the local training environment:
+
+```bash
+.venv/bin/python scripts/verify_tflite_task_text_training_environment.py \\
+  --package-dir /path/to/this/generated/package
+```
+
 Recommended isolated flow:
 
 ```bash

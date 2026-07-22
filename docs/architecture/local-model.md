@@ -384,6 +384,24 @@ environment. The generated README pins `tflite-model-maker==0.4.3` and uses a
 disposable Python 3.10 environment because the normal GOFFY verifier runs on
 Python 3.12 and intentionally does not resolve the Model Maker dependency graph.
 
+Verify the generated package and local training environment before attempting
+the export:
+
+```bash
+.venv/bin/python scripts/verify_tflite_task_text_training_environment.py \
+  --package-dir .goffy-validation/tflite-task-text-training-package/<timestamp>
+```
+
+For an isolated pip dry-run compatibility check, add `--check-pip-resolve
+--python /path/to/python3.10`. The preflight verifies the package manifest and
+file hashes, rejects unsupported Python versions, reports Docker fallback
+availability, and keeps pip resolution optional so normal GOFFY verification
+does not depend on external package indexes. On this Apple Silicon
+Mac, Python 3.11 failed to resolve `tflite-model-maker==0.4.3` because
+`tflite-support>=0.4.2` did not have a matching wheel; Docker/Colima was also
+unavailable due to a local Colima disk-lock error. That is tooling evidence, not
+a model-quality decision.
+
 After collecting physical Moto benchmark JSON artifacts for the `eval` split,
 create an evidence manifest with schema
 `goffy.tflite-task-text-routing-quality-evidence.v1`:
