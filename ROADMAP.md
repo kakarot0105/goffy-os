@@ -205,5 +205,7 @@
      (`docs/architecture/goffy-os-design.md`)
    - [x] Lightweight stateful GOFFY orb implemented from the design contract
    - [x] Read-only device map implemented from the design contract
+   - [x] Default-home setup card with audited status check and trusted Android
+     Home settings handoff
    - [ ] Screenshot-based idle, approval, executing, verified, and failed UI smoke evidence
 8. Signed beta, packaged Hub, diagnostics, upgrade, and rollback

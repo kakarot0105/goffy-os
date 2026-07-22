@@ -30,6 +30,14 @@ class GoffySystemSettingsIntentTest {
         )
 
         assertTrue(trusted.isTrustedSystemSettingsHandler())
+        assertTrue(
+            trusted.copy(packageName = "com.google.android.permissioncontroller")
+                .isTrustedSystemSettingsHandler(),
+        )
+        assertTrue(
+            trusted.copy(packageName = "com.android.permissioncontroller")
+                .isTrustedSystemSettingsHandler(),
+        )
         assertFalse(trusted.copy(packageName = "com.example.settings").isTrustedSystemSettingsHandler())
         assertFalse(trusted.copy(systemApplication = false).isTrustedSystemSettingsHandler())
         assertFalse(trusted.copy(enabled = false).isTrustedSystemSettingsHandler())
@@ -51,16 +59,94 @@ class GoffySystemSettingsIntentTest {
     @Test
     fun rejectsUntrustedSystemSettingsHandler() {
         val application = RuntimeEnvironment.getApplication()
-        registerSettingsHandler(packageName = "com.example.settings")
+        registerSettingsHandler(action = Settings.ACTION_SETTINGS, packageName = "com.example.settings")
 
         val intent = application.packageManager.resolveTrustedSystemSettingsIntent()
 
         assertNull(intent)
     }
 
+    @Test
+    fun resolvesExactExplicitHomeSettingsIntentWhenAvailable() {
+        val application = RuntimeEnvironment.getApplication()
+        registerSettingsHandler(
+            action = Settings.ACTION_HOME_SETTINGS,
+            packageName = "com.google.android.permissioncontroller",
+            activityName = "com.android.permissioncontroller.role.ui.HomeSettingsActivity",
+        )
+
+        val intent = application.packageManager.resolveTrustedHomeSettingsIntent()
+
+        requireNotNull(intent)
+
+        assertEquals(Settings.ACTION_HOME_SETTINGS, intent.action)
+        assertEquals("com.google.android.permissioncontroller", intent.component?.packageName)
+        assertEquals(
+            "com.android.permissioncontroller.role.ui.HomeSettingsActivity",
+            intent.component?.className,
+        )
+        assertNull(intent.getPackage())
+        assertNull(intent.data)
+        assertTrue(intent.categories.isNullOrEmpty())
+        assertTrue(intent.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0)
+    }
+
+    @Test
+    fun resolvesAospPermissionControllerHomeSettingsIntent() {
+        val application = RuntimeEnvironment.getApplication()
+        registerSettingsHandler(
+            action = Settings.ACTION_HOME_SETTINGS,
+            packageName = "com.android.permissioncontroller",
+            activityName = "com.android.permissioncontroller.role.ui.HomeSettingsActivity",
+        )
+
+        val intent = application.packageManager.resolveTrustedHomeSettingsIntent()
+
+        requireNotNull(intent)
+
+        assertEquals(Settings.ACTION_HOME_SETTINGS, intent.action)
+        assertEquals("com.android.permissioncontroller", intent.component?.packageName)
+        assertEquals(
+            "com.android.permissioncontroller.role.ui.HomeSettingsActivity",
+            intent.component?.className,
+        )
+    }
+
+    @Test
+    fun homeSettingsFallsBackToDefaultAppsSettingsBeforeTopLevelSettings() {
+        val application = RuntimeEnvironment.getApplication()
+        registerSettingsHandler(
+            action = Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS,
+            packageName = "com.android.permissioncontroller",
+            activityName = "com.android.permissioncontroller.role.ui.DefaultAppListActivity",
+        )
+        registerSettingsHandler(action = Settings.ACTION_SETTINGS, packageName = "com.android.settings")
+
+        val intent = application.packageManager.resolveTrustedHomeSettingsIntent()
+
+        requireNotNull(intent)
+
+        assertEquals(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS, intent.action)
+        assertEquals("com.android.permissioncontroller", intent.component?.packageName)
+    }
+
+    @Test
+    fun homeSettingsRejectsUntrustedHandlersBeforeFallback() {
+        val application = RuntimeEnvironment.getApplication()
+        registerSettingsHandler(action = Settings.ACTION_HOME_SETTINGS, packageName = "com.example.settings")
+        registerSettingsHandler(action = Settings.ACTION_SETTINGS, packageName = "com.android.settings")
+
+        val intent = application.packageManager.resolveTrustedHomeSettingsIntent()
+
+        requireNotNull(intent)
+
+        assertEquals(Settings.ACTION_SETTINGS, intent.action)
+        assertEquals("com.android.settings", intent.component?.packageName)
+    }
+
     private fun assertExactExplicitSystemSettingsIntent() {
         val application = RuntimeEnvironment.getApplication()
-        registerSettingsHandler(packageName = "com.android.settings")
+        registerSettingsHandler(action = Settings.ACTION_SETTINGS, packageName = "com.android.settings")
 
         val intent = application.packageManager.resolveTrustedSystemSettingsIntent()
 
@@ -76,14 +162,18 @@ class GoffySystemSettingsIntentTest {
     }
 
     @Suppress("DEPRECATION")
-    private fun registerSettingsHandler(packageName: String) {
+    private fun registerSettingsHandler(
+        action: String,
+        packageName: String,
+        activityName: String = ".Settings",
+    ) {
         val applicationInfo = ApplicationInfo().apply {
             this.packageName = packageName
             flags = ApplicationInfo.FLAG_SYSTEM
         }
         val activityInfo = ActivityInfo().apply {
             this.packageName = packageName
-            name = ".Settings"
+            name = activityName
             enabled = true
             exported = true
             this.applicationInfo = applicationInfo
@@ -92,7 +182,7 @@ class GoffySystemSettingsIntentTest {
             this.activityInfo = activityInfo
         }
         shadowOf(RuntimeEnvironment.getApplication().packageManager).setResolveInfosForIntent(
-            Intent(Settings.ACTION_SETTINGS),
+            Intent(action),
             listOf(resolveInfo),
         )
     }

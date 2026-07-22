@@ -157,6 +157,7 @@ fun GoffyApp(
     onVoicePermissionDenied: () -> Unit = {},
     onSpeakLatest: (String) -> Unit = {},
     onOpenSystemSettings: () -> Unit = {},
+    onOpenHomeSettings: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -368,6 +369,8 @@ fun GoffyApp(
                 onForgetHub = { showForgetConfirmation = true },
                 onRefreshHubAudit = viewModel::refreshHubOperatorAudit,
                 onOpenSystemSettings = onOpenSystemSettings,
+                onOpenHomeSettings = onOpenHomeSettings,
+                onCheckHomeStatus = { viewModel.submitCommand(GOFFY_HOME_STATUS_COMMAND) },
                 onVoiceInput = {
                     if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
                         PackageManager.PERMISSION_GRANTED
@@ -674,6 +677,8 @@ private fun GoffyHomeScreen(
     onForgetHub: () -> Unit,
     onRefreshHubAudit: () -> Unit,
     onOpenSystemSettings: () -> Unit,
+    onOpenHomeSettings: () -> Unit,
+    onCheckHomeStatus: () -> Unit,
     onVoiceInput: () -> Unit,
     onSpeakLatest: (String) -> Unit,
     onSubmit: () -> Unit,
@@ -699,6 +704,12 @@ private fun GoffyHomeScreen(
         GoffyOrb(state.toGoffyOrbUiModel(voiceInputState))
         Spacer(Modifier.height(20.dp))
         StatusRail(state)
+        Spacer(Modifier.height(12.dp))
+        HomeSetupSection(
+            model = state.toGoffyHomeSetupUiModel(),
+            onCheckHomeStatus = onCheckHomeStatus,
+            onOpenHomeSettings = onOpenHomeSettings,
+        )
         Spacer(Modifier.height(12.dp))
         DeviceMapSection(state.toGoffyDeviceMapUiModel())
         if (state.localModelControlsAvailable) {
@@ -754,6 +765,93 @@ private fun GoffyHomeScreen(
             onApprove = onApprove,
             onDeny = onDeny,
         )
+    }
+}
+
+@Composable
+private fun HomeSetupSection(
+    model: GoffyHomeSetupUiModel,
+    onCheckHomeStatus: () -> Unit,
+    onOpenHomeSettings: () -> Unit,
+) {
+    val statusLabel = when (model.status) {
+        GoffyHomeSetupStatus.UNKNOWN -> stringResource(R.string.home_setup_status_unknown)
+        GoffyHomeSetupStatus.DEFAULT_HOME -> stringResource(R.string.home_setup_status_default)
+        GoffyHomeSetupStatus.AVAILABLE -> stringResource(R.string.home_setup_status_available)
+        GoffyHomeSetupStatus.UNAVAILABLE -> stringResource(R.string.home_setup_status_unavailable)
+    }
+    val body = when (model.status) {
+        GoffyHomeSetupStatus.UNKNOWN -> stringResource(R.string.home_setup_body_unknown)
+        GoffyHomeSetupStatus.DEFAULT_HOME -> stringResource(R.string.home_setup_body_default)
+        GoffyHomeSetupStatus.AVAILABLE -> stringResource(R.string.home_setup_body_available)
+        GoffyHomeSetupStatus.UNAVAILABLE -> stringResource(R.string.home_setup_body_unavailable)
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xFF08131A))
+            .border(1.dp, Line, RoundedCornerShape(18.dp))
+            .padding(14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Label(stringResource(R.string.home_setup_title))
+                Text(
+                    text = statusLabel,
+                    color = Signal,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            OutlinedButton(
+                onClick = onCheckHomeStatus,
+                enabled = model.canCheckHomeStatus,
+            ) {
+                Text(
+                    text = stringResource(R.string.home_setup_check),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 10.sp,
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = body,
+            color = Mist,
+            fontSize = 12.sp,
+        )
+        if (model.status != GoffyHomeSetupStatus.DEFAULT_HOME) {
+            Spacer(Modifier.height(10.dp))
+            Button(
+                onClick = onOpenHomeSettings,
+                enabled = model.canOpenHomeSettings,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Signal,
+                    contentColor = Void,
+                    disabledContainerColor = Line,
+                    disabledContentColor = Mist,
+                ),
+            ) {
+                Text(
+                    text = stringResource(R.string.home_setup_choose_home),
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = stringResource(R.string.home_setup_no_silent_default),
+                color = Mist,
+                fontSize = 10.sp,
+            )
+        }
     }
 }
 
@@ -2521,3 +2619,4 @@ private const val MAX_PAIRING_CHALLENGE_LENGTH = 2_048
 private const val MAX_NOTE_PREVIEW_LENGTH = 256
 private const val MAX_MEMORY_PREVIEW_LENGTH = 256
 private const val MAX_HUB_AUDIT_UI_EVENTS = 5
+private const val GOFFY_HOME_STATUS_COMMAND = "Show my phone info"

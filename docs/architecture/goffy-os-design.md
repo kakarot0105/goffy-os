@@ -14,6 +14,7 @@ The design should reuse proven patterns, not blindly import whole apps.
 
 | Source | License signal | Useful pattern | Decision |
 | --- | --- | --- | --- |
+| Android `Settings.ACTION_HOME_SETTINGS` / `ACTION_MANAGE_DEFAULT_APPS_SETTINGS` | Android SDK / Apache-2.0 docs | User-visible handoff to Home/default-app settings, including AOSP and Google PermissionController role UI delegation | Safe to use. GOFFY opens trusted system Settings/PermissionController handlers only; it never silently sets itself as default Home. |
 | `mslalith/focus_launcher` | GPL-3.0 | Minimal Compose launcher with favorites, app hiding, dark UI, and home-screen focus | Reference only. Do not copy code unless GOFFY accepts GPL obligations for the affected module. |
 | `android/nowinandroid` | Apache-2.0 | Modern Android architecture, modular Compose UI, tests, and accessibility posture | Safe architecture reference. Prefer patterns over copied code. |
 | `google/jetpack-camera-app` | Apache-2.0 | CameraX plus Compose lifecycle, viewfinder, and on-device test posture | Safe camera lifecycle reference for future camera/QR/OCR screens. |
@@ -85,6 +86,7 @@ Required elements:
 - Execution target indicator: PHONE, MAC, or CLOUD.
 - Mac Hub connection chip.
 - Local model status chip.
+- Home-shell setup card with audited `phone.device.info` status check.
 - Empty-state task timeline.
 - Safe action suggestions.
 
@@ -207,6 +209,7 @@ Purpose: make the phone recoverable and safe to repurpose.
 Flows:
 
 - Pair Mac over USB-loopback QR bundle.
+- Open Android Home/default-app settings for manual GOFFY Home selection.
 - Rotate paired token.
 - Forget this Mac.
 - Revoke this phone.

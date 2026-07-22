@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
                 onVoicePermissionDenied = ::voicePermissionDenied,
                 onSpeakLatest = ::speakLatestResult,
                 onOpenSystemSettings = ::openSystemSettings,
+                onOpenHomeSettings = ::openHomeSettings,
             )
         }
     }
@@ -119,6 +120,19 @@ class MainActivity : ComponentActivity() {
             showSystemSettingsUnavailable()
             return
         }
+        startTrustedSettingsIntent(intent)
+    }
+
+    private fun openHomeSettings() {
+        val intent = packageManager.resolveTrustedHomeSettingsIntent()
+        if (intent == null) {
+            showSystemSettingsUnavailable()
+            return
+        }
+        startTrustedSettingsIntent(intent)
+    }
+
+    private fun startTrustedSettingsIntent(intent: Intent) {
         try {
             startActivity(intent)
         } catch (_: ActivityNotFoundException) {
@@ -319,7 +333,15 @@ class MainActivity : ComponentActivity() {
 
 @Suppress("DEPRECATION")
 internal fun PackageManager.resolveTrustedSystemSettingsIntent(): Intent? {
-    val implicitIntent = Intent(Settings.ACTION_SETTINGS)
+    return resolveTrustedSettingsIntent(Settings.ACTION_SETTINGS)
+}
+
+internal fun PackageManager.resolveTrustedHomeSettingsIntent(): Intent? =
+    HOME_SETTINGS_ACTIONS.firstNotNullOfOrNull(::resolveTrustedSettingsIntent)
+
+@Suppress("DEPRECATION")
+private fun PackageManager.resolveTrustedSettingsIntent(action: String): Intent? {
+    val implicitIntent = Intent(action)
     val resolved = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         resolveActivity(
             implicitIntent,
@@ -361,4 +383,14 @@ internal fun SystemSettingsHandlerDescriptor.isTrustedSystemSettingsHandler(): B
         exported &&
         systemApplication
 
-private val ALLOWLISTED_SYSTEM_SETTINGS_PACKAGES = setOf("com.android.settings")
+private val ALLOWLISTED_SYSTEM_SETTINGS_PACKAGES = setOf(
+    "com.android.settings",
+    "com.android.permissioncontroller",
+    "com.google.android.permissioncontroller",
+)
+
+private val HOME_SETTINGS_ACTIONS = listOf(
+    Settings.ACTION_HOME_SETTINGS,
+    Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS,
+    Settings.ACTION_SETTINGS,
+)
