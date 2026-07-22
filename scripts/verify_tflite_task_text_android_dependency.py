@@ -22,9 +22,7 @@ DEFAULT_COMPILE_SDK = 36
 DEFAULT_MIN_SDK = 26
 DEFAULT_TIMEOUT_SECONDS = 300
 
-ALLOWED_ANDROID_CONFIGURATIONS = frozenset(
-    {"androidTestImplementation", "modelDebugImplementation"}
-)
+ALLOWED_ANDROID_CONFIGURATIONS = frozenset({"modelDebugImplementation"})
 DYNAMIC_VERSION = re.compile(
     rf"{re.escape(GROUP)}:{re.escape(ARTIFACT)}:(?:latest\.[A-Za-z]+|[^\"')\s]*\+)",
 )
@@ -446,8 +444,8 @@ def repo_usage_recommendation(
         return "Replace dynamic TensorFlow Lite Task Text Gradle versions with an exact pin."
     if default_runtime_usages:
         return (
-            "Keep TensorFlow Lite Task Text out of default GOFFY builds; use only androidTest "
-            "or modelDebug probe configurations until Moto evidence passes."
+            "Keep TensorFlow Lite Task Text out of default GOFFY builds; use only "
+            "variant-scoped modelDebug probe configurations until Moto evidence passes."
         )
     return "Repository TensorFlow Lite Task Text usage is compatible with the probe policy."
 

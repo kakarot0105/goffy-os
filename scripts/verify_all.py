@@ -21,6 +21,7 @@ ANDROID_DEPENDENT_STEPS = frozenset(
         "android gradle",
         "android APK budget",
         "android local model provider",
+        "android TFLite Task Text classifier",
         "merged manifest security scan",
     }
 )
@@ -91,6 +92,7 @@ def python_steps(python: str) -> list[tuple[str, tuple[str, ...]]]:
         ("ROM system app", rom_system_app_command(python)),
         ("ROM product overlay", rom_product_overlay_command(python)),
         ("local intent candidates", (python, "scripts/verify_local_intent_candidates.py")),
+        ("TFLite Task Text dependency", tflite_task_text_dependency_command(python)),
         ("package build", (python, "-m", "build")),
         ("pairing smoke", (python, "scripts/verify_pairing_flow.py")),
     ]
@@ -112,6 +114,15 @@ def android_apk_budget_command(python: str) -> tuple[str, ...]:
     return (python, "scripts/verify_android_apk_budget.py")
 
 
+def tflite_task_text_dependency_command(python: str) -> tuple[str, ...]:
+    return (
+        python,
+        "scripts/verify_tflite_task_text_android_dependency.py",
+        "--mode",
+        "metadata",
+    )
+
+
 def android_local_model_provider_command(root: Path) -> tuple[str, ...]:
     wrapper = root / "android" / ("gradlew.bat" if os.name == "nt" else "gradlew")
     return (
@@ -120,6 +131,22 @@ def android_local_model_provider_command(root: Path) -> tuple[str, ...]:
         "android",
         ":app:processModelDebugManifest",
         ":app:compileModelDebugKotlin",
+        "--no-daemon",
+    )
+
+
+def android_tflite_task_text_classifier_command(root: Path) -> tuple[str, ...]:
+    wrapper = root / "android" / ("gradlew.bat" if os.name == "nt" else "gradlew")
+    return (
+        str(wrapper),
+        "-p",
+        "android",
+        "-Pgoffy.testBuildType=modelDebug",
+        ":app:testModelDebugUnitTest",
+        "--tests",
+        "dev.goffy.os.localmodel.TfliteTaskTextIntentClassifierTest",
+        ":app:assembleModelDebug",
+        ":app:assembleModelDebugAndroidTest",
         "--no-daemon",
     )
 
@@ -229,6 +256,14 @@ def run_verification(
         )
         results.append(
             StepResult(
+                name="android TFLite Task Text classifier",
+                status=StepStatus.SKIP,
+                command=android_tflite_task_text_classifier_command(root),
+                detail="Skipped because Android Gradle did not run.",
+            )
+        )
+        results.append(
+            StepResult(
                 name="merged manifest security scan",
                 status=StepStatus.SKIP,
                 command=merged_manifest_security_command(python),
@@ -262,6 +297,14 @@ def run_verification(
             )
             results.append(
                 run_command_step(
+                    "android TFLite Task Text classifier",
+                    android_tflite_task_text_classifier_command(root),
+                    root,
+                    runner,
+                )
+            )
+            results.append(
+                run_command_step(
                     "merged manifest security scan",
                     merged_manifest_security_command(python),
                     root,
@@ -282,6 +325,14 @@ def run_verification(
                     name="android local model provider",
                     status=StepStatus.SKIP,
                     command=android_local_model_provider_command(root),
+                    detail="Skipped because Android Gradle did not complete successfully.",
+                )
+            )
+            results.append(
+                StepResult(
+                    name="android TFLite Task Text classifier",
+                    status=StepStatus.SKIP,
+                    command=android_tflite_task_text_classifier_command(root),
                     detail="Skipped because Android Gradle did not complete successfully.",
                 )
             )
@@ -315,6 +366,14 @@ def run_verification(
                 name="android local model provider",
                 status=StepStatus.SKIP,
                 command=android_local_model_provider_command(root),
+                detail="Skipped because Android Gradle did not run.",
+            )
+        )
+        results.append(
+            StepResult(
+                name="android TFLite Task Text classifier",
+                status=StepStatus.SKIP,
+                command=android_tflite_task_text_classifier_command(root),
                 detail="Skipped because Android Gradle did not run.",
             )
         )

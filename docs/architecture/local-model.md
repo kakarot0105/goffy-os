@@ -271,15 +271,59 @@ Latest dependency evidence, checked on 2026-07-22:
 - `--mode resolve`: passed in an isolated Android project
 - `--mode build`: passed in an isolated Android debug APK project
 - Repo scan: no dynamic TensorFlow Lite Task Text versions and no Gradle usage
-  outside the allowed `androidTestImplementation` and `modelDebugImplementation`
-  probe scopes
+  outside the allowed `modelDebugImplementation` probe scope
 
 The isolated build packages native `libtask_text_jni.so`, so any future GOFFY
-runtime code must remain in `modelDebug` or `androidTest` until APK delta,
-startup behavior, idle PSS, and physical Moto inference latency are measured.
-The next accepted gate is not dependency compatibility; it is a modelDebug-only
-tiny classifier benchmark whose output still enters GOFFY only as an
+runtime code must remain in `modelDebug` until APK delta, startup behavior, idle
+PSS, and physical Moto inference latency are measured. The next accepted gate is
+not dependency compatibility; it is a modelDebug-only tiny classifier benchmark
+whose output still enters GOFFY only as an
 observe-only routing hint.
+
+GOFFY now has the first `modelDebug` Task Text runtime bridge and benchmark
+harness for that next gate. The bridge lives only in the `modelDebug` source set,
+accepts only app-owned `.tflite` models smaller than 8 MiB, maps only `PHONE`,
+`MAC`, and `CLOUD` labels into `LocalModelIntentObservation`, and marks every
+result as non-authoritative. The instrumentation test lives in
+`androidTestModelDebug`, and the boundary unit tests live in `testModelDebug`, so
+normal GOFFY LITE `debug`, `debugAndroidTest`, and `release` APKs do not compile
+or package the classifier runtime. The `modelDebug` manifest also strips Task
+Text transitive `READ_EXTERNAL_STORAGE`, `READ_PHONE_STATE`, and
+`WRITE_EXTERNAL_STORAGE` permissions; if those return, the merged-manifest
+security scan fails.
+
+Compile the variant-scoped harness locally:
+
+```bash
+android/gradlew -p android -Pgoffy.testBuildType=modelDebug \
+  :app:testModelDebugUnitTest \
+  --tests dev.goffy.os.localmodel.TfliteTaskTextIntentClassifierTest \
+  :app:assembleModelDebug :app:assembleModelDebugAndroidTest --no-daemon
+```
+
+Plan a physical Moto benchmark without mutating the phone:
+
+```bash
+.venv/bin/python scripts/run_moto_g_tflite_task_text_benchmark.py \
+  --model /path/to/tiny-router.tflite
+```
+
+Run it only after selecting a tiny metadata-backed classifier model and approving
+APK install/model push on the connected Moto:
+
+```bash
+.venv/bin/python scripts/run_moto_g_tflite_task_text_benchmark.py \
+  --execute \
+  --confirm-device-mutation \
+  --model /path/to/tiny-router.tflite \
+  --command "show my battery status"
+```
+
+The benchmark JSON gate requires a `PASS`, at least one category, inference
+timing, a terminal `Candidate` or `Rejected` observation, and
+`nonAuthoritative=true`. It does not accept the classifier for production by
+itself; the next missing evidence is a physical Moto run plus routing-quality,
+idle-memory, and APK-delta review.
 
 ## Reuse-First Scan
 

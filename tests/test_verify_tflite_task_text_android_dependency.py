@@ -139,7 +139,7 @@ def test_find_repo_usages_rejects_dynamic_direct_version(tmp_path: Path) -> None
     dynamic, default_runtime = find_tflite_task_text_repo_usages(root)
 
     assert dynamic == ("android/app/build.gradle.kts:1",)
-    assert default_runtime == ()
+    assert default_runtime == ("android/app/build.gradle.kts:1",)
 
 
 def test_find_repo_usages_blocks_default_runtime_direct_coordinate(tmp_path: Path) -> None:
@@ -192,17 +192,40 @@ def test_find_repo_usages_blocks_unapproved_add_configuration(tmp_path: Path) ->
     assert default_runtime == ("android/app/build.gradle.kts:1",)
 
 
-def test_find_repo_usages_allows_android_test_and_modeldebug(tmp_path: Path) -> None:
+def test_find_repo_usages_allows_modeldebug_only(tmp_path: Path) -> None:
     root = write_repo(
         tmp_path,
         build_gradle_text="""
-androidTestImplementation("org.tensorflow:tensorflow-lite-task-text:0.4.4")
 modelDebugImplementation("org.tensorflow:tensorflow-lite-task-text:0.4.4")
 add("modelDebugImplementation", "org.tensorflow:tensorflow-lite-task-text:0.4.4")
 """.lstrip(),
     )
 
     assert find_tflite_task_text_repo_usages(root) == ((), ())
+
+
+def test_find_repo_usages_blocks_default_android_test_scope(tmp_path: Path) -> None:
+    root = write_repo(
+        tmp_path,
+        build_gradle_text='androidTestImplementation("org.tensorflow:tensorflow-lite-task-text:0.4.4")\n',
+    )
+
+    dynamic, default_runtime = find_tflite_task_text_repo_usages(root)
+
+    assert dynamic == ()
+    assert default_runtime == ("android/app/build.gradle.kts:1",)
+
+
+def test_find_repo_usages_blocks_modeldebug_android_test_scope(tmp_path: Path) -> None:
+    root = write_repo(
+        tmp_path,
+        build_gradle_text='modelDebugAndroidTestImplementation("org.tensorflow:tensorflow-lite-task-text:0.4.4")\n',
+    )
+
+    dynamic, default_runtime = find_tflite_task_text_repo_usages(root)
+
+    assert dynamic == ()
+    assert default_runtime == ("android/app/build.gradle.kts:1",)
 
 
 def test_find_repo_usages_rejects_catalog_dynamic_version(tmp_path: Path) -> None:

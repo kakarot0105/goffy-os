@@ -57,9 +57,11 @@ the capability boundary.
 > production budgets unchanged. The next local-model path is now a
 > verifier-backed reuse-first lightweight intent-classifier registry, with
 > TensorFlow Lite Task Text selected only as a modelDebug prototype candidate.
-> Its pinned dependency now resolves and builds in an isolated Android probe, but
-> classifier runtime wiring remains blocked until physical Moto latency,
-> idle-memory, APK-budget, and routing-quality gates pass.
+> Its pinned dependency now resolves and builds in an isolated Android probe, and
+> `modelDebug` now compiles a Task Text classifier bridge plus a variant-scoped
+> Moto benchmark harness. Classifier acceptance remains blocked until a tiny
+> `.tflite` model produces physical Moto latency, idle-memory, APK-budget, and
+> routing-quality evidence.
 > Default GOFFY LITE still does not ship or load the LiteRT-LM runtime. Automatic
 > rotation scheduling, Android retrieval for Hub audit, certificate-backed Hub
 > identity proof, trusted LAN operation, bootloader unlock eligibility, stock
@@ -100,7 +102,8 @@ the capability boundary.
   next smaller on-phone model path; no classifier dependency or model asset is
   included in default GOFFY LITE builds
 - Optional TensorFlow Lite Task Text dependency probe for the classifier path;
-  the pinned dependency builds in isolation but is not wired into GOFFY runtime
+  the pinned dependency builds in isolation and the `modelDebug` classifier
+  bridge/benchmark harness compiles without adding a default runtime dependency
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
@@ -453,17 +456,21 @@ already signed artifact only.
 This runs formatting, linting, type checks, Python tests, package build,
 security scan, pairing smoke verification, Android environment preflight, and
 Android Gradle plus the GOFFY LITE release APK budget/payload guard, default
-debug/release LiteRT-LM dependency guard, optional LiteRT-LM provider compile
-gate, and merged-manifest security validation when the local JDK/SDK/adb
-prerequisites are present.
+debug/release LiteRT-LM dependency guard, TensorFlow Lite Task Text dependency
+guard, optional LiteRT-LM provider compile gate, optional `modelDebug` Task Text
+classifier compile/package gate, and merged-manifest security validation when
+the local JDK/SDK/adb prerequisites are present.
 Use `--allow-missing-android` only when you intentionally want the Python/Hub
 checks to pass while Android Gradle remains blocked by local tooling.
 
 The APK guard fails if `android/app/build/outputs/apk/release/app-release-unsigned.apk`
 is missing after the release build, exceeds the current 32 MiB GOFFY LITE budget,
-contains LiteRT-LM/model APK entries such as `liblitertlm` or `.litertlm`
-assets, or lists LiteRT-LM in the normal debug or release runtime dependency
-graph. This keeps small-model work from silently regressing the default Moto
+contains local-model APK entries such as `liblitertlm`, `libtask_text_jni.so`,
+`.litertlm`, or GOFFY local-model `.tflite` assets, or lists LiteRT-LM /
+TensorFlow Lite Task Text in the normal debug or release runtime dependency
+graph. It also checks the default `debugAndroidTest` APK for Task Text JNI
+payloads so benchmark-only dependencies stay out of broad instrumentation
+artifacts. This keeps small-model work from silently regressing the default Moto
 builds.
 
 If verification is blocked by local setup, run the read-only setup doctor:
@@ -478,10 +485,12 @@ The doctor redacts repo, home, and absolute toolchain paths, but review output
 before posting it to a public issue.
 
 Android CI keeps preflight, Gradle, GOFFY LITE APK budget, optional `modelDebug`
-provider compilation, and merged-manifest validation as blocking gates. The
-provider compile gate runs after the normal Android build and APK boundary pass,
-so failures earlier in the Android sequence are fixed before provider health is
-evaluated. If any Android gate fails, CI also runs the setup doctor with
+provider compilation, `modelDebug` Task Text classifier packaging, and
+merged-manifest validation as blocking gates. The provider/classifier compile
+gates run after the normal Android build and APK boundary pass; if the APK
+budget fails, the verifier still runs the later gates for diagnostic coverage so
+one report shows all Android boundary failures.
+If any Android gate fails, CI also runs the setup doctor with
 `--android-only --include-device --json` as a non-blocking diagnostic step so the
 failure log contains focused, redacted Android toolchain, `adb`, and USB reverse
 readiness details.

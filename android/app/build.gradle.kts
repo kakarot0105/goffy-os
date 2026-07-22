@@ -6,6 +6,7 @@ plugins {
 android {
     namespace = "dev.goffy.os"
     compileSdk = 36
+    testBuildType = providers.gradleProperty("goffy.testBuildType").orElse("debug").get()
 
     defaultConfig {
         applicationId = "dev.goffy.os"
@@ -94,5 +95,6 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.7.0")
     androidTestImplementation("com.google.ai.edge.litertlm:litertlm-android:$litertLmVersion")
     add("modelDebugImplementation", "com.google.ai.edge.litertlm:litertlm-android:$litertLmVersion")
+    add("modelDebugImplementation", "org.tensorflow:tensorflow-lite-task-text:0.4.4")
     androidTestImplementation("junit:junit:4.13.2")
 }

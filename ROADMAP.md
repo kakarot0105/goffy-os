@@ -113,6 +113,8 @@
 - [x] Structured rejected-run evidence in the `modelDebug` production acceptance verifier
 - [x] Reuse-first lightweight intent-classifier candidate registry and verifier
 - [x] TensorFlow Lite Task Text dependency compatibility probe before modelDebug classifier wiring
+- [x] `modelDebug` TensorFlow Lite Task Text classifier bridge and benchmark harness
+- [ ] Physical Moto G Task Text classifier benchmark with tiny `.tflite` model
 - [ ] Production acceptance for user-enabled LiteRT-LM observation execution within latency and idle-memory budgets
 
 ## Milestone 3: MCP core - in progress

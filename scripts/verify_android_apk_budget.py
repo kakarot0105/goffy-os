@@ -14,17 +14,39 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_RELEASE_APK = (
     ROOT / "android" / "app" / "build" / "outputs" / "apk" / "release" / "app-release-unsigned.apk"
 )
+DEFAULT_DEBUG_ANDROID_TEST_APK = (
+    ROOT
+    / "android"
+    / "app"
+    / "build"
+    / "outputs"
+    / "apk"
+    / "androidTest"
+    / "debug"
+    / "app-debug-androidTest.apk"
+)
 DEFAULT_MAX_RELEASE_APK_BYTES = 32 * 1024 * 1024
 JSON_SCHEMA_VERSION = "goffy.android-apk-budget.v1"
 FORBIDDEN_ENTRY_PATTERNS = (
     ".litertlm",
     "litertlm",
+    "libtask_text_jni.so",
+)
+FORBIDDEN_TFLITE_MODEL_ENTRY_PREFIXES = (
+    "assets/models/",
+    "assets/local-models/",
 )
 DEFAULT_RUNTIME_CLASSPATH_CONFIGURATIONS = (
     "debugRuntimeClasspath",
     "releaseRuntimeClasspath",
 )
-FORBIDDEN_RUNTIME_DEPENDENCY_PATTERNS = ("com.google.ai.edge.litertlm", "litertlm-android")
+FORBIDDEN_RUNTIME_DEPENDENCY_PATTERNS = (
+    "com.google.ai.edge.litertlm",
+    "litertlm-android",
+    "org.tensorflow:tensorflow-lite-task-text",
+    "tensorflow-lite-task-text",
+)
+FORBIDDEN_DEFAULT_ANDROID_TEST_ENTRY_PATTERNS = ("libtask_text_jni.so",)
 DEPENDENCY_REPORT_TIMEOUT_SECONDS = 120
 
 
@@ -65,6 +87,9 @@ class AndroidApkBudgetReport:
     max_apk_bytes: int
     apk_bytes: int | None
     forbidden_entries: tuple[str, ...]
+    debug_android_test_apk_path: Path | None = None
+    forbidden_debug_android_test_entries: tuple[str, ...] = ()
+    debug_android_test_error: str | None = None
     runtime_classpaths: tuple[RuntimeClasspathCheck, ...] = tuple(
         RuntimeClasspathCheck.passed(configuration)
         for configuration in DEFAULT_RUNTIME_CLASSPATH_CONFIGURATIONS
@@ -79,6 +104,8 @@ class AndroidApkBudgetReport:
             and self.apk_bytes is not None
             and self.apk_bytes <= self.max_apk_bytes
             and not self.forbidden_entries
+            and self.debug_android_test_error is None
+            and not self.forbidden_debug_android_test_entries
             and all(check.ok for check in self.runtime_classpaths)
         )
 
@@ -94,6 +121,7 @@ def verify_android_apk_budget(
     repo_root: Path = ROOT,
     release_dependencies: ReleaseDependencyCheck | None = None,
     runtime_classpaths: tuple[RuntimeClasspathCheck, ...] | None = None,
+    debug_android_test_apk_path: Path | None = None,
 ) -> AndroidApkBudgetReport:
     dependency_checks = runtime_classpaths or (
         (release_dependencies,)
@@ -109,6 +137,7 @@ def verify_android_apk_budget(
             max_apk_bytes=max_apk_bytes,
             apk_bytes=None,
             forbidden_entries=(),
+            debug_android_test_apk_path=debug_android_test_apk_path,
             runtime_classpaths=dependency_checks,
             error="APK byte budget must be positive.",
             repo_root=repo_root,
@@ -119,6 +148,7 @@ def verify_android_apk_budget(
             max_apk_bytes=max_apk_bytes,
             apk_bytes=None,
             forbidden_entries=(),
+            debug_android_test_apk_path=debug_android_test_apk_path,
             runtime_classpaths=dependency_checks,
             error="Release APK is missing; run the Android release build first.",
             repo_root=repo_root,
@@ -132,16 +162,21 @@ def verify_android_apk_budget(
             max_apk_bytes=max_apk_bytes,
             apk_bytes=apk_path.stat().st_size,
             forbidden_entries=(),
+            debug_android_test_apk_path=debug_android_test_apk_path,
             runtime_classpaths=dependency_checks,
             error="Release APK is not a readable ZIP archive.",
             repo_root=repo_root,
         )
     forbidden_entries = tuple(sorted(entry for entry in entries if is_forbidden_apk_entry(entry)))
+    debug_android_test_result = inspect_debug_android_test_apk(debug_android_test_apk_path)
     return AndroidApkBudgetReport(
         apk_path=apk_path,
         max_apk_bytes=max_apk_bytes,
         apk_bytes=apk_path.stat().st_size,
         forbidden_entries=forbidden_entries,
+        debug_android_test_apk_path=debug_android_test_apk_path,
+        forbidden_debug_android_test_entries=debug_android_test_result[0],
+        debug_android_test_error=debug_android_test_result[1],
         runtime_classpaths=dependency_checks,
         repo_root=repo_root,
     )
@@ -149,7 +184,31 @@ def verify_android_apk_budget(
 
 def is_forbidden_apk_entry(entry_name: str) -> bool:
     normalized = entry_name.replace("\\", "/").lower()
-    return any(pattern in normalized for pattern in FORBIDDEN_ENTRY_PATTERNS)
+    return any(pattern in normalized for pattern in FORBIDDEN_ENTRY_PATTERNS) or (
+        normalized.endswith(".tflite")
+        and any(normalized.startswith(prefix) for prefix in FORBIDDEN_TFLITE_MODEL_ENTRY_PREFIXES)
+    )
+
+
+def inspect_debug_android_test_apk(path: Path | None) -> tuple[tuple[str, ...], str | None]:
+    if path is None:
+        return (), None
+    if not path.is_file():
+        return (), "Debug Android test APK is missing; run assembleDebugAndroidTest first."
+    try:
+        with zipfile.ZipFile(path) as apk:
+            entries = tuple(entry.filename for entry in apk.infolist())
+    except zipfile.BadZipFile:
+        return (), "Debug Android test APK is not a readable ZIP archive."
+    forbidden = tuple(
+        sorted(entry for entry in entries if is_forbidden_debug_android_test_entry(entry))
+    )
+    return forbidden, None
+
+
+def is_forbidden_debug_android_test_entry(entry_name: str) -> bool:
+    normalized = entry_name.replace("\\", "/").lower()
+    return any(pattern in normalized for pattern in FORBIDDEN_DEFAULT_ANDROID_TEST_ENTRY_PATTERNS)
 
 
 def collect_runtime_classpath_checks(
@@ -292,25 +351,38 @@ def render_text(report: AndroidApkBudgetReport) -> str:
             f"{format_bytes(report.max_apk_bytes)}"
         )
     if report.forbidden_entries:
-        lines.append("[FAIL] forbidden LiteRT-LM/model payloads:")
+        lines.append("[FAIL] forbidden local-model payloads:")
         lines.extend(f"       {entry}" for entry in report.forbidden_entries[:20])
         if len(report.forbidden_entries) > 20:
             omitted = len(report.forbidden_entries) - 20
             lines.append(f"       ... {omitted} more entries omitted ...")
     else:
-        lines.append("[OK] forbidden LiteRT-LM/model payloads: none")
+        lines.append("[OK] forbidden local-model payloads: none")
+    if report.debug_android_test_apk_path is not None:
+        if report.debug_android_test_error is not None:
+            lines.append(f"[FAIL] debug Android test APK: {report.debug_android_test_error}")
+        elif report.forbidden_debug_android_test_entries:
+            lines.append("[FAIL] debug Android test Task Text payloads:")
+            lines.extend(
+                f"       {entry}" for entry in report.forbidden_debug_android_test_entries[:20]
+            )
+            if len(report.forbidden_debug_android_test_entries) > 20:
+                omitted = len(report.forbidden_debug_android_test_entries) - 20
+                lines.append(f"       ... {omitted} more entries omitted ...")
+        else:
+            lines.append("[OK] debug Android test Task Text payloads: none")
     for dependency_status in report.runtime_classpaths:
         configuration = dependency_status.configuration
         if dependency_status.error is not None:
             lines.append(f"[FAIL] {configuration}: {dependency_status.error}")
         elif dependency_status.forbidden_matches:
-            lines.append(f"[FAIL] {configuration} LiteRT-LM dependencies:")
+            lines.append(f"[FAIL] {configuration} local-model dependencies:")
             lines.extend(f"       {match}" for match in dependency_status.forbidden_matches[:20])
             if len(dependency_status.forbidden_matches) > 20:
                 omitted = len(dependency_status.forbidden_matches) - 20
                 lines.append(f"       ... {omitted} more matches omitted ...")
         else:
-            lines.append(f"[OK] {configuration} LiteRT-LM dependencies: none")
+            lines.append(f"[OK] {configuration} local-model dependencies: none")
     lines.append("Overall: PASS" if report.ok else "Overall: FAIL")
     return "\n".join(lines)
 
@@ -332,6 +404,13 @@ def render_json(report: AndroidApkBudgetReport) -> str:
         "maxApkBytes": report.max_apk_bytes,
         "sizeOk": report.size_ok,
         "forbiddenEntries": list(report.forbidden_entries),
+        "debugAndroidTestApkPath": (
+            None
+            if report.debug_android_test_apk_path is None
+            else safe_path(report.debug_android_test_apk_path, report.repo_root)
+        ),
+        "forbiddenDebugAndroidTestEntries": list(report.forbidden_debug_android_test_entries),
+        "debugAndroidTestError": report.debug_android_test_error,
         "runtimeClasspathChecks": [
             {
                 "configuration": check.configuration,
@@ -395,6 +474,7 @@ def main(argv: list[str] | None = None) -> int:
         max_apk_bytes=args.max_release_apk_bytes,
         repo_root=repo_root,
         runtime_classpaths=runtime_classpaths,
+        debug_android_test_apk_path=repo_root / DEFAULT_DEBUG_ANDROID_TEST_APK.relative_to(ROOT),
     )
     print(render_json(report) if args.json else render_text(report))
     return 0 if report.ok else 1

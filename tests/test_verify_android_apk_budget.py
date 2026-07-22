@@ -28,7 +28,73 @@ def test_apk_budget_passes_for_small_apk_without_model_payload(tmp_path: Path) -
 
     assert report.ok
     assert report.forbidden_entries == ()
-    assert "[OK] forbidden LiteRT-LM/model payloads: none" in render_text(report)
+    assert "[OK] forbidden local-model payloads: none" in render_text(report)
+
+
+def test_apk_budget_allows_existing_mlkit_tflite_assets(tmp_path: Path) -> None:
+    apk = tmp_path / "app-release-unsigned.apk"
+    write_apk(
+        apk,
+        {
+            "classes.dex": b"dex",
+            "assets/mlkit_barcode_models/barcode_ssd_mobilenet_v1_dmp25_quant.tflite": b"mlkit",
+        },
+    )
+
+    report = verify_android_apk_budget(
+        apk_path=apk,
+        max_apk_bytes=apk.stat().st_size + 1,
+        repo_root=tmp_path,
+    )
+
+    assert report.ok
+    assert report.forbidden_entries == ()
+
+
+def test_apk_budget_checks_default_debug_android_test_for_task_text_jni(
+    tmp_path: Path,
+) -> None:
+    release_apk = tmp_path / "app-release-unsigned.apk"
+    debug_test_apk = tmp_path / "app-debug-androidTest.apk"
+    write_apk(release_apk, {"classes.dex": b"dex"})
+    write_apk(debug_test_apk, {"classes.dex": b"dex"})
+
+    report = verify_android_apk_budget(
+        apk_path=release_apk,
+        debug_android_test_apk_path=debug_test_apk,
+        max_apk_bytes=release_apk.stat().st_size + 1,
+        repo_root=tmp_path,
+    )
+
+    assert report.ok
+    assert report.forbidden_debug_android_test_entries == ()
+    assert "[OK] debug Android test Task Text payloads: none" in render_text(report)
+
+
+def test_apk_budget_fails_when_default_debug_android_test_contains_task_text_jni(
+    tmp_path: Path,
+) -> None:
+    release_apk = tmp_path / "app-release-unsigned.apk"
+    debug_test_apk = tmp_path / "app-debug-androidTest.apk"
+    write_apk(release_apk, {"classes.dex": b"dex"})
+    write_apk(
+        debug_test_apk,
+        {
+            "classes.dex": b"dex",
+            "lib/arm64-v8a/libtask_text_jni.so": b"classifier runtime",
+        },
+    )
+
+    report = verify_android_apk_budget(
+        apk_path=release_apk,
+        debug_android_test_apk_path=debug_test_apk,
+        max_apk_bytes=release_apk.stat().st_size + 1,
+        repo_root=tmp_path,
+    )
+
+    assert not report.ok
+    assert report.forbidden_debug_android_test_entries == ("lib/arm64-v8a/libtask_text_jni.so",)
+    assert "[FAIL] debug Android test Task Text payloads:" in render_text(report)
 
 
 def test_apk_budget_fails_when_release_runtime_classpath_includes_litertlm(
@@ -49,7 +115,7 @@ def test_apk_budget_fails_when_release_runtime_classpath_includes_litertlm(
     )
 
     assert not report.ok
-    assert "[FAIL] releaseRuntimeClasspath LiteRT-LM dependencies:" in render_text(report)
+    assert "[FAIL] releaseRuntimeClasspath local-model dependencies:" in render_text(report)
 
 
 def test_apk_budget_fails_when_debug_runtime_classpath_includes_litertlm(
@@ -73,7 +139,7 @@ def test_apk_budget_fails_when_debug_runtime_classpath_includes_litertlm(
     )
 
     assert not report.ok
-    assert "[FAIL] debugRuntimeClasspath LiteRT-LM dependencies:" in render_text(report)
+    assert "[FAIL] debugRuntimeClasspath local-model dependencies:" in render_text(report)
 
 
 def test_release_runtime_dependency_parser_detects_litertlm_coordinates() -> None:
@@ -97,6 +163,16 @@ def test_runtime_dependency_parser_deduplicates_default_classpath_matches() -> N
     )
 
     assert matches == ("+--- com.google.ai.edge.litertlm:litertlm-android:0.14.0",)
+
+
+def test_runtime_dependency_parser_detects_tflite_task_text_coordinates() -> None:
+    matches = find_forbidden_runtime_dependencies(
+        "debugRuntimeClasspath\n"
+        "+--- org.tensorflow:tensorflow-lite-task-text:0.4.4\n"
+        "\\--- androidx.compose.ui:ui:1.11.3\n"
+    )
+
+    assert matches == ("+--- org.tensorflow:tensorflow-lite-task-text:0.4.4",)
 
 
 def test_apk_budget_fails_when_release_apk_is_missing(tmp_path: Path) -> None:
@@ -134,6 +210,8 @@ def test_apk_budget_fails_when_litertlm_or_model_entries_are_packaged(tmp_path: 
             "classes.dex": b"dex",
             "lib/arm64-v8a/liblitertlm_jni.so": b"runtime",
             "assets/models/router.litertlm": b"model",
+            "assets/models/router.tflite": b"classifier",
+            "lib/arm64-v8a/libtask_text_jni.so": b"classifier runtime",
         },
     )
 
@@ -146,7 +224,9 @@ def test_apk_budget_fails_when_litertlm_or_model_entries_are_packaged(tmp_path: 
     assert not report.ok
     assert report.forbidden_entries == (
         "assets/models/router.litertlm",
+        "assets/models/router.tflite",
         "lib/arm64-v8a/liblitertlm_jni.so",
+        "lib/arm64-v8a/libtask_text_jni.so",
     )
 
 
@@ -165,6 +245,8 @@ def test_apk_budget_json_is_machine_readable_and_path_scoped(tmp_path: Path) -> 
     assert payload["ok"] is True
     assert payload["apkPath"] == "android/app-release-unsigned.apk"
     assert payload["forbiddenEntries"] == []
+    assert payload["debugAndroidTestApkPath"] is None
+    assert payload["forbiddenDebugAndroidTestEntries"] == []
     assert [check["configuration"] for check in payload["runtimeClasspathChecks"]] == [
         "debugRuntimeClasspath",
         "releaseRuntimeClasspath",
