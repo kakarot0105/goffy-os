@@ -103,6 +103,35 @@ def test_rom0_readiness_surfaces_locked_probe_blocker(tmp_path: Path) -> None:
     assert "ROM probe does not show an unlocked bootloader" in section(report, "rom_probe").blockers
 
 
+def test_rom0_readiness_preserves_probe_warnings(tmp_path: Path) -> None:
+    probe = write_probe(tmp_path)
+    payload = json.loads(probe.read_text(encoding="utf-8"))
+    payload["warnings"] = [
+        "OEM unlock support properties are unavailable",
+        "VNDK isolation could not be confirmed from system config",
+        "ROM probe did not confirm DSU package availability",
+    ]
+    payload["dsu"] = {"package_present": "false"}
+    probe.write_text(json.dumps(payload), encoding="utf-8")
+    rollback_doc = write_rollback_doc(tmp_path)
+    manual = write_manual_gates(tmp_path, rollback_doc)
+    apk = write_signed_apk(tmp_path)
+
+    report = build_readiness_report(
+        probe_json=probe,
+        manual_gates_json=manual,
+        signed_apk=apk,
+        aosp_root=tmp_path / "aosp",
+        evidence_root=tmp_path,
+    )
+
+    warnings = section(report, "rom_probe").warnings
+
+    assert "OEM unlock support properties are unavailable" in warnings
+    assert "VNDK isolation could not be confirmed from system config" in warnings
+    assert warnings.count("ROM probe did not confirm DSU package availability") == 1
+
+
 def test_rom0_readiness_surfaces_manual_gate_blockers(tmp_path: Path) -> None:
     probe = write_probe(tmp_path)
     manual = tmp_path / "manual.json"

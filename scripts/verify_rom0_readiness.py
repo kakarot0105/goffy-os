@@ -147,7 +147,7 @@ def validate_probe_evidence(path: Path | None) -> ReadinessSection:
         return ReadinessSection(name="rom_probe", ok=False, blockers=(str(exc),))
 
     blockers: list[str] = []
-    warnings: list[str] = []
+    warnings: list[str] = list(string_items(payload.get("warnings")))
     if payload.get("schema_version") != PROBE_SCHEMA_VERSION:
         blockers.append("ROM feasibility probe schema_version mismatch")
     if payload.get("ok") is not True:
@@ -189,7 +189,7 @@ def validate_probe_evidence(path: Path | None) -> ReadinessSection:
         name="rom_probe",
         ok=not blockers,
         blockers=tuple(blockers),
-        warnings=tuple(warnings),
+        warnings=tuple(dict.fromkeys(warnings)),
         evidence=evidence,
     )
 
