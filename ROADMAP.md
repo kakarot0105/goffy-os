@@ -40,6 +40,7 @@
 - [x] Read-only host fastboot evidence helper without reboot/unlock/flash authority
 - [x] ROM-0 readiness reporter requires redacted read-only fastboot evidence
 - [x] ROM-0 manual action packet tracks fastboot evidence and emits the updated readiness command
+- [x] Read-only manual bootloader visibility guide generator
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Manual bootloader-mode fastboot visibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist

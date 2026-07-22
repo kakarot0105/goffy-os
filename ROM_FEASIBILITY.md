@@ -142,6 +142,17 @@ command authority. The refresh command reports `BLOCKED` while ROM gates are
 missing or the bootloader probe is still locked; that is expected and safer than
 claiming success before ROM-0 is ready.
 
+To generate the manual bootloader visibility guide without rebooting the phone,
+run:
+
+```bash
+.venv/bin/python scripts/create_rom_bootloader_visibility_guide.py
+```
+
+The guide records blocked/ready/done status for the physical bootloader step and
+never emits ADB reboot, fastboot reboot, unlock, flash, erase, wipe, or boot
+commands.
+
 To record host fastboot readiness without rebooting the phone, run:
 
 ```bash

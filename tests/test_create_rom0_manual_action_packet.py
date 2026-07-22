@@ -64,6 +64,7 @@ def test_locked_probe_packet_withholds_destructive_authority() -> None:
     assert "create_rom_unlock_eligibility_evidence.py" in markdown
     assert "create_rom_stock_restore_evidence.py" in markdown
     assert "create_rom_gsi_candidate_evidence.py" in markdown
+    assert "create_rom_bootloader_visibility_guide.py" in markdown
     assert "create_rom_fastboot_evidence.py" in markdown
     assert "verify_rom0_readiness.py" in markdown
     forbidden_terms = (
@@ -101,7 +102,7 @@ def test_packet_records_safe_evidence_without_approving_unlock() -> None:
         "rollback_doc": "docs/setup/kansas-stock-rollback.md",
     }
     gsi_candidate = gsi_candidate_summary()
-    fastboot = fastboot_summary()
+    fastboot = fastboot_summary(manual_visible=True)
 
     packet = build_packet(
         probe,
@@ -189,8 +190,42 @@ def test_unlocked_packet_blocks_readiness_until_fastboot_evidence_exists() -> No
     actions = {action.action_id: action for action in packet.actions}
 
     assert packet.status is PacketStatus.READY_FOR_MANUAL_GATE_TEMPLATE
-    assert "redacted read-only fastboot evidence is missing" in packet.blocked_by
+    assert "manual bootloader-mode fastboot visibility evidence is missing" in packet.blocked_by
     assert actions["record_fastboot_evidence"].status is ActionStatus.REQUIRED
+    assert actions["summarize_rom0_readiness"].status is ActionStatus.BLOCKED
+
+
+def test_unlocked_packet_blocks_readiness_until_manual_fastboot_visibility() -> None:
+    probe = dict(LOCKED_PROBE)
+    probe["ok"] = True
+    probe["blockers"] = []
+    probe["boot"] = {"flash_locked": "0", "vbmeta_device_state": "unlocked"}
+    unlock = {
+        "source_url": "https://en-us.support.motorola.com/app/answers/detail/a_id/89973",
+        "oem_unlocking_visible": True,
+        "oem_unlocking_enabled": True,
+        "motorola_unlock_eligibility": "eligible",
+        "operator_note_code": "checked_no_identifiers_stored",
+    }
+    stock = {
+        "source_url": "https://en-us.support.motorola.com/app/softwarefix",
+        "archive_name": "kansas-stock.zip",
+        "sha256": "a" * 64,
+        "rollback_doc": "docs/setup/kansas-stock-rollback.md",
+    }
+
+    packet = build_packet(
+        probe,
+        unlock_eligibility=unlock,
+        stock_restore=stock,
+        gsi_candidate=gsi_candidate_summary(),
+        fastboot_evidence=fastboot_summary(),
+    )
+    actions = {action.action_id: action for action in packet.actions}
+
+    assert packet.status is PacketStatus.READY_FOR_MANUAL_GATE_TEMPLATE
+    assert "manual bootloader-mode fastboot visibility evidence is missing" in packet.blocked_by
+    assert actions["record_fastboot_evidence"].status is ActionStatus.RECORDED
     assert actions["summarize_rom0_readiness"].status is ActionStatus.BLOCKED
 
 
@@ -456,11 +491,11 @@ def gsi_candidate_summary() -> dict[str, str]:
     }
 
 
-def fastboot_summary() -> dict[str, str]:
+def fastboot_summary(*, manual_visible: bool = False) -> dict[str, str]:
     return {
-        "status": "HOST_READY",
+        "status": "MANUAL_BOOTLOADER_VISIBLE" if manual_visible else "HOST_READY",
         "fastboot_version": "37.0.0-14910828",
-        "manual_bootloader_check_requested": "false",
-        "bootloader_device_visible": "false",
-        "bootloader_device_count": "0",
+        "manual_bootloader_check_requested": "true" if manual_visible else "false",
+        "bootloader_device_visible": "true" if manual_visible else "false",
+        "bootloader_device_count": "1" if manual_visible else "0",
     }

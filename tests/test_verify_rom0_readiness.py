@@ -83,7 +83,7 @@ def test_rom0_readiness_accepts_complete_non_destructive_evidence(tmp_path: Path
     probe = write_probe(tmp_path)
     rollback_doc = write_rollback_doc(tmp_path)
     manual = write_manual_gates(tmp_path, rollback_doc)
-    fastboot = write_fastboot_evidence(tmp_path)
+    fastboot = write_fastboot_evidence(tmp_path, manual_visible=True)
     gsi_candidate = write_gsi_candidate_evidence(tmp_path)
     apk = write_signed_apk(tmp_path)
     signing_plan = write_signing_plan(tmp_path, apk)
@@ -104,12 +104,41 @@ def test_rom0_readiness_accepts_complete_non_destructive_evidence(tmp_path: Path
     assert report.ok
     assert report.status is Rom0ReadinessStatus.READY_FOR_HUMAN_REVIEW
     assert report.destructive_actions == "withheld"
-    assert evidence(report, "fastboot_evidence")["manual_bootloader_check_requested"] == "false"
+    assert evidence(report, "fastboot_evidence")["manual_bootloader_check_requested"] == "true"
     assert evidence(report, "gsi_candidate")["authorization"] == "NON_AUTHORIZING_EVIDENCE"
     assert evidence(report, "release_signing_plan")["keystore"] == "external"
     assert evidence(report, "release_apk_verification")["apk_signature_schemes"] == "v2"
     assert evidence(report, "aosp_import")["apk_signature_schemes"] == "v2"
     assert "does not authorize unlock" in render_markdown(report)
+
+
+def test_rom0_readiness_blocks_host_only_fastboot_evidence(tmp_path: Path) -> None:
+    probe = write_probe(tmp_path)
+    rollback_doc = write_rollback_doc(tmp_path)
+    manual = write_manual_gates(tmp_path, rollback_doc)
+    fastboot = write_fastboot_evidence(tmp_path)
+    gsi_candidate = write_gsi_candidate_evidence(tmp_path)
+    apk = write_signed_apk(tmp_path)
+    signing_plan = write_signing_plan(tmp_path, apk)
+    apk_verification = write_apk_verification(tmp_path, apk)
+
+    report = build_readiness_report(
+        probe_json=probe,
+        manual_gates_json=manual,
+        fastboot_evidence_json=fastboot,
+        gsi_candidate_evidence_json=gsi_candidate,
+        signed_apk=apk,
+        signing_plan_json=signing_plan,
+        apk_verification_json=apk_verification,
+        aosp_root=tmp_path / "aosp",
+        evidence_root=tmp_path,
+    )
+
+    assert not report.ok
+    assert (
+        "manual bootloader-mode fastboot visibility has not been recorded"
+        in section(report, "fastboot_evidence").blockers
+    )
 
 
 def test_rom0_readiness_surfaces_locked_probe_blocker(tmp_path: Path) -> None:
@@ -449,7 +478,7 @@ def test_rom0_readiness_accepts_manual_bootloader_fastboot_visibility(
 
 
 def test_rom0_readiness_rejects_unredacted_fastboot_path(tmp_path: Path) -> None:
-    fastboot = write_fastboot_evidence(tmp_path)
+    fastboot = write_fastboot_evidence(tmp_path, manual_visible=True)
     payload = json.loads(fastboot.read_text(encoding="utf-8"))
     payload["commands"][0]["stdout"] = (
         "fastboot version 37.0.0-14910828\n"
@@ -606,7 +635,7 @@ def test_rom0_readiness_cli_wires_gsi_candidate_evidence_flag(
     probe = write_probe(tmp_path)
     rollback_doc = write_rollback_doc(tmp_path)
     manual = write_manual_gates(tmp_path, rollback_doc)
-    fastboot = write_fastboot_evidence(tmp_path)
+    fastboot = write_fastboot_evidence(tmp_path, manual_visible=True)
     gsi_candidate = write_gsi_candidate_evidence(tmp_path)
     apk = write_signed_apk(tmp_path)
     signing_plan = write_signing_plan(tmp_path, apk)

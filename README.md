@@ -466,6 +466,14 @@ Then generate a local manual-gates template before editing evidence by hand:
 Both files stay under `.goffy-validation`, default to blocked values, and do not
 authorize unlock, flash, erase, root, or boot-image changes.
 
+Generate the manual bootloader visibility guide first. It writes JSON/Markdown
+under `.goffy-validation`, explains the physical-phone step, and still blocks
+ROM readiness until visibility is actually recorded:
+
+```bash
+.venv/bin/python scripts/create_rom_bootloader_visibility_guide.py
+```
+
 To record host fastboot readiness without changing phone state:
 
 ```bash

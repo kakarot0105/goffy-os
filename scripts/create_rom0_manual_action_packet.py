@@ -57,6 +57,7 @@ ALLOWED_COMMAND_PREFIXES = (
     ".venv/bin/python scripts/rom_feasibility_probe.py ",
     ".venv/bin/python scripts/create_rom_stock_restore_evidence.py ",
     ".venv/bin/python scripts/create_rom_gsi_candidate_evidence.py ",
+    ".venv/bin/python scripts/create_rom_bootloader_visibility_guide.py",
     ".venv/bin/python scripts/create_rom_fastboot_evidence.py",
     ".venv/bin/python scripts/create_rom_unlock_eligibility_evidence.py ",
     ".venv/bin/python scripts/create_rom_manual_gates_template.py ",
@@ -207,9 +208,9 @@ def read_only_probe_action() -> ManualAction:
 
 
 def fastboot_evidence_action(fastboot_evidence: Mapping[str, str] | None) -> ManualAction:
-    if fastboot_evidence_ready(fastboot_evidence):
+    if fastboot_evidence_present(fastboot_evidence):
         if fastboot_evidence is None:
-            raise ValueError("fastboot evidence readiness predicate returned an invalid state")
+            raise ValueError("fastboot evidence presence predicate returned an invalid state")
         manual_visible = fastboot_evidence.get("bootloader_device_visible") == "true"
         return ManualAction(
             action_id="record_fastboot_evidence",
@@ -238,6 +239,7 @@ def fastboot_evidence_action(fastboot_evidence: Mapping[str, str] | None) -> Man
         status=ActionStatus.REQUIRED,
         summary=("ROM-0 readiness now requires redacted host fastboot evidence before review."),
         instructions=(
+            "Generate the bootloader visibility guide before touching the phone boot menu.",
             "Run the host readiness command first; it only checks the trusted SDK fastboot.",
             "Do not reboot the phone from ADB or fastboot.",
             "Only after the human manually enters bootloader mode, run the optional "
@@ -246,6 +248,7 @@ def fastboot_evidence_action(fastboot_evidence: Mapping[str, str] | None) -> Man
             "boot, or reboot.",
         ),
         safe_commands=(
+            ".venv/bin/python scripts/create_rom_bootloader_visibility_guide.py",
             ".venv/bin/python scripts/create_rom_fastboot_evidence.py",
             ".venv/bin/python scripts/create_rom_fastboot_evidence.py --manual-bootloader-check",
         ),
@@ -481,9 +484,28 @@ def gsi_evidence_ready(gsi_candidate: Mapping[str, str] | None) -> bool:
 def fastboot_evidence_ready(fastboot_evidence: Mapping[str, str] | None) -> bool:
     if fastboot_evidence is None:
         return False
+    return (
+        fastboot_evidence.get("status") == "MANUAL_BOOTLOADER_VISIBLE"
+        and bool(fastboot_evidence.get("fastboot_version"))
+        and fastboot_evidence.get("manual_bootloader_check_requested") == "true"
+        and fastboot_evidence.get("bootloader_device_visible") == "true"
+        and int_value(fastboot_evidence.get("bootloader_device_count", "")) > 0
+    )
+
+
+def fastboot_evidence_present(fastboot_evidence: Mapping[str, str] | None) -> bool:
+    if fastboot_evidence is None:
+        return False
     return fastboot_evidence.get("status") in {"HOST_READY", "MANUAL_BOOTLOADER_VISIBLE"} and bool(
         fastboot_evidence.get("fastboot_version")
     )
+
+
+def int_value(value: str) -> int:
+    try:
+        return int(value)
+    except ValueError:
+        return 0
 
 
 def probe_readiness_blockers(probe: Mapping[str, Any]) -> tuple[str, ...]:
@@ -536,7 +558,7 @@ def blocked_reasons(
     if not gsi_ready:
         reasons.append("official Google ARM64 GSI evidence is missing")
     if not fastboot_ready:
-        reasons.append("redacted read-only fastboot evidence is missing")
+        reasons.append("manual bootloader-mode fastboot visibility evidence is missing")
     return tuple(reasons)
 
 

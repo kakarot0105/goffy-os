@@ -184,7 +184,10 @@ def build_readiness_report(
         rom_descriptors,
         rom_probe,
         manual_gates,
-        validate_fastboot_evidence(fastboot_evidence_json),
+        validate_fastboot_evidence(
+            fastboot_evidence_json,
+            require_manual_visibility=True,
+        ),
         validate_gsi_candidate_evidence(gsi_candidate_evidence_json),
         validate_release_signing_plan_evidence(
             signing_plan_json,
@@ -315,7 +318,11 @@ def validate_manual_gate_evidence(
     )
 
 
-def validate_fastboot_evidence(path: Path | None) -> ReadinessSection:
+def validate_fastboot_evidence(
+    path: Path | None,
+    *,
+    require_manual_visibility: bool = False,
+) -> ReadinessSection:
     if path is None:
         return ReadinessSection(
             name="fastboot_evidence",
@@ -381,6 +388,8 @@ def validate_fastboot_evidence(path: Path | None) -> ReadinessSection:
         command_summary=command_summary,
         blockers=blockers,
     )
+    if require_manual_visibility and status != FastbootStatus.MANUAL_BOOTLOADER_VISIBLE:
+        blockers.append("manual bootloader-mode fastboot visibility has not been recorded")
     if not manual.get("requested"):
         warnings.append("manual bootloader-mode fastboot visibility is still pending")
 

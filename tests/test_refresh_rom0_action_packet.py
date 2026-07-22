@@ -106,7 +106,7 @@ def test_refresh_consumes_valid_existing_evidence(
     write_unlock_evidence(tmp_path)
     write_stock_evidence(tmp_path)
     write_gsi_evidence(tmp_path)
-    write_fastboot_evidence(tmp_path)
+    write_fastboot_evidence(tmp_path, manual_visible=True)
 
     report = refresh_rom0_action_packet(root=tmp_path, runner=runner_for(LOCKED_PROPS))
     evidence = {item.name: item for item in report.evidence_inputs}
@@ -134,7 +134,7 @@ def test_refresh_reports_ready_only_when_probe_and_evidence_are_ready(
     write_unlock_evidence(tmp_path)
     write_stock_evidence(tmp_path)
     write_gsi_evidence(tmp_path)
-    write_fastboot_evidence(tmp_path)
+    write_fastboot_evidence(tmp_path, manual_visible=True)
 
     report = refresh_rom0_action_packet(root=tmp_path, runner=runner_for(props))
 
@@ -188,7 +188,7 @@ def test_refresh_fails_closed_for_invalid_fastboot_evidence(
     assert not report.refresh_succeeded
     assert evidence["fastboot_evidence"].status is EvidenceStatus.INVALID
     assert any(error.startswith("fastboot_evidence:") for error in report.errors)
-    assert "redacted read-only fastboot evidence is missing" in report.blocked_by
+    assert "manual bootloader-mode fastboot visibility evidence is missing" in report.blocked_by
 
 
 def test_refresh_rejects_symlinked_evidence_outside_validation_dir(
@@ -316,16 +316,35 @@ def write_gsi_evidence(root: Path) -> None:
     )
 
 
-def write_fastboot_evidence(root: Path) -> None:
+def write_fastboot_evidence(root: Path, *, manual_visible: bool = False) -> None:
     validation = root / ".goffy-validation"
     validation.mkdir(exist_ok=True)
+    commands = [
+        {
+            "label": "fastboot --version",
+            "exit_code": 0,
+            "timed_out": False,
+            "stdout": "fastboot version 37.0.0-14910828\nInstalled as <path>",
+            "stderr": "",
+        }
+    ]
+    if manual_visible:
+        commands.append(
+            {
+                "label": "fastboot devices",
+                "exit_code": 0,
+                "timed_out": False,
+                "stdout": "<device-serial>\tfastboot",
+                "stderr": "",
+            }
+        )
     (validation / "rom-fastboot-evidence.json").write_text(
         json.dumps(
             {
                 "schema_version": "goffy.rom-fastboot-evidence.v1",
                 "generated_at": "2026-07-22T00:00:00+00:00",
                 "ok": True,
-                "status": "HOST_READY",
+                "status": "MANUAL_BOOTLOADER_VISIBLE" if manual_visible else "HOST_READY",
                 "destructive_actions": "withheld",
                 "host": {
                     "fastboot": "available",
@@ -333,24 +352,16 @@ def write_fastboot_evidence(root: Path) -> None:
                     "fastboot_version": "37.0.0-14910828",
                 },
                 "manual_bootloader_check": {
-                    "requested": False,
-                    "bootloader_device_visible": False,
-                    "bootloader_device_count": 0,
+                    "requested": manual_visible,
+                    "bootloader_device_visible": manual_visible,
+                    "bootloader_device_count": 1 if manual_visible else 0,
                     "serials_redacted": True,
                 },
-                "commands": [
-                    {
-                        "label": "fastboot --version",
-                        "exit_code": 0,
-                        "timed_out": False,
-                        "stdout": "fastboot version 37.0.0-14910828\nInstalled as <path>",
-                        "stderr": "",
-                    }
-                ],
+                "commands": commands,
                 "blockers": [],
-                "warnings": [
-                    "manual bootloader visibility was not checked; do not reboot automatically"
-                ],
+                "warnings": []
+                if manual_visible
+                else ["manual bootloader visibility was not checked; do not reboot automatically"],
             }
         ),
         encoding="utf-8",
