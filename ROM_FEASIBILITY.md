@@ -135,9 +135,10 @@ To produce a single safe "what do I do next?" packet for the human checks, run:
 ```
 
 The packet is read-only/template-only. It summarizes missing OEM/Motorola
-unlock eligibility and stock-restore evidence, links those actions to the typed
-GOFFY evidence helpers, redacts the device serial placeholder, and rejects any
-unlock, flash, erase, or bootloader-reboot command authority.
+unlock eligibility, stock-restore evidence, and official GSI candidate evidence,
+links those actions to the typed GOFFY evidence helpers, redacts the device
+serial placeholder, and rejects any unlock, flash, erase, or bootloader-reboot
+command authority.
 
 ## First ROM Milestone
 
@@ -226,6 +227,9 @@ It does not download a GSI, invoke DSU, push files to the phone, reboot, unlock,
 flash, or mutate an AOSP checkout. It only hashes an already-downloaded local
 archive outside the repo and writes redacted evidence under `.goffy-validation`
 after the computed SHA-256 matches Google's release-page checksum.
+
+Before downloading the archive, review Google's official GSI terms yourself and
+continue only after you personally accept them.
 
 ```bash
 .venv/bin/python scripts/create_rom_gsi_candidate_evidence.py \

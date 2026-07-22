@@ -438,7 +438,8 @@ be unlocked and boot a recoverable GSI or custom ROM safely.
 
 For the next ROM-0 evidence step, generate a safe manual action packet from the
 latest read-only probe. It tells the human exactly which restore/unlock evidence
-is missing without emitting unlock, flash, erase, or reboot commands:
+and official GSI candidate evidence is missing without emitting unlock, flash,
+erase, or reboot commands:
 
 ```bash
 .venv/bin/python scripts/create_rom0_manual_action_packet.py \
@@ -449,15 +450,20 @@ is missing without emitting unlock, flash, erase, or reboot commands:
 Then generate a local manual-gates template before editing evidence by hand:
 
 ```bash
-.venv/bin/python scripts/create_rom_manual_gates_template.py
+.venv/bin/python scripts/create_rom_manual_gates_template.py \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
+  --unlock-eligibility-evidence .goffy-validation/rom-unlock-eligibility-evidence.json \
+  --stock-restore-evidence .goffy-validation/rom-stock-restore-evidence.json \
+  --output .goffy-validation/rom-0-manual-gates.json
 ```
 
 Both files stay under `.goffy-validation`, default to blocked values, and do not
 authorize unlock, flash, erase, root, or boot-image changes.
 
-To record candidate integrity for the first official Google ARM64 GSI, download
-the archive manually outside this repo, copy the SHA-256 from Google's GSI
-release page, then run the offline verifier:
+To record candidate integrity for the first official Google ARM64 GSI, first
+review Google's official GSI terms yourself. Only after personally accepting
+those terms, download the archive manually outside this repo, copy the SHA-256
+from Google's GSI release page, then run the offline verifier:
 
 ```bash
 .venv/bin/python scripts/create_rom_gsi_candidate_evidence.py \

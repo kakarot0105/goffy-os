@@ -14,16 +14,29 @@ ROOT = Path(__file__).resolve().parents[1]
 if __package__ in {None, ""} and str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.create_rom_gsi_candidate_evidence import OFFICIAL_GSI_RELEASES_URL  # noqa: E402
 from scripts.create_rom_manual_gates_template import load_stock_restore_evidence  # noqa: E402
 from scripts.create_rom_stock_restore_evidence import write_output  # noqa: E402
 from scripts.create_rom_unlock_eligibility_evidence import (  # noqa: E402
     load_unlock_eligibility_evidence,
 )
 from scripts.rom_feasibility_probe import JSON_SCHEMA_VERSION as PROBE_SCHEMA_VERSION  # noqa: E402
+from scripts.verify_rom0_readiness import (  # noqa: E402
+    EXPECTED_CODENAME,
+    EXPECTED_PRODUCT,
+    TARGET_DEVICE_EVIDENCE_KEYS,
+    validate_gsi_candidate_evidence,
+)
 
 JSON_SCHEMA_VERSION = "goffy.rom0-manual-action-packet.v1"
 DEVICE_SERIAL_PLACEHOLDER = "<device-serial>"
 STOCK_ARCHIVE_PLACEHOLDER = "/absolute/path/outside/repo/<exact-kansas-stock-archive.zip>"
+GSI_ARCHIVE_PLACEHOLDER = (
+    "/absolute/path/outside/repo/aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip"
+)
+GSI_ARCHIVE_NAME = "aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip"
+GSI_DOWNLOAD_URL = f"https://dl.google.com/developers/android/baklava/images/gsi/{GSI_ARCHIVE_NAME}"
+GSI_SHA256 = "2171cf0ea849f8eaa399f4bad2165fab80b0fd9e98d37723a705dca6c41e49ea"
 MOTOROLA_SOFTWARE_FIX_URL = "https://en-us.support.motorola.com/app/softwarefix"
 MOTOROLA_BOOTLOADER_SUPPORT_URL = "https://en-us.support.motorola.com/app/answers/detail/a_id/89973"
 
@@ -42,6 +55,7 @@ FORBIDDEN_DESTRUCTIVE_TERMS = (
 ALLOWED_COMMAND_PREFIXES = (
     ".venv/bin/python scripts/rom_feasibility_probe.py ",
     ".venv/bin/python scripts/create_rom_stock_restore_evidence.py ",
+    ".venv/bin/python scripts/create_rom_gsi_candidate_evidence.py ",
     ".venv/bin/python scripts/create_rom_unlock_eligibility_evidence.py ",
     ".venv/bin/python scripts/create_rom_manual_gates_template.py ",
     ".venv/bin/python scripts/validate_rom_manual_gates.py ",
@@ -52,6 +66,7 @@ ALLOWED_COMMAND_PREFIXES = (
 class PacketStatus(StrEnum):
     BLOCKED_MANUAL_EVIDENCE = "BLOCKED_MANUAL_EVIDENCE"
     READY_FOR_MANUAL_GATE_TEMPLATE = "READY_FOR_MANUAL_GATE_TEMPLATE"
+    READY_FOR_ROM0_READINESS_REVIEW = "READY_FOR_ROM0_READINESS_REVIEW"
 
 
 class ActionStatus(StrEnum):
@@ -109,28 +124,42 @@ def build_packet(
     *,
     unlock_eligibility: Mapping[str, Any] | None = None,
     stock_restore: Mapping[str, str] | None = None,
+    gsi_candidate: Mapping[str, str] | None = None,
 ) -> Rom0ManualActionPacket:
     device = compact_device(probe)
+    probe_blockers = probe_readiness_blockers(probe)
     unlock_ready = unlock_evidence_ready(unlock_eligibility)
     stock_ready = stock_restore is not None
+    gsi_ready = gsi_evidence_ready(gsi_candidate)
 
     blocked_by = blocked_reasons(
+        probe_blockers=probe_blockers,
         unlock_ready=unlock_ready,
         stock_ready=stock_ready,
+        gsi_ready=gsi_ready,
     )
     actions = (
         read_only_probe_action(),
         stock_restore_action(stock_restore),
+        gsi_candidate_action(gsi_candidate),
         unlock_eligibility_action(unlock_eligibility),
         manual_gate_template_action(unlock_ready=unlock_ready, stock_ready=stock_ready),
-        readiness_report_action(unlock_ready=unlock_ready, stock_ready=stock_ready),
+        readiness_report_action(
+            probe_blockers=probe_blockers,
+            unlock_ready=unlock_ready,
+            stock_ready=stock_ready,
+            gsi_ready=gsi_ready,
+        ),
     )
+    ready_for_manual_gates = unlock_ready and stock_ready
+    ready_for_readiness = not probe_blockers and ready_for_manual_gates and gsi_ready
     packet = Rom0ManualActionPacket(
         schema_version=JSON_SCHEMA_VERSION,
         generated_at=datetime.now(UTC).isoformat(),
-        status=PacketStatus.READY_FOR_MANUAL_GATE_TEMPLATE
-        if unlock_ready and stock_ready
-        else PacketStatus.BLOCKED_MANUAL_EVIDENCE,
+        status=packet_status(
+            ready_for_manual_gates=ready_for_manual_gates,
+            ready_for_readiness=ready_for_readiness,
+        ),
         destructive_actions="withheld",
         device=device,
         blocked_by=blocked_by,
@@ -209,6 +238,52 @@ def stock_restore_action(stock_restore: Mapping[str, str] | None) -> ManualActio
     )
 
 
+def gsi_candidate_action(gsi_candidate: Mapping[str, str] | None) -> ManualAction:
+    if gsi_evidence_ready(gsi_candidate):
+        return ManualAction(
+            action_id="record_gsi_candidate",
+            title="Record official GSI candidate evidence",
+            kind=ActionKind.HUMAN_ONLY,
+            status=ActionStatus.RECORDED,
+            summary="A non-authorizing official Google GSI checksum evidence record exists.",
+            instructions=(
+                "Keep the downloaded GSI archive outside the repo.",
+                "Do not treat candidate evidence as approval to use DSU or modify the phone.",
+                "Recreate evidence if Google publishes a newer selected GSI candidate.",
+            ),
+            evidence_output=".goffy-validation/rom-gsi-candidate-evidence.json",
+        )
+    return ManualAction(
+        action_id="record_gsi_candidate",
+        title="Record official GSI candidate evidence",
+        kind=ActionKind.HUMAN_ONLY,
+        status=ActionStatus.REQUIRED,
+        summary=(
+            "ROM-0 needs official Google ARM64 GSI checksum evidence before readiness review."
+        ),
+        instructions=(
+            "Open the official Android GSI releases page and review the license terms yourself.",
+            "Download the Android 16 ARM64 archive only after you personally accept those terms.",
+            "Keep the downloaded GSI archive outside the GOFFY repo.",
+            "Record only filename, official source URL, official download URL, size, and SHA-256.",
+            "This evidence still does not authorize DSU, unlock, flash, erase, root, or reboot.",
+        ),
+        safe_commands=(
+            ".venv/bin/python scripts/create_rom_gsi_candidate_evidence.py "
+            f"--artifact {GSI_ARCHIVE_PLACEHOLDER} "
+            f"--source-url {OFFICIAL_GSI_RELEASES_URL} "
+            f"--download-url {GSI_DOWNLOAD_URL} "
+            f"--expected-sha256 {GSI_SHA256} "
+            '--candidate-name "Official Google Android 16 ARM64 GSI" '
+            "--android-release 16 "
+            "--architecture arm64 "
+            "--output .goffy-validation/rom-gsi-candidate-evidence.json",
+        ),
+        evidence_output=".goffy-validation/rom-gsi-candidate-evidence.json",
+        blockers=("official Google ARM64 GSI evidence is missing",),
+    )
+
+
 def unlock_eligibility_action(unlock_eligibility: Mapping[str, Any] | None) -> ManualAction:
     if unlock_evidence_ready(unlock_eligibility):
         return ManualAction(
@@ -282,8 +357,20 @@ def manual_gate_template_action(*, unlock_ready: bool, stock_ready: bool) -> Man
     )
 
 
-def readiness_report_action(*, unlock_ready: bool, stock_ready: bool) -> ManualAction:
-    ready = unlock_ready and stock_ready
+def readiness_report_action(
+    *,
+    probe_blockers: tuple[str, ...],
+    unlock_ready: bool,
+    stock_ready: bool,
+    gsi_ready: bool,
+) -> ManualAction:
+    blockers = readiness_report_blockers(
+        probe_blockers=probe_blockers,
+        unlock_ready=unlock_ready,
+        stock_ready=stock_ready,
+        gsi_ready=gsi_ready,
+    )
+    ready = not blockers
     return ManualAction(
         action_id="summarize_rom0_readiness",
         title="Summarize ROM-0 readiness without mutation",
@@ -298,15 +385,14 @@ def readiness_report_action(*, unlock_ready: bool, stock_ready: bool) -> ManualA
             ".venv/bin/python scripts/verify_rom0_readiness.py "
             "--probe-json .goffy-validation/rom-feasibility-current.json "
             "--manual-gates-json .goffy-validation/rom-0-manual-gates.json "
+            "--gsi-candidate-evidence-json .goffy-validation/rom-gsi-candidate-evidence.json "
             "--signing-plan-json .goffy-validation/rom-signing/release-signing-plan.json "
             "--apk-verification-json .goffy-validation/rom-signing/release-apk-verification.json "
             "--signed-apk .goffy-validation/rom-signing/GoffyOS-signed.apk "
             "--aosp-root /path/to/aosp "
             "--evidence-root .",
         ),
-        blockers=()
-        if ready
-        else ("manual gates cannot be summarized until restore and unlock evidence exist",),
+        blockers=blockers,
     )
 
 
@@ -320,13 +406,109 @@ def unlock_evidence_ready(unlock_eligibility: Mapping[str, Any] | None) -> bool:
     )
 
 
-def blocked_reasons(*, unlock_ready: bool, stock_ready: bool) -> tuple[str, ...]:
+def gsi_evidence_ready(gsi_candidate: Mapping[str, str] | None) -> bool:
+    if gsi_candidate is None:
+        return False
+    return (
+        gsi_candidate.get("status") == "ARTIFACT_CHECKSUM_VERIFIED"
+        and gsi_candidate.get("authorization") == "NON_AUTHORIZING_EVIDENCE"
+        and bool(gsi_candidate.get("artifact_name"))
+        and bool(gsi_candidate.get("sha256"))
+        and bool(gsi_candidate.get("source_url"))
+    )
+
+
+def probe_readiness_blockers(probe: Mapping[str, Any]) -> tuple[str, ...]:
+    blockers = list(string_items(probe.get("blockers")))
+    device = mapping_value(probe.get("device"))
+    boot = mapping_value(probe.get("boot"))
+    treble = mapping_value(probe.get("treble"))
+    properties = mapping_value(probe.get("properties"))
+    if probe.get("ok") is not True and not blockers:
+        append_unique(blockers, "ROM feasibility probe is not OK")
+    if device.get("codename") != EXPECTED_CODENAME:
+        append_unique(blockers, "ROM probe codename does not match kansas")
+    if device.get("product") != EXPECTED_PRODUCT:
+        append_unique(blockers, "ROM probe product does not match kansas_g_sys")
+    if boot.get("flash_locked") != "0" or boot.get("vbmeta_device_state") != "unlocked":
+        append_unique(blockers, "ROM probe does not show an unlocked bootloader")
+    if treble.get("enabled") != "true":
+        append_unique(blockers, "ROM probe does not show Treble enabled")
+    if treble.get("dynamic_partitions") != "true":
+        append_unique(blockers, "ROM probe does not show dynamic partitions")
+
+    target_device = {
+        "model": device.get("model", ""),
+        "codename": device.get("codename", ""),
+        "product": device.get("product", ""),
+        "hardware_sku": device.get("hardware_sku", ""),
+        "build_fingerprint": properties.get("ro.build.fingerprint", ""),
+        "carrier": device.get("carrier", ""),
+    }
+    for key in TARGET_DEVICE_EVIDENCE_KEYS:
+        if not target_device[key]:
+            append_unique(blockers, f"ROM probe target_device.{key} is missing")
+    return tuple(blockers)
+
+
+def blocked_reasons(
+    *,
+    probe_blockers: tuple[str, ...],
+    unlock_ready: bool,
+    stock_ready: bool,
+    gsi_ready: bool,
+) -> tuple[str, ...]:
     reasons: list[str] = []
+    reasons.extend(probe_blockers)
     if not unlock_ready:
         reasons.append("manual OEM/Motorola unlock eligibility evidence is missing or not eligible")
     if not stock_ready:
         reasons.append("exact stock restore evidence is missing")
+    if not gsi_ready:
+        reasons.append("official Google ARM64 GSI evidence is missing")
     return tuple(reasons)
+
+
+def readiness_report_blockers(
+    *,
+    probe_blockers: tuple[str, ...],
+    unlock_ready: bool,
+    stock_ready: bool,
+    gsi_ready: bool,
+) -> tuple[str, ...]:
+    blockers: list[str] = []
+    blockers.extend(probe_blockers)
+    if not unlock_ready or not stock_ready or not gsi_ready:
+        blockers.append(
+            "readiness cannot be summarized until restore, unlock, and GSI evidence exist"
+        )
+    return tuple(blockers)
+
+
+def append_unique(items: list[str], value: str) -> None:
+    if value not in items:
+        items.append(value)
+
+
+def packet_status(
+    *,
+    ready_for_manual_gates: bool,
+    ready_for_readiness: bool,
+) -> PacketStatus:
+    if ready_for_readiness:
+        return PacketStatus.READY_FOR_ROM0_READINESS_REVIEW
+    if ready_for_manual_gates:
+        return PacketStatus.READY_FOR_MANUAL_GATE_TEMPLATE
+    return PacketStatus.BLOCKED_MANUAL_EVIDENCE
+
+
+def load_gsi_candidate_evidence(path: Path) -> dict[str, str]:
+    section = validate_gsi_candidate_evidence(path)
+    if not section.ok:
+        raise ValueError("; ".join(section.blockers))
+    if section.evidence is None:
+        raise ValueError("GSI candidate evidence did not include accepted evidence")
+    return section.evidence
 
 
 def compact_device(probe: Mapping[str, Any]) -> dict[str, str]:
@@ -357,6 +539,12 @@ def mapping_value(value: object) -> dict[str, str]:
     if not isinstance(value, Mapping):
         return {}
     return {str(key): str(item) for key, item in value.items()}
+
+
+def string_items(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list | tuple):
+        return ()
+    return tuple(item for item in value if isinstance(item, str))
 
 
 def dsu_package_present(dsu: Mapping[str, str]) -> str:
@@ -439,6 +627,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("probe_json", type=Path)
     parser.add_argument("--unlock-eligibility-evidence", type=Path)
     parser.add_argument("--stock-restore-evidence", type=Path)
+    parser.add_argument("--gsi-candidate-evidence", type=Path)
     parser.add_argument("--json", action="store_true")
     parser.add_argument(
         "--output",
@@ -461,10 +650,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.stock_restore_evidence
             else None
         )
+        gsi_candidate = (
+            load_gsi_candidate_evidence(args.gsi_candidate_evidence)
+            if args.gsi_candidate_evidence
+            else None
+        )
         packet = build_packet(
             load_probe_json(args.probe_json),
             unlock_eligibility=unlock,
             stock_restore=stock,
+            gsi_candidate=gsi_candidate,
         )
         text = render_json(packet) if args.json else render_markdown(packet)
         if args.output is None:

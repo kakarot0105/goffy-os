@@ -30,7 +30,7 @@
 - [x] Non-destructive stock archive-name candidate matcher keeps filename matches out of manual gates
 - [x] Redacted unlock-eligibility evidence helper for manual OEM/Motorola checks
 - [x] Read-only probe surfaces missing or disallowing OEM unlock property evidence
-- [x] Non-destructive ROM-0 manual action packet for restore/unlock evidence collection
+- [x] Non-destructive ROM-0 manual action packet for restore/unlock/GSI evidence collection
 - [x] ROM-0 manual gates bind unlock/restore evidence to the exact public Moto target identity
 - [x] ROM-0 manual action packet emits probe-bound gate and validation commands
 - [x] ROM-0 stock restore evidence requires the official Motorola Software Fix source
