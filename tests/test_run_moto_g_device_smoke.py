@@ -730,6 +730,13 @@ def adb_args(command: Sequence[str]) -> tuple[str, ...]:
     return tuple(command[1:])
 
 
+def assert_no_adb_input_commands(seen: Sequence[Sequence[str]]) -> None:
+    input_commands = [
+        adb_args(command) for command in seen if adb_args(command)[:2] == ("shell", "input")
+    ]
+    assert input_commands == []
+
+
 def target_runner(command: Sequence[str]) -> CommandResult | None:
     args = tuple(command[1:])
     if args == ("devices", "-l"):
@@ -940,6 +947,25 @@ def test_plan_mode_includes_paired_hub_gate_when_requested(
     assert all(step.status is StepStatus.PLANNED for step in report.steps)
 
 
+def test_plan_mode_describes_operator_paired_hub_wait(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(smoke, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+
+    report = build_report(
+        root=tmp_path,
+        include_mac=True,
+        require_paired_hub=True,
+        paired_hub_wait_seconds=180,
+    )
+
+    paired_step = next(step for step in report.steps if step.name == "Verify paired Hub link")
+    assert report.ok
+    assert "would wait up to 180 seconds" in paired_step.detail
+    assert "operator-restored paired Hub link" in paired_step.detail
+
+
 def test_plan_mode_rejects_paired_hub_debug_token_combination(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -964,6 +990,38 @@ def test_plan_mode_rejects_paired_hub_debug_token_combination(
             remediation="Fix the incompatible smoke-runner flags and retry.",
         ),
     )
+
+
+def test_plan_mode_rejects_paired_hub_wait_without_required_gate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(smoke, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+
+    report = build_report(root=tmp_path, include_mac=True, paired_hub_wait_seconds=60)
+
+    assert not report.ok
+    assert not report.executed
+    assert report.steps == (
+        DeviceSmokeStep(
+            name="Option gate",
+            status=StepStatus.FAIL,
+            detail="paired Hub wait is only supported with --require-paired-hub",
+            remediation="Fix the incompatible smoke-runner flags and retry.",
+        ),
+    )
+
+
+@pytest.mark.parametrize("wait_seconds", ("-1", "301"))
+def test_main_rejects_paired_hub_wait_out_of_bounds(
+    wait_seconds: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--paired-hub-wait-seconds", wait_seconds])
+
+    assert exc_info.value.code == 2
+    assert "wait seconds must be between 0 and 300" in capsys.readouterr().err
 
 
 def test_execute_requires_explicit_device_mutation_confirmation(
@@ -2401,6 +2459,165 @@ def test_verify_required_paired_hub_link_fails_for_unpaired_card(tmp_path: Path)
     assert (output_directory / "paired-hub-link.xml").read_text(
         encoding="utf-8"
     ) == UNPAIRED_HUB_LINK_UI_XML
+
+
+def test_verify_required_paired_hub_link_waits_for_operator_pairing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    output_directory = tmp_path / "artifacts"
+    output_directory.mkdir()
+    ui_outputs = iter((UNPAIRED_HUB_LINK_UI_XML, PAIRED_HUB_LINK_UI_XML))
+    seen: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        seen.append(tuple(command))
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            try:
+                return CommandResult(0, next(ui_outputs), "")
+            except StopIteration:
+                return CommandResult(0, PAIRED_HUB_LINK_UI_XML, "")
+        return CommandResult(0, "ok", "")
+
+    result = smoke.verify_required_paired_hub_link(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        output_directory=output_directory,
+        wait_seconds=30,
+        poll_interval_seconds=0,
+    )
+
+    assert result.status is StepStatus.OK
+    assert result.detail == "verified operator-restored paired Hub link before MAC smoke"
+    assert (output_directory / "paired-hub-link.xml").read_text(
+        encoding="utf-8"
+    ) == PAIRED_HUB_LINK_UI_XML
+    assert_no_adb_input_commands(seen)
+
+
+def test_verify_required_paired_hub_link_wait_times_out(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monotonic_values = iter((100.0, 100.0, 101.0))
+    monkeypatch.setattr(time, "monotonic", lambda: next(monotonic_values, 101.0))
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    output_directory = tmp_path / "artifacts"
+    output_directory.mkdir()
+    seen: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        seen.append(tuple(command))
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            return CommandResult(0, UNPAIRED_HUB_LINK_UI_XML, "")
+        return CommandResult(0, "ok", "")
+
+    result = smoke.verify_required_paired_hub_link(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        output_directory=output_directory,
+        wait_seconds=1,
+        poll_interval_seconds=0,
+    )
+
+    assert result.status is StepStatus.FAIL
+    assert result.detail == "phone did not show a restored paired Hub link within 1 seconds"
+    assert result.artifact == "paired-hub-link.xml"
+    assert_no_adb_input_commands(seen)
+
+
+def test_verify_required_paired_hub_link_wait_bounds_initial_poll_and_does_not_swipe(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    now = {"value": 100.0}
+    monkeypatch.setattr(time, "monotonic", lambda: now["value"])
+
+    def sleep(seconds: float) -> None:
+        now["value"] += seconds
+
+    monkeypatch.setattr(time, "sleep", sleep)
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    output_directory = tmp_path / "artifacts"
+    output_directory.mkdir()
+    seen: list[tuple[tuple[str, ...], int]] = []
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        seen.append((tuple(command), timeout))
+        now["value"] += timeout
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            return CommandResult(0, BASE_UI_XML, "")
+        return CommandResult(0, "ok", "")
+
+    result = smoke.verify_required_paired_hub_link(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        output_directory=output_directory,
+        wait_seconds=5,
+        poll_interval_seconds=0,
+    )
+
+    assert result.status is StepStatus.FAIL
+    assert [timeout for _, timeout in seen] == [2, 3]
+    assert now["value"] == 105.0
+    assert_no_adb_input_commands([command for command, _ in seen])
+
+
+def test_wait_for_operator_paired_hub_link_bounds_poll_timeouts_to_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    now = {"value": 100.0}
+    monkeypatch.setattr(time, "monotonic", lambda: now["value"])
+
+    def sleep(seconds: float) -> None:
+        now["value"] += seconds
+
+    monkeypatch.setattr(time, "sleep", sleep)
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    output_directory = tmp_path / "artifacts"
+    output_directory.mkdir()
+    seen: list[tuple[tuple[str, ...], int]] = []
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        seen.append((tuple(command), timeout))
+        now["value"] += timeout
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            return CommandResult(0, PAIRED_HUB_LINK_UI_XML, "")
+        return CommandResult(0, "ok", "")
+
+    result = smoke.wait_for_operator_paired_hub_link(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        output_directory=output_directory,
+        initial_ui_text=UNPAIRED_HUB_LINK_UI_XML,
+        wait_seconds=5,
+        poll_interval_seconds=0,
+    )
+
+    assert result.status is StepStatus.OK
+    assert [timeout for _, timeout in seen] == [2, 3]
+    assert now["value"] == 105.0
+    assert_no_adb_input_commands([command for command, _ in seen])
 
 
 def test_paired_hub_link_artifact_redacts_setup_field_values(tmp_path: Path) -> None:

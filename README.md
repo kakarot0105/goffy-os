@@ -718,12 +718,16 @@ command is typed:
   --confirm-device-mutation \
   --include-mac \
   --require-paired-hub \
+  --paired-hub-wait-seconds 180 \
   --mac-command "Show GOFFY ROM status"
 ```
 
 `--require-paired-hub` is mutually exclusive with `--debug-hub-token-file`. It
 does not inject pairing state; it only verifies the visible Hub card shows a
-restored paired localhost link before the MAC smoke proceeds.
+restored paired localhost link before the MAC smoke proceeds. Add
+`--paired-hub-wait-seconds` only while an operator is actively completing the
+foreground QR/bundle pairing on the phone; the wait is passive and does not tap,
+paste, or create credentials.
 
 For legacy USB development smoke, pass a short-lived local debug token file
 under `.goffy-validation`:

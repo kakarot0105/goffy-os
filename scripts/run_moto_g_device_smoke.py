@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import platform
 import re
@@ -277,6 +278,7 @@ def planned_steps(
     memory_remember_command: str,
     debug_hub_token_file: Path | None,
     require_paired_hub: bool,
+    paired_hub_wait_seconds: int,
 ) -> tuple[DeviceSmokeStep, ...]:
     adb_path = adb or Path("<adb>")
     apk = root / DEBUG_APK_RELATIVE_PATH
@@ -387,6 +389,12 @@ def planned_steps(
                     detail=(
                         "would require a restored paired Hub link after restart before "
                         "submitting a MAC command"
+                        if paired_hub_wait_seconds == 0
+                        else (
+                            "would wait up to "
+                            f"{paired_hub_wait_seconds} seconds for an operator-restored "
+                            "paired Hub link before submitting a MAC command"
+                        )
                     ),
                 )
             )
@@ -454,6 +462,7 @@ def build_report(
     device_serial: str | None = None,
     debug_hub_token_file: Path | None = None,
     require_paired_hub: bool = False,
+    paired_hub_wait_seconds: int = 0,
     memory_text: str | None = None,
 ) -> DeviceSmokeReport:
     resolved_root = root.resolve()
@@ -464,6 +473,7 @@ def build_report(
         include_mac=include_mac,
         debug_hub_token_file=debug_hub_token_file,
         require_paired_hub=require_paired_hub,
+        paired_hub_wait_seconds=paired_hub_wait_seconds,
     )
     if option_errors:
         return DeviceSmokeReport(
@@ -501,6 +511,7 @@ def build_report(
                 memory_remember_command=remember_command,
                 debug_hub_token_file=debug_hub_token_file,
                 require_paired_hub=require_paired_hub,
+                paired_hub_wait_seconds=paired_hub_wait_seconds,
             ),
             repo_root=resolved_root,
         )
@@ -596,6 +607,7 @@ def build_report(
             runner=runner,
             timeout_seconds=timeout_seconds,
             output_directory=artifacts,
+            wait_seconds=paired_hub_wait_seconds,
         )
         steps.append(paired_hub)
         if paired_hub.status is StepStatus.FAIL:
@@ -923,6 +935,7 @@ def option_blockers(
     include_mac: bool,
     debug_hub_token_file: Path | None,
     require_paired_hub: bool,
+    paired_hub_wait_seconds: int,
 ) -> tuple[str, ...]:
     blockers: list[str] = []
     if require_paired_hub and not include_mac:
@@ -931,6 +944,8 @@ def option_blockers(
         blockers.append("paired Hub verification cannot be combined with debug Hub token setup")
     if debug_hub_token_file is not None and not include_mac:
         blockers.append("debug Hub token file is only supported with --include-mac")
+    if paired_hub_wait_seconds > 0 and not require_paired_hub:
+        blockers.append("paired Hub wait is only supported with --require-paired-hub")
     return tuple(blockers)
 
 
@@ -1659,13 +1674,17 @@ def verify_required_paired_hub_link(
     runner: CommandRunner,
     timeout_seconds: int,
     output_directory: Path,
+    wait_seconds: int = 0,
+    poll_interval_seconds: float = 2.0,
 ) -> DeviceSmokeStep:
+    wait_deadline = time.monotonic() + wait_seconds if wait_seconds > 0 else None
     ui_text = latest_ui_text(
         adb=adb,
         target=target,
         root=root,
         runner=runner,
         timeout_seconds=timeout_seconds,
+        deadline=wait_deadline,
     )
     for attempt in range(len(DEBUG_HUB_SETUP_REVEAL_SWIPES) + 1):
         if paired_hub_link_visible(ui_text):
@@ -1678,6 +1697,19 @@ def verify_required_paired_hub_link(
                 artifact="paired-hub-link.xml",
             )
         if unpaired_hub_link_visible(ui_text):
+            if wait_seconds > 0:
+                return wait_for_operator_paired_hub_link(
+                    adb=adb,
+                    target=target,
+                    root=root,
+                    runner=runner,
+                    timeout_seconds=timeout_seconds,
+                    output_directory=output_directory,
+                    initial_ui_text=ui_text,
+                    wait_seconds=wait_seconds,
+                    deadline=wait_deadline,
+                    poll_interval_seconds=poll_interval_seconds,
+                )
             write_paired_hub_link_artifact(output_directory, ui_text)
             return DeviceSmokeStep(
                 name="Verify paired Hub link",
@@ -1689,6 +1721,19 @@ def verify_required_paired_hub_link(
                     "and retry without --debug-hub-token-file."
                 ),
                 artifact="paired-hub-link.xml",
+            )
+        if wait_deadline is not None:
+            return wait_for_operator_paired_hub_link(
+                adb=adb,
+                target=target,
+                root=root,
+                runner=runner,
+                timeout_seconds=timeout_seconds,
+                output_directory=output_directory,
+                initial_ui_text=ui_text,
+                wait_seconds=wait_seconds,
+                deadline=wait_deadline,
+                poll_interval_seconds=poll_interval_seconds,
             )
         if attempt == len(DEBUG_HUB_SETUP_REVEAL_SWIPES):
             break
@@ -1734,6 +1779,20 @@ def verify_required_paired_hub_link(
             timeout_seconds=timeout_seconds,
         )
 
+    if wait_seconds > 0:
+        return wait_for_operator_paired_hub_link(
+            adb=adb,
+            target=target,
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            output_directory=output_directory,
+            initial_ui_text=ui_text,
+            wait_seconds=wait_seconds,
+            deadline=wait_deadline,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+
     write_paired_hub_link_artifact(output_directory, ui_text)
     return DeviceSmokeStep(
         name="Verify paired Hub link",
@@ -1741,6 +1800,60 @@ def verify_required_paired_hub_link(
         mutates_device=True,
         detail="paired Hub link state was not visible after bounded scroll",
         remediation="Inspect paired-hub-link.xml and confirm GOFFY launched to the HOME shell.",
+        artifact="paired-hub-link.xml",
+    )
+
+
+def wait_for_operator_paired_hub_link(
+    *,
+    adb: Path,
+    target: DeviceTarget,
+    root: Path,
+    runner: CommandRunner,
+    timeout_seconds: int,
+    output_directory: Path,
+    initial_ui_text: str,
+    wait_seconds: int,
+    poll_interval_seconds: float,
+    deadline: float | None = None,
+) -> DeviceSmokeStep:
+    deadline = deadline if deadline is not None else time.monotonic() + wait_seconds
+    ui_text = initial_ui_text
+    while True:
+        if paired_hub_link_visible(ui_text):
+            write_paired_hub_link_artifact(output_directory, ui_text)
+            return DeviceSmokeStep(
+                name="Verify paired Hub link",
+                status=StepStatus.OK,
+                mutates_device=True,
+                detail="verified operator-restored paired Hub link before MAC smoke",
+                artifact="paired-hub-link.xml",
+            )
+        now = time.monotonic()
+        if now >= deadline:
+            break
+        sleep_for = min(poll_interval_seconds, deadline - now)
+        if sleep_for > 0:
+            time.sleep(sleep_for)
+        ui_text = latest_ui_text(
+            adb=adb,
+            target=target,
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            deadline=deadline,
+        )
+
+    write_paired_hub_link_artifact(output_directory, ui_text)
+    return DeviceSmokeStep(
+        name="Verify paired Hub link",
+        status=StepStatus.FAIL,
+        mutates_device=True,
+        detail=(f"phone did not show a restored paired Hub link within {wait_seconds} seconds"),
+        remediation=(
+            "Pair the phone through the foreground QR/bundle flow while this wait is active, "
+            "then retry without --debug-hub-token-file."
+        ),
         artifact="paired-hub-link.xml",
     )
 
@@ -2342,16 +2455,44 @@ def latest_ui_text(
     root: Path,
     runner: CommandRunner,
     timeout_seconds: int,
+    deadline: float | None = None,
 ) -> str:
+    dump_timeout = bounded_adb_timeout(timeout_seconds, deadline, commands_remaining=2)
+    if dump_timeout is None:
+        return ""
     dump = runner(
         adb_command(adb, target, "shell", "uiautomator", "dump", REMOTE_UI_XML),
         root,
-        timeout_seconds,
+        dump_timeout,
     )
     if dump.exit_code != 0:
         return ""
-    xml = runner(adb_command(adb, target, "exec-out", "cat", REMOTE_UI_XML), root, timeout_seconds)
+    xml_timeout = bounded_adb_timeout(timeout_seconds, deadline, commands_remaining=1)
+    if xml_timeout is None:
+        return ""
+    xml = runner(
+        adb_command(adb, target, "exec-out", "cat", REMOTE_UI_XML),
+        root,
+        xml_timeout,
+    )
     return xml.stdout if xml.exit_code == 0 else ""
+
+
+def bounded_adb_timeout(
+    timeout_seconds: int,
+    deadline: float | None,
+    *,
+    commands_remaining: int,
+) -> int | None:
+    if deadline is None:
+        return timeout_seconds
+    remaining_seconds = deadline - time.monotonic()
+    if remaining_seconds <= 0:
+        return None
+    per_command_budget = math.floor(remaining_seconds / commands_remaining)
+    if per_command_budget < 1:
+        return None
+    return min(timeout_seconds, per_command_budget)
 
 
 def dump_ui(
@@ -3197,6 +3338,16 @@ def bounded_timeout(value: str) -> int:
     return timeout
 
 
+def bounded_wait_seconds(value: str) -> int:
+    try:
+        seconds = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("wait seconds must be an integer") from exc
+    if seconds < 0 or seconds > 300:
+        raise argparse.ArgumentTypeError("wait seconds must be between 0 and 300")
+    return seconds
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", type=existing_directory, default=ROOT)
@@ -3232,6 +3383,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             "configuring the debug Hub token path."
         ),
     )
+    parser.add_argument(
+        "--paired-hub-wait-seconds",
+        type=bounded_wait_seconds,
+        default=0,
+        help=(
+            "With --require-paired-hub, wait passively for up to this many seconds "
+            "for an operator-completed foreground QR/bundle pairing."
+        ),
+    )
     parser.add_argument("--phone-command", default=DEFAULT_PHONE_COMMAND)
     parser.add_argument("--mac-command", default=DEFAULT_MAC_COMMAND)
     parser.add_argument(
@@ -3258,6 +3418,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         device_serial=args.device_serial,
         debug_hub_token_file=args.debug_hub_token_file,
         require_paired_hub=args.require_paired_hub,
+        paired_hub_wait_seconds=args.paired_hub_wait_seconds,
     )
     print(render_json(report) if args.json else render_text(report))
     return 0 if report.ok else 1

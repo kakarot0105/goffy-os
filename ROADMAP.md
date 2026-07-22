@@ -90,6 +90,7 @@
 - [x] Shared fixture plus Android/Python failure, retry, and cancellation tests
 - [x] Moto G physical localhost debug verification (`adb reverse` flow)
 - [x] Production-like device-smoke gate requiring restored paired Hub link
+- [x] Operator-assisted paired-Hub smoke wait without credential injection
 
 ## Milestone 2: Phone engine - in progress
 
