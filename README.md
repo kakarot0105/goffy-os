@@ -15,6 +15,8 @@ the capability boundary.
 > PHONE actions, exact-ID user-approved local PHONE memory controls,
 > discovery-gated SAFE Mac status/process/file-list actions, read-only GOFFY ROM
 > status, an
+> explicit ROM-0 feature payload contract for the first GOFFY system-app
+> insertion,
 > approved-repo SAFE Git status MCP tool, an opt-in SAFE Mac clipboard-read MCP
 > tool, an official MCP
 > Streamable HTTP boundary, stable Hub paired-device credentials, Keystore-backed
@@ -78,6 +80,10 @@ the capability boundary.
 - Kotlin/Jetpack Compose GOFFY LITE home shell
 - ROM system-app home-surface contract requiring GOFFY to remain user-selectable
   as Android HOME without privileged or platform-signed authority
+- Machine-checked ROM-0 feature payload contract for GOFFY HOME, visible
+  timeline, secure Mac Hub, safe phone tools, foreground voice/camera/QR/OCR,
+  disabled-by-default local intent fallback, ROM status, and charging dock awake
+  behavior
 - User-visible HOME-shell setup card that verifies GOFFY default-home status via
   the audited `phone.device.info` route and opens trusted Android Home/default
   app settings for manual user selection

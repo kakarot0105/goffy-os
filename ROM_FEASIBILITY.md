@@ -349,6 +349,17 @@ validators instead of external installer or flashing automation.
 
 GOFFY now has a ROM-side system-app package descriptor in
 [`rom/system-app/goffy-system-app.json`](rom/system-app/goffy-system-app.json).
+GOFFY also has a ROM-0 feature payload contract in
+[`rom/features/goffy-rom-features.json`](rom/features/goffy-rom-features.json).
+That contract records the exact Jarvis-like features intended for first ROM
+insertion: GOFFY HOME, visible agent timeline, secure Mac Hub pairing, local
+phone tools, foreground voice/camera/QR/OCR, disabled-by-default local intent
+fallback, ROM status, and charging dock awake behavior. Its validator blocks
+privileged authority, platform signing, ROM/system destructive actions,
+background camera/microphone, unreviewed Android permissions, unreviewed MCP
+tools, and unlock/flash/root/verity behavior. App-private memory forget tools
+are recorded separately as exact approval-gated GOFFY SQLite mutations, not ROM
+or phone-data deletion.
 It intentionally targets a non-privileged system app first:
 
 - No platform signing.
@@ -369,6 +380,7 @@ The descriptor is validated by:
 
 ```bash
 .venv/bin/python scripts/validate_rom_system_app.py
+.venv/bin/python scripts/validate_rom_feature_payload.py
 .venv/bin/python scripts/create_aosp_product_import.py \
   --aosp-root /path/to/aosp \
   --apk .goffy-validation/rom-signing/GoffyOS-signed.apk \

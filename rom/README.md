@@ -18,6 +18,9 @@ Integration targets:
 - [`product/`](product/) defines starter AOSP product-overlay templates that add
   `GoffyOS` through `PRODUCT_PACKAGES` without unlock, flash, root, platform-key,
   or privileged-permission behavior.
+- [`features/`](features/) defines the ROM-0 GOFFY feature payload contract:
+  which agentic phone features are included as a safe system-app payload, and
+  which privileged or ROM/system-destructive capabilities remain blocked.
 
 Safe import planning after a human signs the APK with the generated signing-plan
 command:
@@ -25,6 +28,7 @@ command:
 ```bash
 .venv/bin/python scripts/create_rom_release_signing_plan.py \
   --keystore /absolute/path/outside/repo/goffy-release.jks
+.venv/bin/python scripts/validate_rom_feature_payload.py
 .venv/bin/python scripts/verify_rom_release_apk.py \
   --apk .goffy-validation/rom-signing/GoffyOS-signed.apk
 .venv/bin/python scripts/create_aosp_product_import.py \

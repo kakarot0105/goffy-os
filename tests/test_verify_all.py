@@ -15,6 +15,7 @@ from scripts.verify_all import (
     android_tflite_task_text_classifier_command,
     merged_manifest_security_command,
     render_verification_report,
+    rom_feature_payload_command,
     rom_system_app_command,
     run_verification,
     tflite_task_text_dependency_command,
@@ -178,6 +179,7 @@ def test_verifier_runs_rom_system_app_validation(tmp_path: Path) -> None:
 
     assert report.ok
     assert rom_system_app_command("python") in seen
+    assert rom_feature_payload_command("python") in seen
     assert ("python", "scripts/verify_local_intent_router_corpus.py") in seen
 
 
