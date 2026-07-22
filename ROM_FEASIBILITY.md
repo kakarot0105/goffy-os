@@ -228,6 +228,22 @@ Acceptance criteria:
 The exact stock package checksum remains open because we have not downloaded or
 hash-recorded a restore archive.
 
+When the exact archive is available, create the rollback Markdown from a
+redacted draft instead of hand-copying paths or identifiers:
+
+```bash
+.venv/bin/python scripts/create_rom_stock_rollback_draft.py \
+  --archive ~/Downloads/exact-firmware-archive-name.zip \
+  --source-url https://en-us.support.motorola.com/app/softwarefix \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
+  --output .goffy-validation/kansas-stock-rollback.draft.md
+```
+
+The draft generator hashes only the local archive, binds the document to the
+current public Moto probe identity, writes only under `.goffy-validation`, and
+does not run network, ADB, fastboot, unlock, flash, or root actions. A human must
+review the draft before copying it to `docs/setup/kansas-stock-rollback.md`.
+
 ## Current Stock Firmware Candidate Evidence
 
 Current stock-candidate scan date: 2026-07-22.

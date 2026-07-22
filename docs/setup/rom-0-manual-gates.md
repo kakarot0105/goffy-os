@@ -152,6 +152,24 @@ destructive work. It stores only a closed-set note code, not free-form text.
 ## Stock Restore Evidence Helper
 
 After downloading the exact stock restore archive locally, generate a redacted
+rollback draft from the current read-only ROM probe. The draft binds the
+checklist to the exact public Moto target identity, archive filename, and
+SHA-256 without recording the local archive path:
+
+```bash
+.venv/bin/python scripts/create_rom_stock_rollback_draft.py \
+  --archive ~/Downloads/exact-firmware-archive-name.zip \
+  --source-url https://en-us.support.motorola.com/app/softwarefix \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
+  --output .goffy-validation/kansas-stock-rollback.draft.md
+```
+
+Review the generated draft for private identifiers before copying it to
+`docs/setup/kansas-stock-rollback.md`. The helper writes only under
+`.goffy-validation` by default, performs no network, ADB, fastboot, unlock,
+flash, or root action, and does not grant destructive approval.
+
+After downloading the exact stock restore archive locally, generate a redacted
 evidence fragment without committing the archive or its local path:
 
 ```bash

@@ -521,6 +521,21 @@ visibility check:
 This records redacted fastboot evidence only. It never reboots the phone and
 never emits unlock, flash, erase, wipe, boot, or reboot commands.
 
+To prepare the exact stock rollback checklist after a real Motorola Software Fix
+archive is available, generate a redacted draft bound to the current ROM probe:
+
+```bash
+.venv/bin/python scripts/create_rom_stock_rollback_draft.py \
+  --archive ~/Downloads/exact-firmware-archive-name.zip \
+  --source-url https://en-us.support.motorola.com/app/softwarefix \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
+  --output .goffy-validation/kansas-stock-rollback.draft.md
+```
+
+Review the draft for private identifiers before copying it to
+`docs/setup/kansas-stock-rollback.md`; the helper records only archive filename,
+SHA-256, official source URL, and public probe identity.
+
 Include that evidence in the ROM-0 readiness report:
 
 ```bash
