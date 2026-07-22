@@ -85,6 +85,7 @@ def test_refresh_writes_probe_packet_and_summary_without_mutation(
     assert evidence["unlock_eligibility"].status is EvidenceStatus.MISSING
     assert evidence["stock_restore"].status is EvidenceStatus.MISSING
     assert evidence["gsi_candidate"].status is EvidenceStatus.MISSING
+    assert evidence["fastboot_evidence"].status is EvidenceStatus.MISSING
     assert probe_json.is_file()
     assert packet_md.is_file()
     assert packet_json.is_file()
@@ -94,6 +95,7 @@ def test_refresh_writes_probe_packet_and_summary_without_mutation(
     assert "fastboot flash" not in combined
     assert "fastboot erase" not in combined
     assert "adb reboot bootloader" not in combined
+    assert "create_rom_fastboot_evidence.py" in combined
 
 
 def test_refresh_consumes_valid_existing_evidence(
@@ -104,6 +106,7 @@ def test_refresh_consumes_valid_existing_evidence(
     write_unlock_evidence(tmp_path)
     write_stock_evidence(tmp_path)
     write_gsi_evidence(tmp_path)
+    write_fastboot_evidence(tmp_path)
 
     report = refresh_rom0_action_packet(root=tmp_path, runner=runner_for(LOCKED_PROPS))
     evidence = {item.name: item for item in report.evidence_inputs}
@@ -116,6 +119,7 @@ def test_refresh_consumes_valid_existing_evidence(
     assert evidence["unlock_eligibility"].status is EvidenceStatus.LOADED
     assert evidence["stock_restore"].status is EvidenceStatus.LOADED
     assert evidence["gsi_candidate"].status is EvidenceStatus.LOADED
+    assert evidence["fastboot_evidence"].status is EvidenceStatus.LOADED
     assert "ROM probe does not show an unlocked bootloader" in report.blocked_by
 
 
@@ -130,6 +134,7 @@ def test_refresh_reports_ready_only_when_probe_and_evidence_are_ready(
     write_unlock_evidence(tmp_path)
     write_stock_evidence(tmp_path)
     write_gsi_evidence(tmp_path)
+    write_fastboot_evidence(tmp_path)
 
     report = refresh_rom0_action_packet(root=tmp_path, runner=runner_for(props))
 
@@ -161,6 +166,29 @@ def test_refresh_fails_closed_for_invalid_existing_evidence(
     assert evidence["gsi_candidate"].status is EvidenceStatus.INVALID
     assert "gsi_candidate:" in report.errors[0]
     assert "official Google ARM64 GSI evidence is missing" in report.blocked_by
+
+
+def test_refresh_fails_closed_for_invalid_fastboot_evidence(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(probe, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+    validation = tmp_path / ".goffy-validation"
+    validation.mkdir()
+    (validation / "rom-fastboot-evidence.json").write_text(
+        json.dumps({"schema_version": "unexpected"}),
+        encoding="utf-8",
+    )
+
+    report = refresh_rom0_action_packet(root=tmp_path, runner=runner_for(LOCKED_PROPS))
+    evidence = {item.name: item for item in report.evidence_inputs}
+
+    assert not report.ok
+    assert report.status is RefreshStatus.ERROR
+    assert not report.refresh_succeeded
+    assert evidence["fastboot_evidence"].status is EvidenceStatus.INVALID
+    assert any(error.startswith("fastboot_evidence:") for error in report.errors)
+    assert "redacted read-only fastboot evidence is missing" in report.blocked_by
 
 
 def test_refresh_rejects_symlinked_evidence_outside_validation_dir(
@@ -282,6 +310,47 @@ def write_gsi_evidence(root: Path) -> None:
                     "destructive_actions": "WITHHELD",
                     "local_path_redacted": True,
                 },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def write_fastboot_evidence(root: Path) -> None:
+    validation = root / ".goffy-validation"
+    validation.mkdir(exist_ok=True)
+    (validation / "rom-fastboot-evidence.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "goffy.rom-fastboot-evidence.v1",
+                "generated_at": "2026-07-22T00:00:00+00:00",
+                "ok": True,
+                "status": "HOST_READY",
+                "destructive_actions": "withheld",
+                "host": {
+                    "fastboot": "available",
+                    "fastboot_path": "<android-sdk>/platform-tools/fastboot",
+                    "fastboot_version": "37.0.0-14910828",
+                },
+                "manual_bootloader_check": {
+                    "requested": False,
+                    "bootloader_device_visible": False,
+                    "bootloader_device_count": 0,
+                    "serials_redacted": True,
+                },
+                "commands": [
+                    {
+                        "label": "fastboot --version",
+                        "exit_code": 0,
+                        "timed_out": False,
+                        "stdout": "fastboot version 37.0.0-14910828\nInstalled as <path>",
+                        "stderr": "",
+                    }
+                ],
+                "blockers": [],
+                "warnings": [
+                    "manual bootloader visibility was not checked; do not reboot automatically"
+                ],
             }
         ),
         encoding="utf-8",

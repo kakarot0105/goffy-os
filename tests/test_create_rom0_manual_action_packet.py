@@ -64,6 +64,7 @@ def test_locked_probe_packet_withholds_destructive_authority() -> None:
     assert "create_rom_unlock_eligibility_evidence.py" in markdown
     assert "create_rom_stock_restore_evidence.py" in markdown
     assert "create_rom_gsi_candidate_evidence.py" in markdown
+    assert "create_rom_fastboot_evidence.py" in markdown
     assert "verify_rom0_readiness.py" in markdown
     forbidden_terms = (
         *FORBIDDEN_DESTRUCTIVE_TERMS,
@@ -100,12 +101,14 @@ def test_packet_records_safe_evidence_without_approving_unlock() -> None:
         "rollback_doc": "docs/setup/kansas-stock-rollback.md",
     }
     gsi_candidate = gsi_candidate_summary()
+    fastboot = fastboot_summary()
 
     packet = build_packet(
         probe,
         unlock_eligibility=unlock,
         stock_restore=stock,
         gsi_candidate=gsi_candidate,
+        fastboot_evidence=fastboot,
     )
     actions = {action.action_id: action for action in packet.actions}
 
@@ -114,6 +117,7 @@ def test_packet_records_safe_evidence_without_approving_unlock() -> None:
     assert actions["record_unlock_eligibility"].status is ActionStatus.RECORDED
     assert actions["record_stock_restore"].status is ActionStatus.RECORDED
     assert actions["record_gsi_candidate"].status is ActionStatus.RECORDED
+    assert actions["record_fastboot_evidence"].status is ActionStatus.RECORDED
     assert actions["create_manual_gates"].status is ActionStatus.READY
     assert actions["summarize_rom0_readiness"].status is ActionStatus.READY
     assert all(
@@ -122,6 +126,10 @@ def test_packet_records_safe_evidence_without_approving_unlock() -> None:
     )
     assert any(
         "--gsi-candidate-evidence-json .goffy-validation/rom-gsi-candidate-evidence.json" in command
+        for command in actions["summarize_rom0_readiness"].safe_commands
+    )
+    assert any(
+        "--fastboot-evidence-json .goffy-validation/rom-fastboot-evidence.json" in command
         for command in actions["summarize_rom0_readiness"].safe_commands
     )
     assert "does not approve bootloader unlocking" in render_markdown(packet)
@@ -150,6 +158,39 @@ def test_locked_probe_with_evidence_is_ready_for_manual_template_only() -> None:
     assert "official Google ARM64 GSI evidence is missing" in packet.blocked_by
     assert packet.destructive_actions == "withheld"
     assert actions["record_gsi_candidate"].status is ActionStatus.REQUIRED
+    assert actions["summarize_rom0_readiness"].status is ActionStatus.BLOCKED
+
+
+def test_unlocked_packet_blocks_readiness_until_fastboot_evidence_exists() -> None:
+    probe = dict(LOCKED_PROBE)
+    probe["ok"] = True
+    probe["blockers"] = []
+    probe["boot"] = {"flash_locked": "0", "vbmeta_device_state": "unlocked"}
+    unlock = {
+        "source_url": "https://en-us.support.motorola.com/app/answers/detail/a_id/89973",
+        "oem_unlocking_visible": True,
+        "oem_unlocking_enabled": True,
+        "motorola_unlock_eligibility": "eligible",
+        "operator_note_code": "checked_no_identifiers_stored",
+    }
+    stock = {
+        "source_url": "https://en-us.support.motorola.com/app/softwarefix",
+        "archive_name": "kansas-stock.zip",
+        "sha256": "a" * 64,
+        "rollback_doc": "docs/setup/kansas-stock-rollback.md",
+    }
+
+    packet = build_packet(
+        probe,
+        unlock_eligibility=unlock,
+        stock_restore=stock,
+        gsi_candidate=gsi_candidate_summary(),
+    )
+    actions = {action.action_id: action for action in packet.actions}
+
+    assert packet.status is PacketStatus.READY_FOR_MANUAL_GATE_TEMPLATE
+    assert "redacted read-only fastboot evidence is missing" in packet.blocked_by
+    assert actions["record_fastboot_evidence"].status is ActionStatus.REQUIRED
     assert actions["summarize_rom0_readiness"].status is ActionStatus.BLOCKED
 
 
@@ -256,6 +297,44 @@ def test_cli_loads_gsi_candidate_evidence(
     assert actions["record_gsi_candidate"]["status"] == "RECORDED"
 
 
+def test_cli_loads_fastboot_evidence(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    probe_payload = dict(LOCKED_PROBE)
+    probe_payload["ok"] = True
+    probe_payload["blockers"] = []
+    probe_payload["boot"] = {"flash_locked": "0", "vbmeta_device_state": "unlocked"}
+    probe = tmp_path / "probe.json"
+    probe.write_text(json.dumps(probe_payload), encoding="utf-8")
+    output = tmp_path / ".goffy-validation" / "rom-0-manual-action-packet.json"
+    fastboot = write_fastboot_evidence(tmp_path)
+
+    def temp_write(path: Path, text: str) -> None:
+        from scripts.create_rom_stock_restore_evidence import write_output
+
+        write_output(path, text, root=tmp_path)
+
+    monkeypatch.setattr("scripts.create_rom0_manual_action_packet.write_output", temp_write)
+
+    assert (
+        main(
+            [
+                str(probe),
+                "--fastboot-evidence",
+                str(fastboot),
+                "--json",
+                "--output",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    actions = {action["action_id"]: action for action in payload["actions"]}
+    assert actions["record_fastboot_evidence"]["status"] == "RECORDED"
+
+
 def test_cli_writes_only_under_validation_dir(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
@@ -323,6 +402,47 @@ def write_gsi_candidate_evidence(tmp_path: Path) -> Path:
     return path
 
 
+def write_fastboot_evidence(tmp_path: Path) -> Path:
+    path = tmp_path / "rom-fastboot-evidence.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "goffy.rom-fastboot-evidence.v1",
+                "generated_at": "2026-07-22T00:00:00+00:00",
+                "ok": True,
+                "status": "HOST_READY",
+                "destructive_actions": "withheld",
+                "host": {
+                    "fastboot": "available",
+                    "fastboot_path": "<android-sdk>/platform-tools/fastboot",
+                    "fastboot_version": "37.0.0-14910828",
+                },
+                "manual_bootloader_check": {
+                    "requested": False,
+                    "bootloader_device_visible": False,
+                    "bootloader_device_count": 0,
+                    "serials_redacted": True,
+                },
+                "commands": [
+                    {
+                        "label": "fastboot --version",
+                        "exit_code": 0,
+                        "timed_out": False,
+                        "stdout": "fastboot version 37.0.0-14910828\nInstalled as <path>",
+                        "stderr": "",
+                    }
+                ],
+                "blockers": [],
+                "warnings": [
+                    "manual bootloader visibility was not checked; do not reboot automatically"
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 def gsi_candidate_summary() -> dict[str, str]:
     return {
         "status": "ARTIFACT_CHECKSUM_VERIFIED",
@@ -333,4 +453,14 @@ def gsi_candidate_summary() -> dict[str, str]:
         "sha256": "2171cf0ea849f8eaa399f4bad2165fab80b0fd9e98d37723a705dca6c41e49ea",
         "source_url": "https://developer.android.com/topic/generic-system-image/releases",
         "authorization": "NON_AUTHORIZING_EVIDENCE",
+    }
+
+
+def fastboot_summary() -> dict[str, str]:
+    return {
+        "status": "HOST_READY",
+        "fastboot_version": "37.0.0-14910828",
+        "manual_bootloader_check_requested": "false",
+        "bootloader_device_visible": "false",
+        "bootloader_device_count": "0",
     }

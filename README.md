@@ -437,9 +437,9 @@ flashing anything. It is not the final product if the Moto `kansas` hardware can
 be unlocked and boot a recoverable GSI or custom ROM safely.
 
 For the next ROM-0 evidence step, refresh the read-only probe and safe manual
-action packet in one command. It tells the human exactly which restore/unlock
-evidence and official GSI candidate evidence is missing without emitting unlock,
-flash, erase, or reboot commands:
+action packet in one command. It tells the human exactly which restore/unlock,
+fastboot, and official GSI candidate evidence is missing without emitting
+unlock, flash, erase, or reboot commands:
 
 ```bash
 .venv/bin/python scripts/refresh_rom0_action_packet.py

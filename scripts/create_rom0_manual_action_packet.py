@@ -25,6 +25,7 @@ from scripts.verify_rom0_readiness import (  # noqa: E402
     EXPECTED_CODENAME,
     EXPECTED_PRODUCT,
     TARGET_DEVICE_EVIDENCE_KEYS,
+    validate_fastboot_evidence,
     validate_gsi_candidate_evidence,
 )
 
@@ -56,6 +57,7 @@ ALLOWED_COMMAND_PREFIXES = (
     ".venv/bin/python scripts/rom_feasibility_probe.py ",
     ".venv/bin/python scripts/create_rom_stock_restore_evidence.py ",
     ".venv/bin/python scripts/create_rom_gsi_candidate_evidence.py ",
+    ".venv/bin/python scripts/create_rom_fastboot_evidence.py",
     ".venv/bin/python scripts/create_rom_unlock_eligibility_evidence.py ",
     ".venv/bin/python scripts/create_rom_manual_gates_template.py ",
     ".venv/bin/python scripts/validate_rom_manual_gates.py ",
@@ -125,21 +127,25 @@ def build_packet(
     unlock_eligibility: Mapping[str, Any] | None = None,
     stock_restore: Mapping[str, str] | None = None,
     gsi_candidate: Mapping[str, str] | None = None,
+    fastboot_evidence: Mapping[str, str] | None = None,
 ) -> Rom0ManualActionPacket:
     device = compact_device(probe)
     probe_blockers = probe_readiness_blockers(probe)
     unlock_ready = unlock_evidence_ready(unlock_eligibility)
     stock_ready = stock_restore is not None
     gsi_ready = gsi_evidence_ready(gsi_candidate)
+    fastboot_ready = fastboot_evidence_ready(fastboot_evidence)
 
     blocked_by = blocked_reasons(
         probe_blockers=probe_blockers,
         unlock_ready=unlock_ready,
         stock_ready=stock_ready,
         gsi_ready=gsi_ready,
+        fastboot_ready=fastboot_ready,
     )
     actions = (
         read_only_probe_action(),
+        fastboot_evidence_action(fastboot_evidence),
         stock_restore_action(stock_restore),
         gsi_candidate_action(gsi_candidate),
         unlock_eligibility_action(unlock_eligibility),
@@ -149,10 +155,13 @@ def build_packet(
             unlock_ready=unlock_ready,
             stock_ready=stock_ready,
             gsi_ready=gsi_ready,
+            fastboot_ready=fastboot_ready,
         ),
     )
     ready_for_manual_gates = unlock_ready and stock_ready
-    ready_for_readiness = not probe_blockers and ready_for_manual_gates and gsi_ready
+    ready_for_readiness = (
+        not probe_blockers and ready_for_manual_gates and gsi_ready and fastboot_ready
+    )
     packet = Rom0ManualActionPacket(
         schema_version=JSON_SCHEMA_VERSION,
         generated_at=datetime.now(UTC).isoformat(),
@@ -194,6 +203,54 @@ def read_only_probe_action() -> ManualAction:
             "> .goffy-validation/rom-feasibility-current.json",
         ),
         evidence_output=".goffy-validation/rom-feasibility-current.json",
+    )
+
+
+def fastboot_evidence_action(fastboot_evidence: Mapping[str, str] | None) -> ManualAction:
+    if fastboot_evidence_ready(fastboot_evidence):
+        if fastboot_evidence is None:
+            raise ValueError("fastboot evidence readiness predicate returned an invalid state")
+        manual_visible = fastboot_evidence.get("bootloader_device_visible") == "true"
+        return ManualAction(
+            action_id="record_fastboot_evidence",
+            title="Record read-only fastboot evidence",
+            kind=ActionKind.LOCAL_READ_ONLY,
+            status=ActionStatus.RECORDED,
+            summary=(
+                "Trusted host fastboot evidence exists"
+                + (
+                    " with manual bootloader visibility."
+                    if manual_visible
+                    else "; manual bootloader visibility is still pending."
+                )
+            ),
+            instructions=(
+                "Keep this as evidence only; it does not approve unlock, flash, erase, or boot.",
+                "If the phone later enters bootloader mode manually, rerun the helper with "
+                "--manual-bootloader-check.",
+            ),
+            evidence_output=".goffy-validation/rom-fastboot-evidence.json",
+        )
+    return ManualAction(
+        action_id="record_fastboot_evidence",
+        title="Record read-only fastboot evidence",
+        kind=ActionKind.LOCAL_READ_ONLY,
+        status=ActionStatus.REQUIRED,
+        summary=("ROM-0 readiness now requires redacted host fastboot evidence before review."),
+        instructions=(
+            "Run the host readiness command first; it only checks the trusted SDK fastboot.",
+            "Do not reboot the phone from ADB or fastboot.",
+            "Only after the human manually enters bootloader mode, run the optional "
+            "visibility check.",
+            "Both commands write redacted evidence and never unlock, flash, erase, wipe, "
+            "boot, or reboot.",
+        ),
+        safe_commands=(
+            ".venv/bin/python scripts/create_rom_fastboot_evidence.py",
+            ".venv/bin/python scripts/create_rom_fastboot_evidence.py --manual-bootloader-check",
+        ),
+        evidence_output=".goffy-validation/rom-fastboot-evidence.json",
+        blockers=("redacted read-only fastboot evidence is missing",),
     )
 
 
@@ -363,12 +420,14 @@ def readiness_report_action(
     unlock_ready: bool,
     stock_ready: bool,
     gsi_ready: bool,
+    fastboot_ready: bool,
 ) -> ManualAction:
     blockers = readiness_report_blockers(
         probe_blockers=probe_blockers,
         unlock_ready=unlock_ready,
         stock_ready=stock_ready,
         gsi_ready=gsi_ready,
+        fastboot_ready=fastboot_ready,
     )
     ready = not blockers
     return ManualAction(
@@ -385,6 +444,7 @@ def readiness_report_action(
             ".venv/bin/python scripts/verify_rom0_readiness.py "
             "--probe-json .goffy-validation/rom-feasibility-current.json "
             "--manual-gates-json .goffy-validation/rom-0-manual-gates.json "
+            "--fastboot-evidence-json .goffy-validation/rom-fastboot-evidence.json "
             "--gsi-candidate-evidence-json .goffy-validation/rom-gsi-candidate-evidence.json "
             "--signing-plan-json .goffy-validation/rom-signing/release-signing-plan.json "
             "--apk-verification-json .goffy-validation/rom-signing/release-apk-verification.json "
@@ -415,6 +475,14 @@ def gsi_evidence_ready(gsi_candidate: Mapping[str, str] | None) -> bool:
         and bool(gsi_candidate.get("artifact_name"))
         and bool(gsi_candidate.get("sha256"))
         and bool(gsi_candidate.get("source_url"))
+    )
+
+
+def fastboot_evidence_ready(fastboot_evidence: Mapping[str, str] | None) -> bool:
+    if fastboot_evidence is None:
+        return False
+    return fastboot_evidence.get("status") in {"HOST_READY", "MANUAL_BOOTLOADER_VISIBLE"} and bool(
+        fastboot_evidence.get("fastboot_version")
     )
 
 
@@ -457,6 +525,7 @@ def blocked_reasons(
     unlock_ready: bool,
     stock_ready: bool,
     gsi_ready: bool,
+    fastboot_ready: bool,
 ) -> tuple[str, ...]:
     reasons: list[str] = []
     reasons.extend(probe_blockers)
@@ -466,6 +535,8 @@ def blocked_reasons(
         reasons.append("exact stock restore evidence is missing")
     if not gsi_ready:
         reasons.append("official Google ARM64 GSI evidence is missing")
+    if not fastboot_ready:
+        reasons.append("redacted read-only fastboot evidence is missing")
     return tuple(reasons)
 
 
@@ -475,12 +546,13 @@ def readiness_report_blockers(
     unlock_ready: bool,
     stock_ready: bool,
     gsi_ready: bool,
+    fastboot_ready: bool,
 ) -> tuple[str, ...]:
     blockers: list[str] = []
     blockers.extend(probe_blockers)
-    if not unlock_ready or not stock_ready or not gsi_ready:
+    if not unlock_ready or not stock_ready or not gsi_ready or not fastboot_ready:
         blockers.append(
-            "readiness cannot be summarized until restore, unlock, and GSI evidence exist"
+            "readiness cannot be summarized until restore, unlock, fastboot, and GSI evidence exist"
         )
     return tuple(blockers)
 
@@ -508,6 +580,15 @@ def load_gsi_candidate_evidence(path: Path) -> dict[str, str]:
         raise ValueError("; ".join(section.blockers))
     if section.evidence is None:
         raise ValueError("GSI candidate evidence did not include accepted evidence")
+    return section.evidence
+
+
+def load_fastboot_evidence(path: Path) -> dict[str, str]:
+    section = validate_fastboot_evidence(path)
+    if not section.ok:
+        raise ValueError("; ".join(section.blockers))
+    if section.evidence is None:
+        raise ValueError("fastboot evidence did not include accepted evidence")
     return section.evidence
 
 
@@ -627,6 +708,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("probe_json", type=Path)
     parser.add_argument("--unlock-eligibility-evidence", type=Path)
     parser.add_argument("--stock-restore-evidence", type=Path)
+    parser.add_argument("--fastboot-evidence", type=Path)
     parser.add_argument("--gsi-candidate-evidence", type=Path)
     parser.add_argument("--json", action="store_true")
     parser.add_argument(
@@ -655,11 +737,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.gsi_candidate_evidence
             else None
         )
+        fastboot_evidence = (
+            load_fastboot_evidence(args.fastboot_evidence) if args.fastboot_evidence else None
+        )
         packet = build_packet(
             load_probe_json(args.probe_json),
             unlock_eligibility=unlock,
             stock_restore=stock,
             gsi_candidate=gsi_candidate,
+            fastboot_evidence=fastboot_evidence,
         )
         text = render_json(packet) if args.json else render_markdown(packet)
         if args.output is None:

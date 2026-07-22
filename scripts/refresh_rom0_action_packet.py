@@ -18,6 +18,7 @@ import scripts.rom_feasibility_probe as rom_probe  # noqa: E402
 from scripts.create_rom0_manual_action_packet import (  # noqa: E402
     PacketStatus,
     build_packet,
+    load_fastboot_evidence,
     load_gsi_candidate_evidence,
 )
 from scripts.create_rom0_manual_action_packet import render_json as render_packet_json  # noqa: E402
@@ -43,6 +44,7 @@ REFRESH_REPORT_FILENAME = "rom-0-refresh-report.json"
 UNLOCK_EVIDENCE_FILENAME = "rom-unlock-eligibility-evidence.json"
 STOCK_EVIDENCE_FILENAME = "rom-stock-restore-evidence.json"
 GSI_EVIDENCE_FILENAME = "rom-gsi-candidate-evidence.json"
+FASTBOOT_EVIDENCE_FILENAME = "rom-fastboot-evidence.json"
 
 
 class EvidenceStatus(StrEnum):
@@ -127,11 +129,18 @@ def refresh_rom0_action_packet(
         load_gsi_candidate_evidence,
         root=root,
     )
+    fastboot_evidence, fastboot_input = load_optional_evidence(
+        "fastboot_evidence",
+        paths["fastboot_evidence"],
+        load_fastboot_evidence,
+        root=root,
+    )
     packet = build_packet(
         asdict(probe_report),
         unlock_eligibility=unlock,
         stock_restore=stock,
         gsi_candidate=gsi_candidate,
+        fastboot_evidence=fastboot_evidence,
     )
     write_validation_file(
         paths["packet_markdown"],
@@ -144,7 +153,7 @@ def refresh_rom0_action_packet(
         root=root,
     )
 
-    evidence_inputs = (unlock_input, stock_input, gsi_input)
+    evidence_inputs = (unlock_input, stock_input, gsi_input, fastboot_input)
     errors = tuple(
         f"{item.name}: {item.detail}"
         for item in evidence_inputs
@@ -188,6 +197,7 @@ def output_paths(validation_dir: Path) -> dict[str, Path]:
         "unlock_evidence": validation_dir / UNLOCK_EVIDENCE_FILENAME,
         "stock_evidence": validation_dir / STOCK_EVIDENCE_FILENAME,
         "gsi_evidence": validation_dir / GSI_EVIDENCE_FILENAME,
+        "fastboot_evidence": validation_dir / FASTBOOT_EVIDENCE_FILENAME,
     }
 
 

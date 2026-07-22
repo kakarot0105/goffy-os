@@ -134,8 +134,9 @@ next?" packet for the human checks, run:
 ```
 
 The packet is read-only/template-only. It summarizes missing OEM/Motorola
-unlock eligibility, stock-restore evidence, and official GSI candidate evidence,
-links those actions to the typed GOFFY evidence helpers, redacts the device
+unlock eligibility, stock-restore evidence, read-only fastboot evidence, and
+official GSI candidate evidence, links those actions to the typed GOFFY evidence
+helpers, redacts the device
 serial placeholder, and rejects any unlock, flash, erase, or bootloader-reboot
 command authority. The refresh command reports `BLOCKED` while ROM gates are
 missing or the bootloader probe is still locked; that is expected and safer than
