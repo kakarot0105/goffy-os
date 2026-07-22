@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from pytest import MonkeyPatch
 from scripts.create_rom0_manual_action_packet import (
     ALLOWED_COMMAND_PREFIXES,
     FORBIDDEN_DESTRUCTIVE_TERMS,
@@ -27,6 +28,11 @@ LOCKED_PROBE = {
         "carrier": "tracfone",
         "hardware_sku": "XT2513V",
     },
+    "properties": {
+        "ro.build.fingerprint": (
+            "motorola/kansas_g_sys/kansas:16/W1VKS36H.9-12-9-8-2/ebe4e3-2b6752:user/release-keys"
+        )
+    },
     "boot": {
         "flash_locked": "1",
         "vbmeta_device_state": "locked",
@@ -49,7 +55,9 @@ def test_locked_probe_packet_withholds_destructive_authority() -> None:
     assert packet.destructive_actions == "withheld"
     assert packet.device["codename"] == "kansas"
     assert packet.device["hardware_sku"] == "XT2513V"
+    assert packet.device["build_fingerprint"].startswith("motorola/kansas_g_sys/kansas")
     assert "hardware_sku: `XT2513V`" in markdown
+    assert "build_fingerprint: `motorola/kansas_g_sys/kansas" in markdown
     assert "Motorola Software Fix" in markdown
     assert "create_rom_unlock_eligibility_evidence.py" in markdown
     assert "create_rom_stock_restore_evidence.py" in markdown
@@ -97,6 +105,10 @@ def test_packet_records_safe_evidence_without_approving_unlock() -> None:
     assert actions["record_unlock_eligibility"].status is ActionStatus.RECORDED
     assert actions["record_stock_restore"].status is ActionStatus.RECORDED
     assert actions["create_manual_gates"].status is ActionStatus.READY
+    assert all(
+        "--probe-json .goffy-validation/rom-feasibility-current.json" in command
+        for command in actions["create_manual_gates"].safe_commands
+    )
     assert "does not approve bootloader unlocking" in render_markdown(packet)
 
 
@@ -134,7 +146,10 @@ def test_load_probe_json_rejects_unknown_schema(tmp_path: Path) -> None:
         raise AssertionError("expected ValueError")
 
 
-def test_cli_writes_only_under_validation_dir(tmp_path: Path, monkeypatch) -> None:
+def test_cli_writes_only_under_validation_dir(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
     probe = tmp_path / "probe.json"
     probe.write_text(json.dumps(LOCKED_PROBE), encoding="utf-8")
     allowed = tmp_path / ".goffy-validation" / "rom-0-manual-action-packet.md"

@@ -262,15 +262,18 @@ def manual_gate_template_action(*, unlock_ready: bool, stock_ready: bool) -> Man
             "Set backup_confirmed only after the user confirms a complete data backup.",
             "Leave destructive_approval as not_requested until the user explicitly "
             "approves that step.",
+            "Keep the target_device values seeded from the read-only ROM probe.",
             "Validate the generated JSON before treating it as review-ready.",
         ),
         safe_commands=(
             ".venv/bin/python scripts/create_rom_manual_gates_template.py "
+            "--probe-json .goffy-validation/rom-feasibility-current.json "
             "--unlock-eligibility-evidence .goffy-validation/rom-unlock-eligibility-evidence.json "
             "--stock-restore-evidence .goffy-validation/rom-stock-restore-evidence.json "
             "--output .goffy-validation/rom-0-manual-gates.json",
             ".venv/bin/python scripts/validate_rom_manual_gates.py "
-            ".goffy-validation/rom-0-manual-gates.json",
+            ".goffy-validation/rom-0-manual-gates.json "
+            "--probe-json .goffy-validation/rom-feasibility-current.json",
         ),
         evidence_output=".goffy-validation/rom-0-manual-gates.json",
         blockers=()
@@ -332,12 +335,14 @@ def compact_device(probe: Mapping[str, Any]) -> dict[str, str]:
     boot = mapping_value(probe.get("boot"))
     treble = mapping_value(probe.get("treble"))
     dsu = mapping_value(probe.get("dsu"))
+    properties = mapping_value(probe.get("properties"))
     return {
         "model": device.get("model", ""),
         "codename": device.get("codename", ""),
         "product": device.get("product", ""),
         "carrier": device.get("carrier", ""),
         "hardware_sku": device.get("hardware_sku", ""),
+        "build_fingerprint": properties.get("ro.build.fingerprint", ""),
         "soc_model": platform.get("soc_model", ""),
         "android_release": platform.get("android_release", ""),
         "flash_locked": boot.get("flash_locked", ""),
