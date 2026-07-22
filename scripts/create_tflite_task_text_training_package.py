@@ -491,7 +491,8 @@ The Docker helper fails closed until the export image is immutable
 high, or medium findings. The image must contain the required Model Maker export
 stack ahead of time; the runner does not perform live `apt-get` or `pip install`
 during execution. Generated `.tflite` models must not be committed or packaged
-into default GOFFY LITE builds.
+into default GOFFY LITE builds. The runner defaults to 20 epochs to match this
+package helper and avoid repeating the failed one-epoch baseline.
 
 Minimum audit evidence shape:
 

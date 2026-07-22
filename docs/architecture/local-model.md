@@ -421,7 +421,12 @@ writable, disables container networking, drops capabilities, rejects non-empty
 export directories, and verifies that `model.tflite` matches the generated
 `goffy-training-report.json`. It does not run live `apt-get` or `pip install`
 and does not add TensorFlow, Model Maker, or a model asset to the normal
-repository environment.
+repository environment. The audited runner defaults to 20 training epochs, the
+same default as the generated helper, instead of reproducing the failed
+one-epoch baseline. The `goffy.tflite-task-text-model-maker-docker.v1` report is
+additive-compatible: consumers should require known safety fields and ignore
+unknown fields so future non-breaking metadata can be added without weakening
+execution gates.
 
 The minimum image audit evidence schema is:
 

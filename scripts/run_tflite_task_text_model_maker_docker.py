@@ -28,6 +28,8 @@ DEFAULT_IMAGE = ""
 AUDITED_IMAGE_EXAMPLE = "ghcr.io/goffy/task-text-export@sha256:<audited-image-digest>"
 DEFAULT_PLATFORM = "linux/amd64"
 DEFAULT_EXPORT_DIR = "average_word_vec"
+DEFAULT_EPOCHS = 20
+DEFAULT_BATCH_SIZE = 8
 DEFAULT_TIMEOUT_SECONDS = 1800
 IMAGE_DIGEST = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 SAFE_EXPORT_DIR_PART = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -62,6 +64,8 @@ class DockerTrainingReport:
     model_bytes: int | None
     docker_image: str
     docker_platform: str
+    epochs: int
+    batch_size: int
     image_audit_evidence: str | None
     steps: tuple[DockerTrainingStep, ...]
     blockers: tuple[str, ...]
@@ -103,8 +107,8 @@ def build_report(
     image: str = DEFAULT_IMAGE,
     platform: str = DEFAULT_PLATFORM,
     image_audit_evidence: Path | None = None,
-    epochs: int = 1,
-    batch_size: int = 8,
+    epochs: int = DEFAULT_EPOCHS,
+    batch_size: int = DEFAULT_BATCH_SIZE,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     runner: CommandRunner = default_command_runner,
     root: Path = ROOT,
@@ -177,6 +181,8 @@ def build_report(
             export_path=export_path,
             image=image,
             platform=platform,
+            epochs=epochs,
+            batch_size=batch_size,
             image_audit_evidence=image_audit_evidence,
             steps=steps,
             blockers=blockers,
@@ -200,6 +206,8 @@ def build_report(
             export_path=export_path,
             image=image,
             platform=platform,
+            epochs=epochs,
+            batch_size=batch_size,
             image_audit_evidence=image_audit_evidence,
             steps=steps,
             blockers=blockers,
@@ -229,6 +237,8 @@ def build_report(
         export_path=export_path,
         image=image,
         platform=platform,
+        epochs=epochs,
+        batch_size=batch_size,
         image_audit_evidence=image_audit_evidence,
         steps=steps,
         blockers=blockers,
@@ -402,6 +412,8 @@ def final_report(
     export_path: Path,
     image: str,
     platform: str,
+    epochs: int,
+    batch_size: int,
     image_audit_evidence: Path | None,
     steps: list[DockerTrainingStep],
     blockers: list[str],
@@ -425,6 +437,8 @@ def final_report(
         model_bytes=model_bytes,
         docker_image=image or AUDITED_IMAGE_EXAMPLE,
         docker_platform=platform,
+        epochs=epochs,
+        batch_size=batch_size,
         image_audit_evidence=str(image_audit_evidence) if image_audit_evidence else None,
         steps=tuple(steps),
         blockers=deduped_blockers,
@@ -456,6 +470,7 @@ def render_text(report: DockerTrainingReport) -> str:
         f"package: {report.package_dir}",
         f"export dir: {report.export_dir}",
         f"docker: {report.docker_image} on {report.docker_platform}",
+        f"training: epochs={report.epochs}, batch_size={report.batch_size}",
     ]
     if report.model_file:
         lines.append(f"model: {report.model_file}")
@@ -494,8 +509,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "critical/high/medium findings."
         ),
     )
-    parser.add_argument("--epochs", type=int, default=1)
-    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--epochs", type=int, default=DEFAULT_EPOCHS)
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--json", action="store_true")
     return parser.parse_args(argv)

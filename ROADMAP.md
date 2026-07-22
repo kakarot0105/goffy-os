@@ -120,6 +120,7 @@
 - [x] Training-environment preflight for the generated Task Text package
 - [x] Train/export first tiny metadata-backed Task Text `.tflite` router
 - [x] Physical Moto G Task Text classifier benchmark with tiny `.tflite` model
+- [x] Audited Docker Task Text export runner defaults aligned with the 20-epoch helper
 - [ ] Improve tiny Task Text training until physical Moto eval reaches the routing-quality gate
 - [ ] Production acceptance for user-enabled LiteRT-LM observation execution within latency and idle-memory budgets
 

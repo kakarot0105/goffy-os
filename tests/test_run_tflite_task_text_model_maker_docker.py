@@ -50,7 +50,9 @@ def test_plan_prepares_fixed_docker_model_maker_command(
         f"type=bind,src={(package_dir / 'planned_export').resolve()},dst=/work/planned_export"
         in command
     )
-    assert command[-6:] == ("--export-dir", "planned_export", "--epochs", "1", "--batch-size", "8")
+    assert report.epochs == 20
+    assert report.batch_size == 8
+    assert command[-6:] == ("--export-dir", "planned_export", "--epochs", "20", "--batch-size", "8")
 
 
 def test_execute_requires_explicit_docker_confirmation(
@@ -73,6 +75,27 @@ def test_execute_requires_explicit_docker_confirmation(
     assert not report.ok
     assert not report.executed
     assert "missing explicit --confirm-docker-run" in report.blockers
+
+
+def test_json_report_shape_includes_additive_training_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    package_dir = create_training_package(tmp_path)
+    monkeypatch.setattr(docker_runner, "which_executable", fake_which_executable)
+
+    report = docker_runner.build_report(
+        package_dir=package_dir,
+        image=AUDITED_IMAGE,
+        runner=fake_successful_runner,
+        root=tmp_path,
+    )
+    payload = json.loads(docker_runner.render_json(report))
+
+    assert payload["schema_version"] == docker_runner.JSON_SCHEMA_VERSION
+    assert payload["epochs"] == 20
+    assert payload["batch_size"] == 8
+    assert payload["docker_image"] == AUDITED_IMAGE
 
 
 def test_plan_blocks_when_docker_daemon_is_unavailable(
