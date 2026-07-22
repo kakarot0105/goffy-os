@@ -320,6 +320,26 @@ APK install/model push on the connected Moto:
   --example-id phone_ocr_009
 ```
 
+Run the full `eval` corpus as one bounded suite after the same model is ready:
+
+```bash
+.venv/bin/python scripts/run_moto_g_tflite_task_text_eval_suite.py \
+  --execute \
+  --confirm-device-mutation \
+  --model /path/to/tiny-router.tflite
+```
+
+The suite reuses the single-command benchmark validators while keeping phone
+mutation bounded: it builds once, verifies the Moto target once, installs the
+modelDebug APKs once, pushes the `.tflite` once, then loops only over
+instrumentation, artifact pull, and JSON verification for each `eval` example.
+It passes the corpus `exampleId` into Android instrumentation, copies the
+`.tflite` model into the evidence tree, writes `routing-quality-evidence.json`,
+and runs the routing-quality verifier automatically. Execute mode refuses a
+non-empty output directory to avoid binding stale benchmark JSON into new
+evidence. Without `--execute`, it prints the planned setup and per-example run
+list without installing APKs or pushing the model.
+
 The benchmark JSON gate requires a `PASS`, at least one category, inference
 timing, a terminal `Candidate` or `Rejected` observation, and
 `nonAuthoritative=true`. It does not accept the classifier for production by

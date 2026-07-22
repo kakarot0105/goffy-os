@@ -60,8 +60,9 @@ the capability boundary.
 > Its pinned dependency now resolves and builds in an isolated Android probe, and
 > `modelDebug` now compiles a Task Text classifier bridge plus a variant-scoped
 > Moto benchmark harness. The seed PHONE/MAC/CLOUD/UNKNOWN router corpus and
-> routing-quality evidence verifier are now in-repo. Classifier acceptance
-> remains blocked until a tiny `.tflite` model produces physical Moto latency,
+> routing-quality evidence verifier are now in-repo, and the eval-suite runner
+> can collect one bound artifact per corpus row. Classifier acceptance remains
+> blocked until a tiny `.tflite` model produces physical Moto latency,
 > idle-memory, APK-budget, and routing-quality evidence.
 > Default GOFFY LITE still does not ship or load the LiteRT-LM runtime. Automatic
 > rotation scheduling, Android retrieval for Hub audit, certificate-backed Hub
@@ -107,6 +108,9 @@ the capability boundary.
   bridge/benchmark harness compiles without adding a default runtime dependency
 - Seed local intent-router corpus plus an opt-in routing-quality verifier for
   physical Moto Task Text benchmark evidence
+- Eval-suite runner that reuses the single-command Moto benchmark harness and
+  writes a routing-quality evidence manifest after one suite-level setup; still
+  requires a real tiny model
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
