@@ -202,6 +202,11 @@ engine teardown marker `observation_engine_scope_closed`, and separate
 idle-cleanup JSON with `provider_closed_after_idle=true`. The smoke runner
 accepts safe model-output rejection reasons such as strict-schema mismatch or
 output-budget overflow; it does not require one exact model failure string. The
+acceptance JSON separates `accepted_runs` from `rejected_runs`; rejected runs
+preserve parseable elapsed time, total PSS, battery level, model SHA-256, output
+directory, and rejection reason so blocked physical evidence is still
+machine-readable. The verifier also avoids duplicating the idle TOTAL PSS
+blocker when the idle-cleanup collector has already reported it. The
 collector sets the idle field when the observation report contains the teardown
 marker, which proves the LiteRT-LM engine/conversation scope unwound for that
 observation. If the foreground `modelDebug` app process remains alive after the

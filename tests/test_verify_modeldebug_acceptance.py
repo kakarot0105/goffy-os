@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from _pytest.capture import CaptureFixture
 from scripts.run_moto_g_modeldebug_observation_smoke import (
     DEFAULT_COMMAND,
 )
@@ -31,6 +32,7 @@ def test_modeldebug_acceptance_accepts_repeated_fast_runs_and_idle_cleanup(
     assert report.ok
     assert report.status == "ACCEPTED"
     assert len(report.accepted_runs) == 3
+    assert report.rejected_runs == ()
     assert report.idle_cleanup.provider_closed_after_idle is True
 
 
@@ -55,6 +57,33 @@ def test_modeldebug_acceptance_blocks_slow_observation(tmp_path: Path) -> None:
 
     assert not report.ok
     assert any("observation took 37581 ms" in blocker for blocker in report.blockers)
+    assert len(report.rejected_runs) == 1
+    rejected = report.rejected_runs[0]
+    assert rejected.elapsed_millis == 37_581
+    assert rejected.total_pss_kb == 156_192
+    assert rejected.reason == "observation took 37581 ms; limit is 15000 ms"
+
+
+def test_modeldebug_acceptance_rejected_run_ignores_external_output_directory(
+    tmp_path: Path,
+) -> None:
+    external_dir = tmp_path.parent / f"{tmp_path.name}-external"
+    report_path = write_observation_report(
+        tmp_path,
+        0,
+        elapsed=37_581,
+        output_dir=external_dir,
+    )
+    idle = write_idle_evidence(tmp_path)
+
+    report = build_acceptance_report(reports=[report_path], idle_evidence_json=idle)
+
+    assert not report.ok
+    assert len(report.rejected_runs) == 1
+    rejected = report.rejected_runs[0]
+    assert rejected.output_directory == str(external_dir)
+    assert rejected.total_pss_kb is None
+    assert rejected.battery_level is None
 
 
 def test_modeldebug_acceptance_blocks_idle_process_with_high_pss(tmp_path: Path) -> None:
@@ -69,6 +98,23 @@ def test_modeldebug_acceptance_blocks_idle_process_with_high_pss(tmp_path: Path)
 
     assert not report.ok
     assert any("idle cleanup TOTAL PSS" in blocker for blocker in report.blockers)
+
+
+def test_modeldebug_acceptance_deduplicates_idle_pss_blockers(tmp_path: Path) -> None:
+    reports = [write_observation_report(tmp_path, index, elapsed=8_000) for index in range(3)]
+    idle = write_idle_evidence(
+        tmp_path,
+        ok=False,
+        blockers=["idle cleanup TOTAL PSS exceeds 64000 KB"],
+        process_running_after_idle=True,
+        total_pss_kb=128_000,
+    )
+
+    report = build_acceptance_report(reports=reports, idle_evidence_json=idle)
+
+    assert not report.ok
+    assert report.blockers.count("idle cleanup TOTAL PSS exceeds 64000 KB") == 1
+    assert not any("must be at most" in blocker for blocker in report.blockers)
 
 
 def test_modeldebug_acceptance_accepts_idle_process_below_pss_budget(tmp_path: Path) -> None:
@@ -122,7 +168,7 @@ def test_modeldebug_acceptance_blocks_missing_engine_scope_marker(
 
 def test_modeldebug_acceptance_cli_reports_blocked_json(
     tmp_path: Path,
-    capsys,
+    capsys: CaptureFixture[str],
 ) -> None:
     report_path = write_observation_report(tmp_path, 0, elapsed=8_000)
 
@@ -132,12 +178,40 @@ def test_modeldebug_acceptance_cli_reports_blocked_json(
     payload = json.loads(captured.out)
     assert exit_code == 1
     assert payload["status"] == "BLOCKED"
+    assert payload["rejected_runs"] == []
     assert "idle cleanup evidence JSON was not supplied" in payload["blockers"]
 
 
-def write_observation_report(tmp_path: Path, index: int, *, elapsed: int) -> Path:
-    output_dir = tmp_path / f"run-{index}"
-    output_dir.mkdir()
+def test_modeldebug_acceptance_cli_reports_rejected_run_json(
+    tmp_path: Path,
+    capsys: CaptureFixture[str],
+) -> None:
+    report_path = write_observation_report(tmp_path, 0, elapsed=37_581)
+    idle = write_idle_evidence(tmp_path)
+
+    exit_code = main(["--json", "--idle-evidence-json", str(idle), str(report_path)])
+
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    rejected = payload["rejected_runs"][0]
+    assert exit_code == 1
+    assert payload["schema_version"] == JSON_SCHEMA_VERSION
+    assert rejected["output_directory"] == str(tmp_path / "run-0")
+    assert rejected["model_sha256"] == MODEL_SHA
+    assert rejected["elapsed_millis"] == 37_581
+    assert rejected["total_pss_kb"] == 156_192
+    assert rejected["battery_level"] == 100
+
+
+def write_observation_report(
+    tmp_path: Path,
+    index: int,
+    *,
+    elapsed: int,
+    output_dir: Path | None = None,
+) -> Path:
+    output_dir = output_dir or tmp_path / f"run-{index}"
+    output_dir.mkdir(parents=True)
     (output_dir / "final-ui.xml").write_text(
         "FAILED\nNo safe deterministic route is available\n",
         encoding="utf-8",
@@ -180,6 +254,8 @@ def write_observation_report(tmp_path: Path, index: int, *, elapsed: int) -> Pat
 def write_idle_evidence(
     tmp_path: Path,
     *,
+    ok: bool = True,
+    blockers: list[str] | None = None,
     process_running_after_idle: bool = False,
     total_pss_kb: int | None = None,
 ) -> Path:
@@ -188,13 +264,13 @@ def write_idle_evidence(
         json.dumps(
             {
                 "schema_version": IDLE_EVIDENCE_SCHEMA_VERSION,
-                "ok": True,
+                "ok": ok,
                 "waited_seconds": 60,
                 "model_sha256": MODEL_SHA,
                 "provider_closed_after_idle": True,
                 "process_running_after_idle": process_running_after_idle,
                 "total_pss_kb": total_pss_kb,
-                "blockers": [],
+                "blockers": blockers or [],
                 "warnings": [],
             }
         ),

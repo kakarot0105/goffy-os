@@ -20,7 +20,7 @@ from scripts.run_moto_g_modeldebug_observation_smoke import (  # noqa: E402
     JSON_SCHEMA_VERSION as OBSERVATION_SCHEMA_VERSION,
 )
 
-JSON_SCHEMA_VERSION = "goffy.modeldebug-production-acceptance.v1"
+JSON_SCHEMA_VERSION = "goffy.modeldebug-production-acceptance.v2"
 IDLE_EVIDENCE_SCHEMA_VERSION = "goffy.modeldebug-idle-cleanup-evidence.v1"
 DEFAULT_MIN_RUNS = 3
 DEFAULT_MAX_OBSERVATION_MILLIS = 15_000
@@ -67,6 +67,17 @@ class AcceptedObservationRun:
 
 
 @dataclass(frozen=True)
+class RejectedObservationRun:
+    report: str
+    output_directory: str | None
+    model_sha256: str | None
+    elapsed_millis: int | None
+    total_pss_kb: int | None
+    battery_level: int | None
+    reason: str
+
+
+@dataclass(frozen=True)
 class IdleCleanupEvidence:
     supplied: bool
     waited_seconds: int | None = None
@@ -85,6 +96,7 @@ class ModelDebugAcceptanceReport:
     max_run_pss_kb: int
     max_idle_pss_kb: int
     accepted_runs: tuple[AcceptedObservationRun, ...]
+    rejected_runs: tuple[RejectedObservationRun, ...]
     idle_cleanup: IdleCleanupEvidence
     blockers: tuple[str, ...]
     warnings: tuple[str, ...]
@@ -103,6 +115,7 @@ def build_acceptance_report(
     blockers: list[str] = []
     warnings: list[str] = []
     accepted_runs: list[AcceptedObservationRun] = []
+    rejected_runs: list[RejectedObservationRun] = []
     model_hashes: set[str] = set()
 
     if len(reports) < min_runs:
@@ -116,7 +129,9 @@ def build_acceptance_report(
                 max_run_pss_kb=max_run_pss_kb,
             )
         except ValueError as exc:
-            blockers.append(f"{report_path}: {exc}")
+            reason = str(exc)
+            blockers.append(f"{report_path}: {reason}")
+            rejected_runs.append(summarize_rejected_observation_report(report_path, reason=reason))
             continue
         accepted_runs.append(accepted)
         model_hashes.add(accepted.model_sha256)
@@ -146,6 +161,7 @@ def build_acceptance_report(
         max_run_pss_kb=max_run_pss_kb,
         max_idle_pss_kb=max_idle_pss_kb,
         accepted_runs=tuple(accepted_runs),
+        rejected_runs=tuple(rejected_runs),
         idle_cleanup=idle_cleanup,
         blockers=deduped_blockers,
         warnings=tuple(dict.fromkeys(warnings)),
@@ -228,6 +244,62 @@ def validate_observation_report(
     )
 
 
+def summarize_rejected_observation_report(
+    report_path: Path,
+    *,
+    reason: str,
+) -> RejectedObservationRun:
+    output_dir_value: str | None = None
+    model_sha: str | None = None
+    elapsed = None
+    total_pss = None
+    battery_level = None
+
+    try:
+        payload = load_json_object(report_path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return RejectedObservationRun(
+            report=str(report_path),
+            output_directory=None,
+            model_sha256=None,
+            elapsed_millis=None,
+            total_pss_kb=None,
+            battery_level=None,
+            reason=reason,
+        )
+
+    elapsed = int_value(payload.get("observation_elapsed_millis"))
+    candidate_sha = str(payload.get("model_sha256", ""))
+    if is_sha256(candidate_sha):
+        model_sha = candidate_sha
+
+    output_dir_raw = payload.get("output_directory")
+    if isinstance(output_dir_raw, str) and output_dir_raw:
+        output_dir_value = output_dir_raw
+        output_dir = Path(output_dir_raw)
+        if is_within_evidence_tree(output_dir, report_path.parent):
+            meminfo_path = output_dir / "meminfo-after.txt"
+            if meminfo_path.is_file():
+                total_pss = parse_total_pss_kb(
+                    meminfo_path.read_text(encoding="utf-8", errors="replace")
+                )
+            battery_path = output_dir / "battery-after.txt"
+            if battery_path.is_file():
+                battery_level = parse_battery_level(
+                    battery_path.read_text(encoding="utf-8", errors="replace")
+                )
+
+    return RejectedObservationRun(
+        report=str(report_path),
+        output_directory=output_dir_value,
+        model_sha256=model_sha,
+        elapsed_millis=elapsed,
+        total_pss_kb=total_pss,
+        battery_level=battery_level,
+        reason=reason,
+    )
+
+
 def validate_idle_evidence(
     path: Path | None,
     *,
@@ -267,7 +339,14 @@ def validate_idle_evidence(
     total_pss = int_value(payload.get("total_pss_kb"))
     if process_running not in {True, False}:
         blockers.append("idle cleanup evidence must record process_running_after_idle")
-    elif process_running and (total_pss is None or total_pss > max_idle_pss_kb):
+    elif process_running and total_pss is None and not has_idle_total_pss_blocker(blockers):
+        blockers.append("idle cleanup TOTAL PSS is missing while process remains")
+    elif (
+        process_running
+        and total_pss is not None
+        and total_pss > max_idle_pss_kb
+        and not has_idle_total_pss_blocker(blockers)
+    ):
         blockers.append(
             f"idle cleanup TOTAL PSS must be at most {max_idle_pss_kb} KB when process remains"
         )
@@ -286,6 +365,18 @@ def validate_idle_evidence(
         tuple(dict.fromkeys(blockers)),
         warnings,
     )
+
+
+def has_idle_total_pss_blocker(blockers: Sequence[str]) -> bool:
+    return any("idle cleanup TOTAL PSS" in blocker for blocker in blockers)
+
+
+def is_within_evidence_tree(path: Path, evidence_root: Path) -> bool:
+    try:
+        path.resolve(strict=False).relative_to(evidence_root.resolve(strict=False))
+    except ValueError:
+        return False
+    return True
 
 
 def load_json_object(path: Path) -> dict[str, Any]:
@@ -346,8 +437,25 @@ def render_text(report: ModelDebugAcceptanceReport) -> str:
     if report.warnings:
         lines.append("warnings:")
         lines.extend(f"- {warning}" for warning in report.warnings)
-    for run in report.accepted_runs:
-        lines.append(f"- {run.report}: elapsed={run.elapsed_millis}ms pss={run.total_pss_kb}KB")
+    for accepted_run in report.accepted_runs:
+        lines.append(
+            f"- {accepted_run.report}: elapsed={accepted_run.elapsed_millis}ms "
+            f"pss={accepted_run.total_pss_kb}KB"
+        )
+    if report.rejected_runs:
+        lines.append(f"rejected runs: {len(report.rejected_runs)}")
+        for rejected_run in report.rejected_runs:
+            elapsed = (
+                "unknown"
+                if rejected_run.elapsed_millis is None
+                else f"{rejected_run.elapsed_millis}ms"
+            )
+            pss = (
+                "unknown" if rejected_run.total_pss_kb is None else f"{rejected_run.total_pss_kb}KB"
+            )
+            lines.append(
+                f"- {rejected_run.report}: elapsed={elapsed} pss={pss} reason={rejected_run.reason}"
+            )
     return "\n".join(lines)
 
 

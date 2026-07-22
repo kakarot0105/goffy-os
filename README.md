@@ -52,7 +52,9 @@ the capability boundary.
 > results with bounded battery, memory, UI, and logcat artifacts. Three Granite
 > 350M repeated runs completed safely, but production local-model acceptance is
 > still blocked by 21.7-22.7 second observation latency and about 175 MB idle
-> PSS after 60 seconds.
+> PSS after 60 seconds. The acceptance verifier now reports rejected-run
+> elapsed/PSS/battery/model evidence as structured JSON while keeping the
+> production budgets unchanged.
 > Default GOFFY LITE still does not ship or load the LiteRT-LM runtime. Automatic
 > rotation scheduling, Android retrieval for Hub audit, certificate-backed Hub
 > identity proof, trusted LAN operation, bootloader unlock eligibility, stock
