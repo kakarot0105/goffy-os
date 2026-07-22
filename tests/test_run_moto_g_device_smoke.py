@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -247,6 +248,21 @@ MAC_PROCESS_COMMAND_TYPED_UI_XML = "\n".join(
 )
 
 
+MAC_ROM_STATUS_COMMAND_TYPED_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="Show GOFFY ROM status" class="android.widget.EditText" '
+        'enabled="true" bounds="[60,900][660,1040]" />',
+        '  <node text="Send" class="android.widget.TextView" enabled="true" '
+        'bounds="[520,1100][660,1180]" />',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,1200][260,1240]" />',
+        "</hierarchy>",
+    ]
+)
+
+
 TIMELINE_ONLY_UI_XML = "\n".join(
     [
         "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
@@ -435,6 +451,31 @@ MAC_PROCESS_UI_XML = "\n".join(
 )
 
 
+MAC_ROM_STATUS_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,900][660,1040]" />',
+        '  <node text="Send" class="android.widget.TextView" enabled="true" '
+        'bounds="[520,1100][660,1180]" />',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,1200][260,1240]" />',
+        '  <node text="Show GOFFY ROM status" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,1200][430,1240]" />',
+        '  <node text="VERIFIED" class="android.widget.TextView" enabled="true" '
+        'bounds="[500,1200][650,1240]" />',
+        '  <node text="MAC  /  goffy.rom.status  /  SAFE" '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1260][600,1300]" />',
+        '  <node text="GOFFY ROM-0 / AVAILABLE" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,1320][360,1360]" />',
+        '  <node text="goffy.rom.status output matched the registered schema." '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1380][660,1420]" />',
+        "</hierarchy>",
+    ]
+)
+
+
 MEMORY_REMEMBER_COMMAND_TYPED_UI_XML = "\n".join(
     [
         "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
@@ -586,6 +627,21 @@ DEBUG_SETUP_UI_XML = "\n".join(
 )
 
 
+DEBUG_SETUP_WITH_COMMAND_INPUT_UI_XML = DEBUG_SETUP_UI_XML.replace(
+    "</hierarchy>",
+    '  <node text="" class="android.widget.EditText" enabled="true" '
+    'bounds="[60,1449][660,1589]" />\n'
+    "</hierarchy>",
+)
+
+
+DEBUG_TOKEN_FOCUSED_UI_XML = DEBUG_SETUP_UI_XML.replace(
+    '  <node text="" class="android.widget.EditText" enabled="true" bounds="[60,776][660,871]" />',
+    '  <node text="" class="android.widget.EditText" enabled="true" focused="true" '
+    'bounds="[60,776][660,871]" />',
+)
+
+
 EXPANDED_SETUP_WITH_COMMAND_UI_XML = DEBUG_SETUP_UI_XML.replace(
     "</hierarchy>",
     '  <node text="" class="android.widget.EditText" enabled="true" '
@@ -600,6 +656,17 @@ DEBUG_LINK_BUTTON_UI_XML = DEBUG_SETUP_UI_XML.replace(
     "</hierarchy>",
     '  <node text="Debug link" class="android.widget.TextView" enabled="true" '
     'bounds="[485,890][618,925]" />\n'
+    "</hierarchy>",
+)
+
+
+DEBUG_LINK_DISABLED_BUTTON_UI_XML = DEBUG_SETUP_UI_XML.replace(
+    "</hierarchy>",
+    '  <node text="" class="android.view.View" enabled="false" clickable="true" '
+    'bounds="[443,870][660,954]">\n'
+    '    <node text="Debug link" class="android.widget.TextView" enabled="true" '
+    'bounds="[485,895][618,930]" />\n'
+    "  </node>\n"
     "</hierarchy>",
 )
 
@@ -987,6 +1054,39 @@ def test_collapse_setup_card_does_not_skip_when_command_field_visible(
         "609",
         "55",
     ) in seen
+
+
+def test_restore_home_top_viewport_uses_extended_bounded_swipes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    seen: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        seen.append(tuple(command))
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            return CommandResult(0, BASE_UI_XML, "")
+        return CommandResult(0, "ok", "")
+
+    result = smoke.restore_home_top_viewport(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        output_directory=tmp_path,
+    )
+
+    assert result.status is StepStatus.OK
+    restore_swipes = [
+        command
+        for command in seen
+        if adb_args(command) == ("shell", "input", "swipe", "360", "650", "360", "1450", "450")
+    ]
+    assert len(restore_swipes) == len(smoke.HOME_TOP_RESTORE_SWIPES)
 
 
 def test_execute_runs_fixed_setup_launch_and_phone_command(
@@ -2000,6 +2100,94 @@ def test_include_mac_can_smoke_process_list_command(
     )
 
 
+def test_include_mac_can_smoke_goffy_rom_status_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
+    apk.parent.mkdir(parents=True)
+    apk.write_bytes(b"apk")
+    monkeypatch.setattr(smoke, "trusted_adb_path", lambda: adb)
+    monkeypatch.setattr(
+        smoke,
+        "capture_screenshot",
+        lambda **kwargs: DeviceSmokeStep(
+            name="Capture screenshot",
+            status=StepStatus.OK,
+            artifact="final.png",
+        ),
+    )
+    submitted_command: str | None = None
+    result_ready: str | None = None
+    device_map_revealed = False
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        nonlocal device_map_revealed, result_ready, submitted_command
+        target = target_runner(command)
+        if target is not None:
+            return target
+        if (
+            adb_args(command) == ("shell", "input", "swipe", "360", "1450", "360", "900", "350")
+            and submitted_command is None
+        ):
+            device_map_revealed = True
+            return CommandResult(0, "ok", "")
+        if adb_args(command) == ("shell", "input", "text", "check%smy%sbattery%slevel"):
+            submitted_command = "phone"
+            result_ready = None
+            return CommandResult(0, "ok", "")
+        if adb_args(command) == (
+            "shell",
+            "input",
+            "text",
+            "Show%sGOFFY%sROM%sstatus",
+        ):
+            submitted_command = "mac-rom-status"
+            result_ready = None
+            return CommandResult(0, "ok", "")
+        if (
+            adb_args(command)[:3] == ("shell", "input", "tap")
+            and submitted_command is not None
+            and result_ready is None
+        ):
+            result_ready = submitted_command
+            return CommandResult(0, "ok", "")
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            if device_map_revealed:
+                device_map_revealed = False
+                return CommandResult(0, DEVICE_MAP_UI_XML, "")
+            if result_ready == "mac-rom-status":
+                return CommandResult(0, MAC_ROM_STATUS_UI_XML, "")
+            if result_ready == "phone":
+                return CommandResult(0, PHONE_UI_XML, "")
+            if submitted_command == "mac-rom-status":
+                return CommandResult(0, MAC_ROM_STATUS_COMMAND_TYPED_UI_XML, "")
+            if submitted_command == "phone":
+                return CommandResult(0, COMMAND_TYPED_UI_XML, "")
+            return CommandResult(0, BASE_UI_XML, "")
+        if adb_args(command) == ("shell", "pidof", smoke.PACKAGE_NAME):
+            return CommandResult(1, "", "")
+        return CommandResult(0, "ok", "")
+
+    report = build_report(
+        root=tmp_path,
+        execute=True,
+        confirm_device_mutation=True,
+        include_mac=True,
+        mac_command=smoke.DEFAULT_MAC_ROM_STATUS_COMMAND,
+        runner=runner,
+        trusted_root=tmp_path,
+        output_directory=tmp_path / "artifacts",
+    )
+
+    assert report.ok
+    assert smoke.mac_tool_for_smoke(smoke.DEFAULT_MAC_ROM_STATUS_COMMAND) == "goffy.rom.status"
+    assert any(
+        step.name == "MAC command smoke" and step.status is StepStatus.OK for step in report.steps
+    )
+
+
 def test_debug_hub_token_file_must_stay_under_validation_directory(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -2053,6 +2241,7 @@ def test_debug_hub_link_rechecks_after_second_bounded_scroll(tmp_path: Path) -> 
     ui_outputs = iter(
         (
             DEBUG_SETUP_UI_XML,
+            DEBUG_TOKEN_FOCUSED_UI_XML,
             DEBUG_SETUP_UI_XML,
             DEBUG_SETUP_UI_XML,
             DEBUG_LINK_BUTTON_UI_XML,
@@ -2110,7 +2299,9 @@ def test_include_mac_can_configure_debug_hub_link_from_local_token_file(
     )
     setup_outputs = iter(
         (
+            BASE_UI_XML,
             DEBUG_SETUP_UI_XML,
+            DEBUG_TOKEN_FOCUSED_UI_XML,
             DEBUG_LINK_BUTTON_UI_XML,
             DEBUG_LINK_CONFIGURED_UI_XML,
             DEBUG_LINK_CONFIGURED_UI_XML,
@@ -2194,6 +2385,19 @@ def test_include_mac_can_configure_debug_hub_link_from_local_token_file(
         SERIAL,
         "shell",
         "input",
+        "swipe",
+        "360",
+        "1450",
+        "360",
+        "650",
+        "450",
+    ) in seen
+    assert (
+        str(adb),
+        "-s",
+        SERIAL,
+        "shell",
+        "input",
         "text",
         token,
     ) in seen
@@ -2203,6 +2407,111 @@ def test_include_mac_can_configure_debug_hub_link_from_local_token_file(
     payload = render_json(report)
     assert token not in rendered
     assert token not in payload
+
+
+def test_debug_token_field_prefers_development_token_input_over_command_input() -> None:
+    token_field = smoke.find_debug_token_field(DEBUG_SETUP_WITH_COMMAND_INPUT_UI_XML)
+
+    assert token_field is not None
+    assert token_field.bounds == (60, 776, 660, 871)
+
+
+def test_focused_debug_token_field_requires_focus() -> None:
+    assert smoke.find_focused_debug_token_field(DEBUG_SETUP_UI_XML) is None
+
+    focused = smoke.find_focused_debug_token_field(DEBUG_TOKEN_FOCUSED_UI_XML)
+
+    assert focused is not None
+    assert focused.bounds == (60, 776, 660, 871)
+
+
+def test_text_field_entry_area_taps_lower_right_input_region(tmp_path: Path) -> None:
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    token_field = smoke.find_debug_token_field(DEBUG_SETUP_UI_XML)
+    seen: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        seen.append(tuple(command))
+        return CommandResult(0, "ok", "")
+
+    assert token_field is not None
+    result = smoke.tap_text_field_entry_area(
+        adb,
+        target,
+        tmp_path,
+        runner,
+        30,
+        token_field,
+        step_name="Focus token input",
+    )
+
+    assert result.status is StepStatus.OK
+    assert adb_args(seen[0]) == ("shell", "input", "tap", "612", "851")
+
+
+def test_debug_link_action_rejects_disabled_compose_button() -> None:
+    debug_link = smoke.find_enabled_action_for_text(
+        DEBUG_LINK_DISABLED_BUTTON_UI_XML,
+        text="Debug link",
+    )
+
+    assert debug_link is None
+
+
+def test_token_in_unmasked_edit_text_detects_wrong_input() -> None:
+    token = "abcdef0123456789abcdef0123456789"  # noqa: S105
+    wrong_input_xml = DEBUG_SETUP_WITH_COMMAND_INPUT_UI_XML.replace(
+        '  <node text="" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,1449][660,1589]" />',
+        f'  <node text="{token}" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,1449][660,1589]" />',
+        1,
+    )
+
+    assert smoke.token_in_unmasked_edit_text(wrong_input_xml, token)
+
+
+def test_debug_hub_link_artifact_redaction_stays_parseable(tmp_path: Path) -> None:
+    token = "abcdef0123456789abcdef0123456789"  # noqa: S105
+    ui_xml = DEBUG_SETUP_WITH_COMMAND_INPUT_UI_XML.replace(
+        '  <node text="" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,1449][660,1589]" />',
+        f'  <node text="{token}" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,1449][660,1589]" />',
+        1,
+    )
+
+    smoke.write_debug_hub_link_artifact(tmp_path, ui_xml, token)
+    redacted = (tmp_path / "debug-hub-link.xml").read_text(encoding="utf-8")
+
+    assert token not in redacted
+    assert smoke.DEBUG_HUB_TOKEN_PLACEHOLDER in redacted
+    ET.fromstring(redacted)  # noqa: S314
+
+
+def test_clear_focused_text_field_uses_bounded_keyevents(tmp_path: Path) -> None:
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    target = smoke.DeviceTarget(serial=SERIAL, model="moto g - 2025")
+    seen: list[tuple[str, ...]] = []
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        seen.append(tuple(command))
+        return CommandResult(0, "ok", "")
+
+    result = smoke.clear_focused_text_field(
+        adb=adb,
+        target=target,
+        root=tmp_path,
+        runner=runner,
+        timeout_seconds=30,
+        step_name="Clear input",
+    )
+
+    assert result.status is StepStatus.OK
+    keyevents = adb_args(seen[0])
+    assert keyevents[:4] == ("shell", "input", "keyevent", "KEYCODE_MOVE_END")
+    assert keyevents.count("KEYCODE_DEL") == smoke.MAX_INPUT_TEXT_LENGTH
 
 
 def test_command_window_requires_markers_after_matching_command() -> None:

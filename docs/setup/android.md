@@ -353,7 +353,9 @@ That optional path configures only the fixed localhost debug link when a token
 file is provided, types only an allowlisted MAC smoke command, and verifies a
 fresh visible task card. The default is `check my Mac status` for
 `mac.system_info`; the process-list route can be smoked with
-`--mac-command "What is running on my Mac"` for `mac.processes.list`. The token
+`--mac-command "What is running on my Mac"` for `mac.processes.list`, and the
+ROM-status route can be smoked with `--mac-command "Show GOFFY ROM status"` for
+`goffy.rom.status`. The token
 file contains the real raw bearer token; for ADB-safe entry it must be one line,
 24..120 characters, using only
 `A-Z`, `a-z`, `0-9`, `.`, `_`, or `-`. Rendered reports and saved debug-link

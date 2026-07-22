@@ -36,6 +36,7 @@ HUB_REVERSE_ENDPOINT = "tcp:8787"
 DEFAULT_PHONE_COMMAND = "check my battery level"
 DEFAULT_MAC_COMMAND = "check my Mac status"
 DEFAULT_MAC_PROCESS_COMMAND = "What is running on my Mac"
+DEFAULT_MAC_ROM_STATUS_COMMAND = "Show GOFFY ROM status"
 DEFAULT_MEMORY_LIST_COMMAND = "what do you remember"
 DEFAULT_MEMORY_TEXT_PREFIX = "goffy memory smoke"
 DEBUG_HUB_ENDPOINT = "ws://127.0.0.1:8787/ws/v1"
@@ -49,7 +50,7 @@ INITIAL_RESULT_SETTLE_POLLS = 3
 SEND_BOTTOM_SAFE_MARGIN_PX = 96
 MOTO_G_MODEL_PATTERN = re.compile(r"\bmoto\s*g\b|moto_g", re.IGNORECASE)
 DEVICE_SERIAL_PLACEHOLDER = "<device-serial>"
-DEBUG_HUB_TOKEN_PLACEHOLDER = "<redacted-debug-hub-token>"  # noqa: S105
+DEBUG_HUB_TOKEN_PLACEHOLDER = "REDACTED_DEBUG_HUB_TOKEN"  # noqa: S105
 MAC_SMOKE_MARKERS = {
     DEFAULT_MAC_COMMAND.casefold(): (
         "VERIFIED",
@@ -60,6 +61,12 @@ MAC_SMOKE_MARKERS = {
         "VERIFIED",
         "MAC PROCESSES",
         "mac.processes.list output matched the registered schema.",
+    ),
+    DEFAULT_MAC_ROM_STATUS_COMMAND.casefold(): (
+        "VERIFIED",
+        "GOFFY ROM-0",
+        "MAC  /  goffy.rom.status  /  SAFE",
+        "goffy.rom.status output matched the registered schema.",
     ),
 }
 TASK_CARD_STATUS_TEXTS = frozenset(
@@ -95,12 +102,22 @@ SEND_REVEAL_SWIPES = (
     ("360", "1450", "360", "650", "450"),
     ("360", "650", "360", "1450", "450"),
 )
+DEBUG_HUB_SETUP_REVEAL_SWIPES = (
+    ("360", "1450", "360", "650", "450"),
+    ("360", "1450", "360", "650", "450"),
+    ("360", "1450", "360", "650", "450"),
+    ("360", "1450", "360", "650", "450"),
+)
 TIMELINE_REVEAL_SWIPES = (
     ("360", "1450", "360", "650", "450"),
     ("360", "1450", "360", "650", "450"),
     ("360", "1450", "360", "650", "450"),
 )
 HOME_TOP_RESTORE_SWIPES = (
+    ("360", "650", "360", "1450", "450"),
+    ("360", "650", "360", "1450", "450"),
+    ("360", "650", "360", "1450", "450"),
+    ("360", "650", "360", "1450", "450"),
     ("360", "650", "360", "1450", "450"),
     ("360", "650", "360", "1450", "450"),
     ("360", "650", "360", "1450", "450"),
@@ -169,6 +186,7 @@ class UiNode:
     enabled: bool
     clickable: bool
     password: bool
+    focused: bool
 
     @property
     def center(self) -> tuple[int, int]:
@@ -844,11 +862,12 @@ def mac_smoke_markers(command: str) -> tuple[str, ...]:
 
 
 def mac_tool_for_smoke(command: str) -> str:
-    return (
-        "mac.processes.list"
-        if command.casefold() == DEFAULT_MAC_PROCESS_COMMAND.casefold()
-        else "mac.system_info"
-    )
+    normalized = command.casefold()
+    if normalized == DEFAULT_MAC_PROCESS_COMMAND.casefold():
+        return "mac.processes.list"
+    if normalized == DEFAULT_MAC_ROM_STATUS_COMMAND.casefold():
+        return "goffy.rom.status"
+    return "mac.system_info"
 
 
 def resolve_debug_hub_token_file(root: Path, token_file: Path) -> Path:
@@ -1235,17 +1254,9 @@ def configure_debug_hub_link(
         runner=runner,
         timeout_seconds=timeout_seconds,
     )
-    if DEBUG_HUB_ENDPOINT in ui_text and "NOT CONFIGURED" not in ui_text:
-        write_debug_hub_link_artifact(output_directory, ui_text, token)
-        return DeviceSmokeStep(
-            name="Configure debug Hub link",
-            status=StepStatus.OK,
-            mutates_device=True,
-            detail="fixed localhost debug Hub link was already configured",
-            artifact="debug-hub-link.xml",
-        )
-
-    if "Development bearer token" not in ui_text:
+    for attempt in range(len(DEBUG_HUB_SETUP_REVEAL_SWIPES) + 1):
+        if DEBUG_HUB_ENDPOINT in ui_text and "Development bearer token" in ui_text:
+            break
         edit = find_node(ui_text, text="Edit")
         if edit is not None:
             tap_edit = tap_center(
@@ -1267,6 +1278,50 @@ def configure_debug_hub_link(
                 runner=runner,
                 timeout_seconds=timeout_seconds,
             )
+            continue
+        if attempt == len(DEBUG_HUB_SETUP_REVEAL_SWIPES):
+            break
+        start_x, start_y, end_x, end_y, duration_ms = DEBUG_HUB_SETUP_REVEAL_SWIPES[attempt]
+        reveal = execute_step(
+            name="Configure debug Hub link: Reveal setup card",
+            command=adb_command(
+                adb,
+                target,
+                "shell",
+                "input",
+                "swipe",
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                duration_ms,
+            ),
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            mutates_device=True,
+            display_command=display_adb_command(
+                adb,
+                "shell",
+                "input",
+                "swipe",
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                duration_ms,
+            ),
+        )
+        if reveal.status is not StepStatus.OK:
+            return reveal
+        time.sleep(1)
+        ui_text = latest_ui_text(
+            adb=adb,
+            target=target,
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+        )
 
     if DEBUG_HUB_ENDPOINT not in ui_text or "Development bearer token" not in ui_text:
         write_debug_hub_link_artifact(output_directory, ui_text, token)
@@ -1291,17 +1346,52 @@ def configure_debug_hub_link(
             artifact="debug-hub-link.xml",
         )
 
-    tap_token = tap_center(
-        adb,
-        target,
-        root,
-        runner,
-        timeout_seconds,
-        token_field,
-        step_name="Configure debug Hub link: Focus token input",
-    )
-    if tap_token.status is not StepStatus.OK:
-        return tap_token
+    focused_token_field = None
+    focus_ui_text = ui_text
+    for attempt in range(3):
+        if attempt == 2:
+            tap_token = tap_center(
+                adb,
+                target,
+                root,
+                runner,
+                timeout_seconds,
+                token_field,
+                step_name="Configure debug Hub link: Focus token input",
+            )
+        else:
+            tap_token = tap_text_field_entry_area(
+                adb,
+                target,
+                root,
+                runner,
+                timeout_seconds,
+                token_field,
+                step_name="Configure debug Hub link: Focus token input",
+            )
+        if tap_token.status is not StepStatus.OK:
+            return tap_token
+        time.sleep(1)
+        focus_ui_text = latest_ui_text(
+            adb=adb,
+            target=target,
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+        )
+        focused_token_field = find_focused_debug_token_field(focus_ui_text)
+        if focused_token_field is not None:
+            break
+    if focused_token_field is None:
+        write_debug_hub_link_artifact(output_directory, focus_ui_text, token)
+        return DeviceSmokeStep(
+            name="Configure debug Hub link",
+            status=StepStatus.FAIL,
+            mutates_device=True,
+            detail="development bearer token input did not receive focus",
+            remediation="Inspect debug-hub-link.xml and adjust the bounded token-field tap target.",
+            artifact="debug-hub-link.xml",
+        )
 
     typed = execute_step(
         name="Configure debug Hub link: Type token",
@@ -1335,6 +1425,7 @@ def configure_debug_hub_link(
     time.sleep(1)
 
     debug_link = None
+    debug_link_label_seen = False
     for attempt in range(3):
         ui_text = latest_ui_text(
             adb=adb,
@@ -1343,7 +1434,15 @@ def configure_debug_hub_link(
             runner=runner,
             timeout_seconds=timeout_seconds,
         )
-        debug_link = find_node(ui_text, text="Debug link")
+        debug_link_label_seen = (
+            debug_link_label_seen
+            or find_node(
+                ui_text,
+                text="Debug link",
+            )
+            is not None
+        )
+        debug_link = find_enabled_action_for_text(ui_text, text="Debug link")
         if debug_link is not None:
             break
         if attempt == 2:
@@ -1375,12 +1474,25 @@ def configure_debug_hub_link(
 
     if debug_link is None:
         write_debug_hub_link_artifact(output_directory, ui_text, token)
+        if token_in_unmasked_edit_text(ui_text, token):
+            detail = "development token was entered into a non-password field"
+            remediation = (
+                "Inspect debug-hub-link.xml; token focus was not on the development bearer field."
+            )
+        elif debug_link_label_seen:
+            detail = "Debug link button stayed disabled after token entry"
+            remediation = (
+                "Verify the development bearer token field accepted input and matches the Hub."
+            )
+        else:
+            detail = "Debug link button was not visible after bounded scroll"
+            remediation = "Check the saved UI XML for setup-card layout changes."
         return DeviceSmokeStep(
             name="Configure debug Hub link",
             status=StepStatus.FAIL,
             mutates_device=True,
-            detail="Debug link button was not visible after bounded scroll",
-            remediation="Check the saved UI XML for setup-card layout changes.",
+            detail=detail,
+            remediation=remediation,
             artifact="debug-hub-link.xml",
         )
 
@@ -1558,6 +1670,18 @@ def submit_and_verify_command(
     if tap.status is not StepStatus.OK:
         return tap
     time.sleep(2.5)
+    if command_field.text.strip() and not command_field_matches(command_field, command):
+        cleared = clear_focused_text_field(
+            adb=adb,
+            target=target,
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            step_name=f"{step_name}: Clear stale command input",
+        )
+        if cleared.status is not StepStatus.OK:
+            return cleared
+        time.sleep(0.5)
     typed = execute_step(
         name=f"{step_name}: Type command",
         command=adb_command(adb, target, "shell", "input", "text", adb_input_text(command)),
@@ -2062,6 +2186,7 @@ def nodes_from_xml(xml_text: str) -> tuple[UiNode, ...]:
                 enabled=element.attrib.get("enabled") == "true",
                 clickable=element.attrib.get("clickable") == "true",
                 password=element.attrib.get("password") == "true",
+                focused=element.attrib.get("focused") == "true",
             )
         )
     return tuple(nodes)
@@ -2093,14 +2218,50 @@ def find_command_field(xml_text: str) -> UiNode | None:
 def find_debug_token_field(xml_text: str) -> UiNode | None:
     if "Development bearer token" not in xml_text:
         return None
+    nodes = nodes_from_xml(xml_text)
+    labels = [node for node in nodes if node.text == "Development bearer token"]
     fields = [
-        node
-        for node in nodes_from_xml(xml_text)
-        if node.class_name == "android.widget.EditText" and node.enabled
+        node for node in nodes if node.class_name == "android.widget.EditText" and node.enabled
     ]
-    if len(fields) < 2:
+    if not labels or not fields:
         return None
-    return max(fields, key=lambda node: node.bounds[1])
+    label = labels[-1]
+    labelled_fields = [field for field in fields if field_is_near_label(field, label)]
+    if not labelled_fields:
+        return None
+    return min(labelled_fields, key=lambda field: field_label_distance(field, label))
+
+
+def find_focused_debug_token_field(xml_text: str) -> UiNode | None:
+    token_field = find_debug_token_field(xml_text)
+    if token_field is None or not token_field.focused:
+        return None
+    return token_field
+
+
+def field_is_near_label(field: UiNode, label: UiNode) -> bool:
+    field_left, field_top, field_right, field_bottom = field.bounds
+    label_left, label_top, label_right, label_bottom = label.bounds
+    horizontally_overlaps = field_left <= label_right and field_right >= label_left
+    vertically_contains_or_follows = (
+        field_top <= label_bottom + 80 and field_bottom >= label_top - 8
+    )
+    return horizontally_overlaps and vertically_contains_or_follows
+
+
+def field_label_distance(field: UiNode, label: UiNode) -> int:
+    _, field_top, _, field_bottom = field.bounds
+    _, label_top, _, label_bottom = label.bounds
+    if field_top <= label_top and field_bottom >= label_bottom:
+        return 0
+    return min(abs(field_top - label_bottom), abs(field_bottom - label_top))
+
+
+def token_in_unmasked_edit_text(xml_text: str, token: str) -> bool:
+    return any(
+        node.text == token and node.class_name == "android.widget.EditText" and not node.password
+        for node in nodes_from_xml(xml_text)
+    )
 
 
 def find_node(xml_text: str, *, text: str) -> UiNode | None:
@@ -2108,6 +2269,32 @@ def find_node(xml_text: str, *, text: str) -> UiNode | None:
         if node.text == text and node.enabled:
             return node
     return None
+
+
+def find_enabled_action_for_text(xml_text: str, *, text: str) -> UiNode | None:
+    nodes = nodes_from_xml(xml_text)
+    labels = [node for node in nodes if node.text == text and node.enabled]
+    for label in labels:
+        label_x, label_y = label.center
+        containing_actions = [
+            node
+            for node in nodes
+            if node.clickable
+            and node.bounds[0] <= label_x <= node.bounds[2]
+            and node.bounds[1] <= label_y <= node.bounds[3]
+        ]
+        if containing_actions:
+            enabled_actions = [node for node in containing_actions if node.enabled]
+            if enabled_actions:
+                return min(enabled_actions, key=node_area)
+            continue
+        return label
+    return None
+
+
+def node_area(node: UiNode) -> int:
+    left, top, right, bottom = node.bounds
+    return (right - left) * (bottom - top)
 
 
 def find_send_control(xml_text: str, *, command_field: UiNode) -> UiNode | None:
@@ -2488,6 +2675,58 @@ def tap_center(
         timeout_seconds=timeout_seconds,
         mutates_device=True,
         display_command=display_adb_command(adb, "shell", "input", "tap", str(x), str(y)),
+    )
+
+
+def tap_text_field_entry_area(
+    adb: Path,
+    target: DeviceTarget,
+    root: Path,
+    runner: CommandRunner,
+    timeout_seconds: int,
+    node: UiNode,
+    *,
+    step_name: str = "Tap text field",
+) -> DeviceSmokeStep:
+    left, top, right, bottom = node.bounds
+    x = max(left + 24, right - 48)
+    y = min(bottom - 8, max(top + 8, bottom - 20))
+    return execute_step(
+        name=step_name,
+        command=adb_command(adb, target, "shell", "input", "tap", str(x), str(y)),
+        root=root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+        mutates_device=True,
+        display_command=display_adb_command(adb, "shell", "input", "tap", str(x), str(y)),
+    )
+
+
+def clear_focused_text_field(
+    *,
+    adb: Path,
+    target: DeviceTarget,
+    root: Path,
+    runner: CommandRunner,
+    timeout_seconds: int,
+    step_name: str,
+) -> DeviceSmokeStep:
+    delete_keyevents = ("KEYCODE_MOVE_END",) + ("KEYCODE_DEL",) * MAX_INPUT_TEXT_LENGTH
+    return execute_step(
+        name=step_name,
+        command=adb_command(adb, target, "shell", "input", "keyevent", *delete_keyevents),
+        root=root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+        mutates_device=True,
+        display_command=display_adb_command(
+            adb,
+            "shell",
+            "input",
+            "keyevent",
+            "KEYCODE_MOVE_END",
+            f"KEYCODE_DELx{MAX_INPUT_TEXT_LENGTH}",
+        ),
     )
 
 
