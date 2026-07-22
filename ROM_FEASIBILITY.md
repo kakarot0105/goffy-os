@@ -126,19 +126,20 @@ The ROM-0 planning and DSU staging guide is in
 Manual restore/unlock evidence requirements are in
 [`docs/setup/rom-0-manual-gates.md`](docs/setup/rom-0-manual-gates.md).
 
-To produce a single safe "what do I do next?" packet for the human checks, run:
+To refresh the current read-only probe and produce a single safe "what do I do
+next?" packet for the human checks, run:
 
 ```bash
-.venv/bin/python scripts/create_rom0_manual_action_packet.py \
-  .goffy-validation/rom-feasibility-current.json \
-  --output .goffy-validation/rom-0-manual-action-packet.md
+.venv/bin/python scripts/refresh_rom0_action_packet.py
 ```
 
 The packet is read-only/template-only. It summarizes missing OEM/Motorola
 unlock eligibility, stock-restore evidence, and official GSI candidate evidence,
 links those actions to the typed GOFFY evidence helpers, redacts the device
 serial placeholder, and rejects any unlock, flash, erase, or bootloader-reboot
-command authority.
+command authority. The refresh command reports `BLOCKED` while ROM gates are
+missing or the bootloader probe is still locked; that is expected and safer than
+claiming success before ROM-0 is ready.
 
 ## First ROM Milestone
 
@@ -259,6 +260,9 @@ Read-only source refresh on 2026-07-22:
   `W1VKS36H.9-12-9-8-2` ref.
 - GitHub metadata reports `ponces/treble_aosp` as Apache-2.0 but archived, so
   it stays a secondary GSI reference/candidate, not an actively maintained base.
+- DSU Sideloader remains useful prior art for later UX, but it is not imported
+  into the ROM-0 refresh path because that path must stay read-only and
+  non-installing.
 
 - Official kernel candidate: `MotorolaMobilityLLC/kernel-mtk`.
   Decision: `BLOCKED_UNTIL_EXACT_KANSAS_BUILD_MATCH`.
@@ -288,6 +292,8 @@ Read-only source refresh on 2026-07-22:
 These decisions are emitted by
 [`scripts/create_rom_planning_checklist.py`](scripts/create_rom_planning_checklist.py)
 under "Reuse Prior Art" so generated ROM-0 checklists carry the same reuse gate.
+The current refresh helper reuses GOFFY's typed probe, evidence, and packet
+validators instead of external installer or flashing automation.
 
 ## ROM Packaging Readiness
 

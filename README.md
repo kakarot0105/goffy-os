@@ -436,16 +436,22 @@ validate agent policy, Hub pairing, audit, local tools, and model behavior befor
 flashing anything. It is not the final product if the Moto `kansas` hardware can
 be unlocked and boot a recoverable GSI or custom ROM safely.
 
-For the next ROM-0 evidence step, generate a safe manual action packet from the
-latest read-only probe. It tells the human exactly which restore/unlock evidence
-and official GSI candidate evidence is missing without emitting unlock, flash,
-erase, or reboot commands:
+For the next ROM-0 evidence step, refresh the read-only probe and safe manual
+action packet in one command. It tells the human exactly which restore/unlock
+evidence and official GSI candidate evidence is missing without emitting unlock,
+flash, erase, or reboot commands:
 
 ```bash
-.venv/bin/python scripts/create_rom0_manual_action_packet.py \
-  .goffy-validation/rom-feasibility-current.json \
-  --output .goffy-validation/rom-0-manual-action-packet.md
+.venv/bin/python scripts/refresh_rom0_action_packet.py
 ```
+
+This writes `.goffy-validation/rom-feasibility-current.json`,
+`.goffy-validation/rom-0-manual-action-packet.md`,
+`.goffy-validation/rom-0-manual-action-packet.json`, and
+`.goffy-validation/rom-0-refresh-report.json`. It consumes existing evidence
+files only when they validate cleanly; invalid evidence fails closed in the
+refresh report. A blocked ROM state returns a blocked report instead of top-level
+success even when the refresh artifacts were written correctly.
 
 Then generate a local manual-gates template before editing evidence by hand:
 
