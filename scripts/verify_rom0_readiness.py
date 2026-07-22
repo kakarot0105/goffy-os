@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
@@ -17,6 +18,16 @@ if __package__ in {None, ""} and str(ROOT) not in sys.path:
 from scripts.create_aosp_product_import import (  # noqa: E402
     AospProductImportError,
     create_aosp_product_import_report,
+)
+from scripts.create_rom_fastboot_evidence import (  # noqa: E402
+    ABSOLUTE_POSIX_PATH,
+    ABSOLUTE_WINDOWS_PATH,
+    FastbootStatus,
+    command_label_allowed,
+    parse_fastboot_devices,
+)
+from scripts.create_rom_fastboot_evidence import (  # noqa: E402
+    JSON_SCHEMA_VERSION as FASTBOOT_SCHEMA_VERSION,
 )
 from scripts.create_rom_gsi_candidate_evidence import (  # noqa: E402
     ARTIFACT_FAMILY_ARCHITECTURES,
@@ -79,6 +90,43 @@ GSI_SAFETY_KEYS = frozenset(
         "local_path_redacted",
     )
 )
+FASTBOOT_TOP_LEVEL_KEYS = frozenset(
+    (
+        "schema_version",
+        "generated_at",
+        "ok",
+        "status",
+        "destructive_actions",
+        "host",
+        "manual_bootloader_check",
+        "commands",
+        "blockers",
+        "warnings",
+    )
+)
+FASTBOOT_HOST_KEYS = frozenset(("fastboot", "fastboot_path", "fastboot_version"))
+FASTBOOT_MANUAL_CHECK_KEYS = frozenset(
+    (
+        "requested",
+        "bootloader_device_visible",
+        "bootloader_device_count",
+        "serials_redacted",
+    )
+)
+FASTBOOT_COMMAND_KEYS = frozenset(("label", "exit_code", "timed_out", "stdout", "stderr"))
+SAFE_FASTBOOT_WARNINGS = frozenset(
+    ("manual bootloader visibility was not checked; do not reboot automatically",)
+)
+SAFE_FASTBOOT_BLOCKERS = frozenset(
+    (
+        "trusted Android SDK fastboot executable is unavailable",
+        "fastboot --version failed",
+        "fastboot version could not be parsed",
+        "fastboot devices failed",
+        "no manually booted fastboot device is visible",
+    )
+)
+REDACTED_FASTBOOT_DEVICE_LINE_PATTERN = re.compile(r"^<device-serial>\s+fastboot(?:\s|$)")
 
 
 class Rom0ReadinessStatus(StrEnum):
@@ -106,11 +154,18 @@ class Rom0ReadinessReport:
     next_steps: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class FastbootCommandSummary:
+    successful_labels: frozenset[str]
+    redacted_fastboot_device_count: int
+
+
 def build_readiness_report(
     *,
     probe_json: Path | None,
     manual_gates_json: Path | None,
     signed_apk: Path | None,
+    fastboot_evidence_json: Path | None = None,
     gsi_candidate_evidence_json: Path | None = None,
     signing_plan_json: Path | None = None,
     apk_verification_json: Path | None = None,
@@ -129,6 +184,7 @@ def build_readiness_report(
         rom_descriptors,
         rom_probe,
         manual_gates,
+        validate_fastboot_evidence(fastboot_evidence_json),
         validate_gsi_candidate_evidence(gsi_candidate_evidence_json),
         validate_release_signing_plan_evidence(
             signing_plan_json,
@@ -256,6 +312,245 @@ def validate_manual_gate_evidence(
         blockers=tuple(dict.fromkeys(blockers)),
         warnings=report.warnings,
         evidence=report.accepted_evidence,
+    )
+
+
+def validate_fastboot_evidence(path: Path | None) -> ReadinessSection:
+    if path is None:
+        return ReadinessSection(
+            name="fastboot_evidence",
+            ok=False,
+            blockers=("ROM fastboot evidence JSON was not supplied",),
+        )
+    try:
+        payload = load_json_object(path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return ReadinessSection(name="fastboot_evidence", ok=False, blockers=(str(exc),))
+
+    blockers: list[str] = []
+    warnings = filtered_fastboot_messages(
+        string_items(payload.get("warnings")),
+        label="warnings",
+        blockers=blockers,
+    )
+    append_unsupported_key_blockers(
+        payload,
+        allowed=FASTBOOT_TOP_LEVEL_KEYS,
+        label="fastboot evidence",
+        blockers=blockers,
+    )
+    if payload.get("schema_version") != FASTBOOT_SCHEMA_VERSION:
+        blockers.append("ROM fastboot evidence schema_version mismatch")
+    payload_blockers = filtered_fastboot_messages(
+        string_items(payload.get("blockers")),
+        label="blockers",
+        blockers=blockers,
+    )
+    if payload.get("ok") is not True:
+        blockers.extend(payload_blockers or ["ROM fastboot evidence is not OK"])
+    elif payload_blockers:
+        blockers.append("ROM fastboot evidence blockers must be empty when ok is true")
+    if payload.get("destructive_actions") != "withheld":
+        blockers.append("ROM fastboot evidence destructive_actions must be withheld")
+
+    status = str(payload.get("status", ""))
+    if status not in {FastbootStatus.HOST_READY, FastbootStatus.MANUAL_BOOTLOADER_VISIBLE}:
+        blockers.append(
+            "ROM fastboot evidence status must be HOST_READY or MANUAL_BOOTLOADER_VISIBLE"
+        )
+
+    host = mapping_value(payload.get("host"))
+    append_unsupported_key_blockers(
+        host,
+        allowed=FASTBOOT_HOST_KEYS,
+        label="fastboot host evidence",
+        blockers=blockers,
+    )
+    if host.get("fastboot") != "available":
+        blockers.append("ROM fastboot evidence must show trusted fastboot available")
+    if host.get("fastboot_path") != "<android-sdk>/platform-tools/fastboot":
+        blockers.append("ROM fastboot evidence fastboot_path must be redacted")
+    if not host.get("fastboot_version"):
+        blockers.append("ROM fastboot evidence fastboot_version is missing")
+
+    manual = validate_fastboot_manual_check(payload.get("manual_bootloader_check"), blockers)
+    command_summary = validate_fastboot_commands(payload.get("commands"), blockers)
+    validate_fastboot_status_consistency(
+        status=status,
+        manual=manual,
+        command_summary=command_summary,
+        blockers=blockers,
+    )
+    if not manual.get("requested"):
+        warnings.append("manual bootloader-mode fastboot visibility is still pending")
+
+    return ReadinessSection(
+        name="fastboot_evidence",
+        ok=not blockers,
+        blockers=tuple(dict.fromkeys(blockers)),
+        warnings=tuple(dict.fromkeys(warnings)),
+        evidence={
+            "status": status,
+            "fastboot_version": host.get("fastboot_version", ""),
+            "manual_bootloader_check_requested": str(manual.get("requested", False)).lower(),
+            "bootloader_device_visible": str(
+                manual.get("bootloader_device_visible", False)
+            ).lower(),
+            "bootloader_device_count": str(manual.get("bootloader_device_count", 0)),
+        },
+    )
+
+
+def validate_fastboot_manual_check(
+    value: object,
+    blockers: list[str],
+) -> Mapping[str, object]:
+    if not isinstance(value, Mapping):
+        blockers.append("ROM fastboot evidence manual_bootloader_check must be an object")
+        return {}
+    append_unsupported_key_blockers(
+        value,
+        allowed=FASTBOOT_MANUAL_CHECK_KEYS,
+        label="fastboot manual bootloader evidence",
+        blockers=blockers,
+    )
+    if value.get("serials_redacted") is not True:
+        blockers.append("ROM fastboot evidence serials_redacted must be true")
+    requested = value.get("requested")
+    visible = value.get("bootloader_device_visible")
+    count = value.get("bootloader_device_count")
+    if not isinstance(requested, bool):
+        blockers.append("ROM fastboot evidence requested must be boolean")
+    if not isinstance(visible, bool):
+        blockers.append("ROM fastboot evidence bootloader_device_visible must be boolean")
+    if not isinstance(count, int) or count < 0:
+        blockers.append(
+            "ROM fastboot evidence bootloader_device_count must be a non-negative integer"
+        )
+    if requested is True and visible is not True:
+        blockers.append("ROM fastboot evidence requested manual bootloader check found no device")
+    if visible is True and (not isinstance(count, int) or count < 1):
+        blockers.append("ROM fastboot evidence visible bootloader device count must be positive")
+    return value
+
+
+def validate_fastboot_status_consistency(
+    *,
+    status: str,
+    manual: Mapping[str, object],
+    command_summary: FastbootCommandSummary,
+    blockers: list[str],
+) -> None:
+    requested = manual.get("requested")
+    visible = manual.get("bootloader_device_visible")
+    count = manual.get("bootloader_device_count")
+    devices_count = command_summary.redacted_fastboot_device_count
+    successful_labels = command_summary.successful_labels
+
+    if status == FastbootStatus.HOST_READY:
+        if requested is not False or visible is not False or count != 0:
+            blockers.append("HOST_READY fastboot evidence must not claim bootloader visibility")
+        if "fastboot devices" in successful_labels or devices_count:
+            blockers.append("HOST_READY fastboot evidence must not include fastboot devices proof")
+    elif status == FastbootStatus.MANUAL_BOOTLOADER_VISIBLE:
+        if requested is not True or visible is not True or not isinstance(count, int) or count < 1:
+            blockers.append(
+                "MANUAL_BOOTLOADER_VISIBLE fastboot evidence requires visible manual check fields"
+            )
+        if "fastboot devices" not in successful_labels:
+            blockers.append(
+                "MANUAL_BOOTLOADER_VISIBLE fastboot evidence requires fastboot devices proof"
+            )
+        if devices_count < 1:
+            blockers.append(
+                "MANUAL_BOOTLOADER_VISIBLE fastboot evidence requires redacted device output"
+            )
+        elif isinstance(count, int) and count != devices_count:
+            blockers.append(
+                "MANUAL_BOOTLOADER_VISIBLE fastboot device count must match redacted output"
+            )
+
+
+def validate_fastboot_commands(value: object, blockers: list[str]) -> FastbootCommandSummary:
+    if not isinstance(value, list) or not value:
+        blockers.append("ROM fastboot evidence commands must include read-only command results")
+        return FastbootCommandSummary(frozenset(), 0)
+    labels: list[str] = []
+    successful_labels: set[str] = set()
+    redacted_fastboot_device_count = 0
+    for index, item in enumerate(value):
+        if not isinstance(item, Mapping):
+            blockers.append(f"ROM fastboot evidence command {index} must be an object")
+            continue
+        append_unsupported_key_blockers(
+            item,
+            allowed=FASTBOOT_COMMAND_KEYS,
+            label=f"fastboot command {index}",
+            blockers=blockers,
+        )
+        label = str(item.get("label", ""))
+        normalized_label = " ".join(label.lower().split())
+        labels.append(normalized_label)
+        label_allowed = command_label_allowed(label)
+        exit_clean = item.get("exit_code") == 0
+        did_not_timeout = item.get("timed_out") is False
+        if not label_allowed:
+            blockers.append(f"ROM fastboot evidence command {index} is not read-only")
+        if not exit_clean:
+            blockers.append(f"ROM fastboot evidence command {index} did not exit cleanly")
+        if not did_not_timeout:
+            blockers.append(f"ROM fastboot evidence command {index} timed out")
+        if label_allowed and exit_clean and did_not_timeout:
+            successful_labels.add(normalized_label)
+        for stream_name in ("stdout", "stderr"):
+            stream = str(item.get(stream_name, ""))
+            if contains_unredacted_fastboot_output(stream):
+                blockers.append(
+                    f"ROM fastboot evidence command {index} {stream_name} is not fully redacted"
+                )
+            if normalized_label == "fastboot devices":
+                redacted_fastboot_device_count += count_redacted_fastboot_devices(stream)
+    if "fastboot --version" not in labels:
+        blockers.append("ROM fastboot evidence must include fastboot --version")
+    return FastbootCommandSummary(
+        successful_labels=frozenset(successful_labels),
+        redacted_fastboot_device_count=redacted_fastboot_device_count,
+    )
+
+
+def contains_unredacted_fastboot_output(text: str) -> bool:
+    return (
+        bool(parse_fastboot_devices(text))
+        or ABSOLUTE_POSIX_PATH.search(text) is not None
+        or ABSOLUTE_WINDOWS_PATH.search(text) is not None
+    )
+
+
+def filtered_fastboot_messages(
+    messages: tuple[str, ...],
+    *,
+    label: str,
+    blockers: list[str],
+) -> list[str]:
+    safe_messages: list[str] = []
+    allowed_messages = (
+        SAFE_FASTBOOT_WARNINGS
+        if label == "warnings"
+        else SAFE_FASTBOOT_BLOCKERS
+        if label == "blockers"
+        else frozenset()
+    )
+    for message in messages:
+        if message not in allowed_messages or contains_unredacted_fastboot_output(message):
+            blockers.append(f"ROM fastboot evidence {label} contain unsupported or unredacted text")
+        else:
+            safe_messages.append(message)
+    return safe_messages
+
+
+def count_redacted_fastboot_devices(text: str) -> int:
+    return sum(
+        1 for line in text.splitlines() if REDACTED_FASTBOOT_DEVICE_LINE_PATTERN.match(line.strip())
     )
 
 
@@ -604,6 +899,11 @@ def next_steps(sections: tuple[ReadinessSection, ...]) -> tuple[str, ...]:
             )
         elif section.name == "manual_gates":
             steps.append("Complete ROM-0 manual gate evidence without secrets or live approval.")
+        elif section.name == "fastboot_evidence":
+            steps.append(
+                "Run the read-only fastboot evidence helper; a human must enter "
+                "bootloader mode before the optional visibility check."
+            )
         elif section.name == "gsi_candidate":
             steps.append(
                 "Create ROM GSI candidate evidence from a downloaded official Google "
@@ -713,6 +1013,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--probe-json", type=Path)
     parser.add_argument("--manual-gates-json", type=Path)
+    parser.add_argument("--fastboot-evidence-json", type=Path)
     parser.add_argument("--gsi-candidate-evidence-json", type=Path)
     parser.add_argument("--signing-plan-json", type=Path)
     parser.add_argument("--apk-verification-json", type=Path)
@@ -733,6 +1034,7 @@ def main(argv: list[str] | None = None) -> int:
     report = build_readiness_report(
         probe_json=args.probe_json,
         manual_gates_json=args.manual_gates_json,
+        fastboot_evidence_json=args.fastboot_evidence_json,
         gsi_candidate_evidence_json=args.gsi_candidate_evidence_json,
         signing_plan_json=args.signing_plan_json,
         apk_verification_json=args.apk_verification_json,

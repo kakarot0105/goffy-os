@@ -5,6 +5,7 @@ import struct
 from pathlib import Path
 
 import pytest
+from scripts.create_rom_fastboot_evidence import JSON_SCHEMA_VERSION as FASTBOOT_SCHEMA_VERSION
 from scripts.create_rom_gsi_candidate_evidence import (
     JSON_SCHEMA_VERSION as GSI_CANDIDATE_SCHEMA_VERSION,
 )
@@ -19,6 +20,7 @@ from scripts.verify_rom0_readiness import (
     build_readiness_report,
     main,
     render_markdown,
+    validate_fastboot_evidence,
     validate_gsi_candidate_evidence,
     validate_release_apk_verification_evidence,
     validate_release_signing_plan_evidence,
@@ -59,6 +61,10 @@ def test_rom0_readiness_blocks_without_external_evidence() -> None:
         in section(report, "manual_gates").blockers
     )
     assert (
+        "ROM fastboot evidence JSON was not supplied"
+        in section(report, "fastboot_evidence").blockers
+    )
+    assert (
         "ROM GSI candidate evidence JSON was not supplied"
         in section(report, "gsi_candidate").blockers
     )
@@ -77,6 +83,7 @@ def test_rom0_readiness_accepts_complete_non_destructive_evidence(tmp_path: Path
     probe = write_probe(tmp_path)
     rollback_doc = write_rollback_doc(tmp_path)
     manual = write_manual_gates(tmp_path, rollback_doc)
+    fastboot = write_fastboot_evidence(tmp_path)
     gsi_candidate = write_gsi_candidate_evidence(tmp_path)
     apk = write_signed_apk(tmp_path)
     signing_plan = write_signing_plan(tmp_path, apk)
@@ -85,6 +92,7 @@ def test_rom0_readiness_accepts_complete_non_destructive_evidence(tmp_path: Path
     report = build_readiness_report(
         probe_json=probe,
         manual_gates_json=manual,
+        fastboot_evidence_json=fastboot,
         gsi_candidate_evidence_json=gsi_candidate,
         signed_apk=apk,
         signing_plan_json=signing_plan,
@@ -96,6 +104,7 @@ def test_rom0_readiness_accepts_complete_non_destructive_evidence(tmp_path: Path
     assert report.ok
     assert report.status is Rom0ReadinessStatus.READY_FOR_HUMAN_REVIEW
     assert report.destructive_actions == "withheld"
+    assert evidence(report, "fastboot_evidence")["manual_bootloader_check_requested"] == "false"
     assert evidence(report, "gsi_candidate")["authorization"] == "NON_AUTHORIZING_EVIDENCE"
     assert evidence(report, "release_signing_plan")["keystore"] == "external"
     assert evidence(report, "release_apk_verification")["apk_signature_schemes"] == "v2"
@@ -408,6 +417,188 @@ def test_rom0_readiness_rejects_forged_gsi_action_name(tmp_path: Path) -> None:
     )
 
 
+def test_rom0_readiness_accepts_host_fastboot_evidence_with_manual_warning(
+    tmp_path: Path,
+) -> None:
+    fastboot = write_fastboot_evidence(tmp_path)
+
+    result = validate_fastboot_evidence(fastboot)
+
+    assert result.ok
+    assert result.evidence
+    assert result.evidence["status"] == "HOST_READY"
+    assert result.evidence["fastboot_version"] == "37.0.0-14910828"
+    assert result.evidence["manual_bootloader_check_requested"] == "false"
+    assert "manual bootloader-mode fastboot visibility is still pending" in result.warnings
+
+
+def test_rom0_readiness_accepts_manual_bootloader_fastboot_visibility(
+    tmp_path: Path,
+) -> None:
+    fastboot = write_fastboot_evidence(tmp_path, manual_visible=True)
+
+    result = validate_fastboot_evidence(fastboot)
+
+    assert result.ok
+    assert result.evidence
+    assert result.evidence["status"] == "MANUAL_BOOTLOADER_VISIBLE"
+    assert result.evidence["manual_bootloader_check_requested"] == "true"
+    assert result.evidence["bootloader_device_visible"] == "true"
+    assert result.evidence["bootloader_device_count"] == "1"
+    assert "manual bootloader-mode fastboot visibility is still pending" not in result.warnings
+
+
+def test_rom0_readiness_rejects_unredacted_fastboot_path(tmp_path: Path) -> None:
+    fastboot = write_fastboot_evidence(tmp_path)
+    payload = json.loads(fastboot.read_text(encoding="utf-8"))
+    payload["commands"][0]["stdout"] = (
+        "fastboot version 37.0.0-14910828\n"
+        "Installed as /Users/alice/Library/Android/sdk/platform-tools/fastboot"
+    )
+    fastboot.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_fastboot_evidence(fastboot)
+
+    assert not result.ok
+    assert "ROM fastboot evidence command 0 stdout is not fully redacted" in result.blockers
+
+
+def test_rom0_readiness_rejects_destructive_fastboot_command_label(tmp_path: Path) -> None:
+    fastboot = write_fastboot_evidence(tmp_path)
+    payload = json.loads(fastboot.read_text(encoding="utf-8"))
+    payload["commands"].append(
+        {
+            "label": "fastboot flash boot boot.img",
+            "exit_code": 0,
+            "timed_out": False,
+            "stdout": "",
+            "stderr": "",
+        }
+    )
+    fastboot.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_fastboot_evidence(fastboot)
+
+    assert not result.ok
+    assert "ROM fastboot evidence command 1 is not read-only" in result.blockers
+
+
+def test_rom0_readiness_rejects_manual_visible_status_without_manual_fields(
+    tmp_path: Path,
+) -> None:
+    fastboot = write_fastboot_evidence(tmp_path)
+    payload = json.loads(fastboot.read_text(encoding="utf-8"))
+    payload["status"] = "MANUAL_BOOTLOADER_VISIBLE"
+    fastboot.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_fastboot_evidence(fastboot)
+
+    assert not result.ok
+    assert (
+        "MANUAL_BOOTLOADER_VISIBLE fastboot evidence requires visible manual check fields"
+        in result.blockers
+    )
+    assert (
+        "MANUAL_BOOTLOADER_VISIBLE fastboot evidence requires fastboot devices proof"
+        in result.blockers
+    )
+
+
+def test_rom0_readiness_rejects_manual_visible_status_without_devices_command(
+    tmp_path: Path,
+) -> None:
+    fastboot = write_fastboot_evidence(tmp_path, manual_visible=True)
+    payload = json.loads(fastboot.read_text(encoding="utf-8"))
+    payload["commands"] = payload["commands"][:1]
+    fastboot.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_fastboot_evidence(fastboot)
+
+    assert not result.ok
+    assert (
+        "MANUAL_BOOTLOADER_VISIBLE fastboot evidence requires fastboot devices proof"
+        in result.blockers
+    )
+    assert (
+        "MANUAL_BOOTLOADER_VISIBLE fastboot evidence requires redacted device output"
+        in result.blockers
+    )
+
+
+def test_rom0_readiness_rejects_host_ready_with_devices_proof(tmp_path: Path) -> None:
+    fastboot = write_fastboot_evidence(tmp_path, manual_visible=True)
+    payload = json.loads(fastboot.read_text(encoding="utf-8"))
+    payload["status"] = "HOST_READY"
+    fastboot.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_fastboot_evidence(fastboot)
+
+    assert not result.ok
+    assert "HOST_READY fastboot evidence must not claim bootloader visibility" in result.blockers
+    assert "HOST_READY fastboot evidence must not include fastboot devices proof" in result.blockers
+
+
+def test_rom0_readiness_rejects_unredacted_fastboot_warning(tmp_path: Path) -> None:
+    fastboot = write_fastboot_evidence(tmp_path)
+    payload = json.loads(fastboot.read_text(encoding="utf-8"))
+    payload["warnings"] = ["serial ABCD1234 leaked from /Users/alice/android"]
+    fastboot.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_fastboot_evidence(fastboot)
+    warnings = "\n".join(result.warnings)
+
+    assert not result.ok
+    assert (
+        "ROM fastboot evidence warnings contain unsupported or unredacted text" in result.blockers
+    )
+    assert "ABCD1234" not in warnings
+    assert "/Users/alice" not in warnings
+
+
+def test_rom0_readiness_rejects_alphabetic_serial_like_fastboot_warning(
+    tmp_path: Path,
+) -> None:
+    fastboot = write_fastboot_evidence(tmp_path)
+    payload = json.loads(fastboot.read_text(encoding="utf-8"))
+    payload["warnings"] = ["serial abcdef leaked from operator note"]
+    fastboot.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_fastboot_evidence(fastboot)
+    warnings = "\n".join(result.warnings)
+
+    assert not result.ok
+    assert (
+        "ROM fastboot evidence warnings contain unsupported or unredacted text" in result.blockers
+    )
+    assert "abcdef" not in warnings
+
+
+@pytest.mark.parametrize(
+    "blocker_only_warning",
+    [
+        "trusted Android SDK fastboot executable is unavailable",
+        "fastboot devices failed",
+        "no manually booted fastboot device is visible",
+    ],
+)
+def test_rom0_readiness_rejects_blocker_only_fastboot_messages_in_warnings(
+    tmp_path: Path,
+    blocker_only_warning: str,
+) -> None:
+    fastboot = write_fastboot_evidence(tmp_path)
+    payload = json.loads(fastboot.read_text(encoding="utf-8"))
+    payload["warnings"] = [blocker_only_warning]
+    fastboot.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_fastboot_evidence(fastboot)
+
+    assert not result.ok
+    assert (
+        "ROM fastboot evidence warnings contain unsupported or unredacted text" in result.blockers
+    )
+    assert blocker_only_warning not in result.warnings
+
+
 def test_rom0_readiness_cli_wires_gsi_candidate_evidence_flag(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -415,6 +606,7 @@ def test_rom0_readiness_cli_wires_gsi_candidate_evidence_flag(
     probe = write_probe(tmp_path)
     rollback_doc = write_rollback_doc(tmp_path)
     manual = write_manual_gates(tmp_path, rollback_doc)
+    fastboot = write_fastboot_evidence(tmp_path)
     gsi_candidate = write_gsi_candidate_evidence(tmp_path)
     apk = write_signed_apk(tmp_path)
     signing_plan = write_signing_plan(tmp_path, apk)
@@ -424,6 +616,8 @@ def test_rom0_readiness_cli_wires_gsi_candidate_evidence_flag(
         str(probe),
         "--manual-gates-json",
         str(manual),
+        "--fastboot-evidence-json",
+        str(fastboot),
         "--signing-plan-json",
         str(signing_plan),
         "--apk-verification-json",
@@ -610,6 +804,59 @@ def write_manual_gates(
                     "sha256": "a" * 64,
                     "rollback_doc": rollback_doc.relative_to(tmp_path).as_posix(),
                 },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def write_fastboot_evidence(tmp_path: Path, *, manual_visible: bool = False) -> Path:
+    path = tmp_path / "rom-fastboot-evidence.json"
+    manual = {
+        "requested": manual_visible,
+        "bootloader_device_visible": manual_visible,
+        "bootloader_device_count": 1 if manual_visible else 0,
+        "serials_redacted": True,
+    }
+    commands = [
+        {
+            "label": "fastboot --version",
+            "exit_code": 0,
+            "timed_out": False,
+            "stdout": "fastboot version 37.0.0-14910828\nInstalled as <path>",
+            "stderr": "",
+        }
+    ]
+    if manual_visible:
+        commands.append(
+            {
+                "label": "fastboot devices",
+                "exit_code": 0,
+                "timed_out": False,
+                "stdout": "<device-serial>\tfastboot",
+                "stderr": "",
+            }
+        )
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": FASTBOOT_SCHEMA_VERSION,
+                "generated_at": "2026-07-22T00:00:00+00:00",
+                "ok": True,
+                "status": "MANUAL_BOOTLOADER_VISIBLE" if manual_visible else "HOST_READY",
+                "destructive_actions": "withheld",
+                "host": {
+                    "fastboot": "available",
+                    "fastboot_path": "<android-sdk>/platform-tools/fastboot",
+                    "fastboot_version": "37.0.0-14910828",
+                },
+                "manual_bootloader_check": manual,
+                "commands": commands,
+                "blockers": [],
+                "warnings": []
+                if manual_visible
+                else ["manual bootloader visibility was not checked; do not reboot automatically"],
             }
         ),
         encoding="utf-8",

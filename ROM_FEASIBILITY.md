@@ -380,6 +380,7 @@ phone or an AOSP checkout:
 .venv/bin/python scripts/verify_rom0_readiness.py \
   --probe-json .goffy-validation/rom-feasibility.json \
   --manual-gates-json .goffy-validation/rom-0-manual-gates.json \
+  --fastboot-evidence-json .goffy-validation/rom-fastboot-evidence.json \
   --gsi-candidate-evidence-json .goffy-validation/rom-gsi-candidate-evidence.json \
   --signing-plan-json .goffy-validation/rom-signing/release-signing-plan.json \
   --apk-verification-json .goffy-validation/rom-signing/release-apk-verification.json \
@@ -388,9 +389,10 @@ phone or an AOSP checkout:
   --evidence-root .
 ```
 
-The reporter still withholds unlock, flash, erase, and root authority. A passing
-report means the evidence is ready for human review, not that destructive ROM
-work has been approved.
+The reporter requires redacted fastboot evidence but still withholds unlock,
+flash, erase, boot, reboot, and root authority. A passing report means the
+evidence is ready for human review, not that destructive ROM work has been
+approved.
 
 ## Source Notes
 

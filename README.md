@@ -482,6 +482,20 @@ visibility check:
 This records redacted fastboot evidence only. It never reboots the phone and
 never emits unlock, flash, erase, wipe, boot, or reboot commands.
 
+Include that evidence in the ROM-0 readiness report:
+
+```bash
+.venv/bin/python scripts/verify_rom0_readiness.py \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
+  --manual-gates-json .goffy-validation/rom-0-manual-gates.json \
+  --fastboot-evidence-json .goffy-validation/rom-fastboot-evidence.json \
+  --gsi-candidate-evidence-json .goffy-validation/rom-gsi-candidate-evidence.json \
+  --signing-plan-json .goffy-validation/rom-signing/release-signing-plan.json \
+  --apk-verification-json .goffy-validation/rom-signing/release-apk-verification.json \
+  --signed-apk .goffy-validation/rom-signing/GoffyOS-signed.apk \
+  --evidence-root .
+```
+
 To record candidate integrity for the first official Google ARM64 GSI, first
 review Google's official GSI terms yourself. Only after personally accepting
 those terms, download the archive manually outside this repo, copy the SHA-256

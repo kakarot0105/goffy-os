@@ -38,6 +38,7 @@
 - [x] ROM-0 readiness reporter requires non-authorizing official GSI candidate evidence
 - [x] One-command read-only ROM-0 refresh for current probe and manual action packet
 - [x] Read-only host fastboot evidence helper without reboot/unlock/flash authority
+- [x] ROM-0 readiness reporter requires redacted read-only fastboot evidence
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Manual bootloader-mode fastboot visibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist
