@@ -4,6 +4,10 @@ import json
 import struct
 from pathlib import Path
 
+import pytest
+from scripts.create_rom_gsi_candidate_evidence import (
+    JSON_SCHEMA_VERSION as GSI_CANDIDATE_SCHEMA_VERSION,
+)
 from scripts.create_rom_release_signing_plan import JSON_SCHEMA_VERSION as SIGNING_SCHEMA_VERSION
 from scripts.rom_feasibility_probe import JSON_SCHEMA_VERSION as PROBE_SCHEMA_VERSION
 from scripts.validate_rom_manual_gates import JSON_SCHEMA_VERSION as MANUAL_SCHEMA_VERSION
@@ -13,7 +17,9 @@ from scripts.verify_rom0_readiness import (
     Rom0ReadinessReport,
     Rom0ReadinessStatus,
     build_readiness_report,
+    main,
     render_markdown,
+    validate_gsi_candidate_evidence,
     validate_release_apk_verification_evidence,
     validate_release_signing_plan_evidence,
 )
@@ -30,6 +36,11 @@ TARGET_DEVICE = {
     "build_fingerprint": BUILD_FINGERPRINT,
     "carrier": "tracfone",
 }
+GSI_ARTIFACT_NAME = "aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip"
+GSI_SHA256 = "2171cf0ea849f8eaa399f4bad2165fab80b0fd9e98d37723a705dca6c41e49ea"
+GSI_DOWNLOAD_URL = (
+    f"https://dl.google.com/developers/android/baklava/images/gsi/{GSI_ARTIFACT_NAME}"
+)
 
 
 def test_rom0_readiness_blocks_without_external_evidence() -> None:
@@ -48,6 +59,10 @@ def test_rom0_readiness_blocks_without_external_evidence() -> None:
         in section(report, "manual_gates").blockers
     )
     assert (
+        "ROM GSI candidate evidence JSON was not supplied"
+        in section(report, "gsi_candidate").blockers
+    )
+    assert (
         "ROM release signing plan JSON was not supplied"
         in section(report, "release_signing_plan").blockers
     )
@@ -62,6 +77,7 @@ def test_rom0_readiness_accepts_complete_non_destructive_evidence(tmp_path: Path
     probe = write_probe(tmp_path)
     rollback_doc = write_rollback_doc(tmp_path)
     manual = write_manual_gates(tmp_path, rollback_doc)
+    gsi_candidate = write_gsi_candidate_evidence(tmp_path)
     apk = write_signed_apk(tmp_path)
     signing_plan = write_signing_plan(tmp_path, apk)
     apk_verification = write_apk_verification(tmp_path, apk)
@@ -69,6 +85,7 @@ def test_rom0_readiness_accepts_complete_non_destructive_evidence(tmp_path: Path
     report = build_readiness_report(
         probe_json=probe,
         manual_gates_json=manual,
+        gsi_candidate_evidence_json=gsi_candidate,
         signed_apk=apk,
         signing_plan_json=signing_plan,
         apk_verification_json=apk_verification,
@@ -79,6 +96,7 @@ def test_rom0_readiness_accepts_complete_non_destructive_evidence(tmp_path: Path
     assert report.ok
     assert report.status is Rom0ReadinessStatus.READY_FOR_HUMAN_REVIEW
     assert report.destructive_actions == "withheld"
+    assert evidence(report, "gsi_candidate")["authorization"] == "NON_AUTHORIZING_EVIDENCE"
     assert evidence(report, "release_signing_plan")["keystore"] == "external"
     assert evidence(report, "release_apk_verification")["apk_signature_schemes"] == "v2"
     assert evidence(report, "aosp_import")["apk_signature_schemes"] == "v2"
@@ -315,6 +333,133 @@ def test_rom0_readiness_blocks_unofficial_stock_restore_source(tmp_path: Path) -
     )
 
 
+def test_rom0_readiness_accepts_valid_gsi_candidate_evidence(tmp_path: Path) -> None:
+    gsi_candidate = write_gsi_candidate_evidence(tmp_path)
+
+    result = validate_gsi_candidate_evidence(gsi_candidate)
+
+    assert result.ok
+    assert result.evidence
+    assert result.evidence["artifact_name"] == GSI_ARTIFACT_NAME
+    assert result.evidence["sha256"] == GSI_SHA256
+
+
+def test_rom0_readiness_rejects_forged_gsi_authorization(tmp_path: Path) -> None:
+    gsi_candidate = write_gsi_candidate_evidence(tmp_path)
+    payload = json.loads(gsi_candidate.read_text(encoding="utf-8"))
+    payload["safety"]["authorization"] = "APPROVED_FLASH"
+    gsi_candidate.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_gsi_candidate_evidence(gsi_candidate)
+
+    assert not result.ok
+    assert "GSI safety authorization must be NON_AUTHORIZING_EVIDENCE" in result.blockers
+
+
+def test_rom0_readiness_rejects_extra_gsi_local_path(tmp_path: Path) -> None:
+    gsi_candidate = write_gsi_candidate_evidence(tmp_path)
+    payload = json.loads(gsi_candidate.read_text(encoding="utf-8"))
+    payload["artifact"]["local_path"] = "/Users/example/Downloads/gsi.zip"
+    gsi_candidate.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_gsi_candidate_evidence(gsi_candidate)
+
+    assert not result.ok
+    assert "GSI artifact contains unsupported keys: ['local_path']" in result.blockers
+
+
+def test_rom0_readiness_rejects_gsi_metadata_mismatch(tmp_path: Path) -> None:
+    gsi_candidate = write_gsi_candidate_evidence(tmp_path)
+    payload = json.loads(gsi_candidate.read_text(encoding="utf-8"))
+    payload["candidate"]["architecture"] = "arm64+gms"
+    gsi_candidate.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_gsi_candidate_evidence(gsi_candidate)
+
+    assert not result.ok
+    assert "GSI artifact architecture must match GSI candidate architecture" in result.blockers
+
+
+def test_rom0_readiness_rejects_unofficial_gsi_download_url(tmp_path: Path) -> None:
+    gsi_candidate = write_gsi_candidate_evidence(tmp_path)
+    payload = json.loads(gsi_candidate.read_text(encoding="utf-8"))
+    payload["source"]["download_url"] = (
+        f"https://dl.google.com/developers/android/other/images/gsi/{GSI_ARTIFACT_NAME}"
+    )
+    gsi_candidate.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_gsi_candidate_evidence(gsi_candidate)
+
+    assert not result.ok
+    assert "download URL must be under the official Android GSI downloads path" in result.blockers
+
+
+def test_rom0_readiness_rejects_forged_gsi_action_name(tmp_path: Path) -> None:
+    gsi_candidate = write_gsi_candidate_evidence(tmp_path)
+    payload = json.loads(gsi_candidate.read_text(encoding="utf-8"))
+    payload["candidate"]["name"] = "Approved Flash GSI"
+    gsi_candidate.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = validate_gsi_candidate_evidence(gsi_candidate)
+
+    assert not result.ok
+    assert (
+        "GSI candidate name must not contain approval or device-action wording" in result.blockers
+    )
+
+
+def test_rom0_readiness_cli_wires_gsi_candidate_evidence_flag(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    probe = write_probe(tmp_path)
+    rollback_doc = write_rollback_doc(tmp_path)
+    manual = write_manual_gates(tmp_path, rollback_doc)
+    gsi_candidate = write_gsi_candidate_evidence(tmp_path)
+    apk = write_signed_apk(tmp_path)
+    signing_plan = write_signing_plan(tmp_path, apk)
+    apk_verification = write_apk_verification(tmp_path, apk)
+    base_args = [
+        "--probe-json",
+        str(probe),
+        "--manual-gates-json",
+        str(manual),
+        "--signing-plan-json",
+        str(signing_plan),
+        "--apk-verification-json",
+        str(apk_verification),
+        "--signed-apk",
+        str(apk),
+        "--aosp-root",
+        str(tmp_path / "aosp"),
+        "--evidence-root",
+        str(tmp_path),
+        "--json",
+    ]
+
+    blocked_exit = main(base_args)
+    blocked_payload = json.loads(capsys.readouterr().out)
+    ready_exit = main(
+        [
+            *base_args,
+            "--gsi-candidate-evidence-json",
+            str(gsi_candidate),
+        ]
+    )
+    ready_payload = json.loads(capsys.readouterr().out)
+
+    blocked_gsi = section_payload(blocked_payload, "gsi_candidate")
+    ready_gsi = section_payload(ready_payload, "gsi_candidate")
+    blocked_gsi_blockers = blocked_gsi["blockers"]
+
+    assert blocked_exit == 1
+    assert blocked_gsi["ok"] is False
+    assert isinstance(blocked_gsi_blockers, list)
+    assert "ROM GSI candidate evidence JSON was not supplied" in blocked_gsi_blockers
+    assert ready_exit == 0
+    assert ready_gsi["ok"] is True
+
+
 def test_rom0_readiness_surfaces_signing_plan_blockers(tmp_path: Path) -> None:
     probe = write_probe(tmp_path)
     rollback_doc = write_rollback_doc(tmp_path)
@@ -403,6 +548,16 @@ def evidence(report: Rom0ReadinessReport, name: str) -> dict[str, str]:
     return values
 
 
+def section_payload(payload: dict[str, object], name: str) -> dict[str, object]:
+    sections = payload["sections"]
+    assert isinstance(sections, list)
+    for item in sections:
+        assert isinstance(item, dict)
+        if item.get("name") == name:
+            return item
+    raise AssertionError(f"missing section {name}")
+
+
 def write_probe(tmp_path: Path, *, unlocked: bool = True) -> Path:
     path = tmp_path / "probe.json"
     path.write_text(
@@ -479,6 +634,46 @@ def write_rollback_doc(tmp_path: Path) -> Path:
                 TARGET_DEVICE["build_fingerprint"],
                 TARGET_DEVICE["carrier"],
             ]
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def write_gsi_candidate_evidence(tmp_path: Path) -> Path:
+    path = tmp_path / "rom-gsi-candidate-evidence.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": GSI_CANDIDATE_SCHEMA_VERSION,
+                "generated_at": "2026-07-22T00:00:00+00:00",
+                "ok": True,
+                "status": "ARTIFACT_CHECKSUM_VERIFIED",
+                "candidate": {
+                    "name": "Official Google Android 16 ARM64 GSI",
+                    "android_release": "16",
+                    "architecture": "arm64",
+                    "image_kind": "archive",
+                    "license_note_code": "official_google_gsi_terms",
+                },
+                "artifact": {
+                    "artifact_name": GSI_ARTIFACT_NAME,
+                    "byte_count": 123456789,
+                    "sha256": GSI_SHA256,
+                    "expected_sha256": GSI_SHA256,
+                },
+                "source": {
+                    "source_url": "https://developer.android.com/topic/generic-system-image/releases",
+                    "download_url": GSI_DOWNLOAD_URL,
+                },
+                "safety": {
+                    "execution_authority": "OFFLINE_HASH_ONLY",
+                    "device_mutation": "NONE",
+                    "authorization": "NON_AUTHORIZING_EVIDENCE",
+                    "destructive_actions": "WITHHELD",
+                    "local_path_redacted": True,
+                },
+            }
         ),
         encoding="utf-8",
     )

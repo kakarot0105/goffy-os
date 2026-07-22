@@ -35,6 +35,7 @@
 - [x] ROM-0 manual action packet emits probe-bound gate and validation commands
 - [x] ROM-0 stock restore evidence requires the official Motorola Software Fix source
 - [x] Offline official Google GSI candidate evidence verifier with SHA-256 matching
+- [x] ROM-0 readiness reporter requires non-authorizing official GSI candidate evidence
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist
 - [ ] Local official Google GSI archive evidence captured from a real downloaded artifact

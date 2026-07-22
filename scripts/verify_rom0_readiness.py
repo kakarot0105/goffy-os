@@ -18,6 +18,19 @@ from scripts.create_aosp_product_import import (  # noqa: E402
     AospProductImportError,
     create_aosp_product_import_report,
 )
+from scripts.create_rom_gsi_candidate_evidence import (  # noqa: E402
+    ARTIFACT_FAMILY_ARCHITECTURES,
+    CANDIDATE_NAME_PATTERN,
+    GsiCandidateStatus,
+    build_matches_android_release,
+    candidate_name_contains_action_word,
+    parse_gsi_artifact_name,
+    validate_official_download_url,
+    validate_official_source_url,
+)
+from scripts.create_rom_gsi_candidate_evidence import (  # noqa: E402
+    JSON_SCHEMA_VERSION as GSI_CANDIDATE_SCHEMA_VERSION,
+)
 from scripts.create_rom_release_signing_plan import (  # noqa: E402
     JSON_SCHEMA_VERSION as SIGNING_PLAN_SCHEMA_VERSION,
 )
@@ -28,6 +41,8 @@ from scripts.create_rom_release_signing_plan import (  # noqa: E402
 )
 from scripts.rom_feasibility_probe import JSON_SCHEMA_VERSION as PROBE_SCHEMA_VERSION  # noqa: E402
 from scripts.validate_rom_manual_gates import (  # noqa: E402
+    ARCHIVE_NAME_PATTERN,
+    SHA256_PATTERN,
     load_manual_gates,
     validate_manual_gates,
 )
@@ -46,6 +61,23 @@ TARGET_DEVICE_EVIDENCE_KEYS = (
     "hardware_sku",
     "build_fingerprint",
     "carrier",
+)
+GSI_TOP_LEVEL_KEYS = frozenset(
+    ("schema_version", "generated_at", "ok", "status", "candidate", "artifact", "source", "safety")
+)
+GSI_CANDIDATE_KEYS = frozenset(
+    ("name", "android_release", "architecture", "image_kind", "license_note_code")
+)
+GSI_ARTIFACT_KEYS = frozenset(("artifact_name", "byte_count", "sha256", "expected_sha256"))
+GSI_SOURCE_KEYS = frozenset(("source_url", "download_url"))
+GSI_SAFETY_KEYS = frozenset(
+    (
+        "execution_authority",
+        "device_mutation",
+        "authorization",
+        "destructive_actions",
+        "local_path_redacted",
+    )
 )
 
 
@@ -79,6 +111,7 @@ def build_readiness_report(
     probe_json: Path | None,
     manual_gates_json: Path | None,
     signed_apk: Path | None,
+    gsi_candidate_evidence_json: Path | None = None,
     signing_plan_json: Path | None = None,
     apk_verification_json: Path | None = None,
     aosp_root: Path = DEFAULT_AOSP_ROOT,
@@ -96,6 +129,7 @@ def build_readiness_report(
         rom_descriptors,
         rom_probe,
         manual_gates,
+        validate_gsi_candidate_evidence(gsi_candidate_evidence_json),
         validate_release_signing_plan_evidence(
             signing_plan_json,
             signed_apk=signed_apk,
@@ -223,6 +257,177 @@ def validate_manual_gate_evidence(
         warnings=report.warnings,
         evidence=report.accepted_evidence,
     )
+
+
+def validate_gsi_candidate_evidence(path: Path | None) -> ReadinessSection:
+    if path is None:
+        return ReadinessSection(
+            name="gsi_candidate",
+            ok=False,
+            blockers=("ROM GSI candidate evidence JSON was not supplied",),
+        )
+    try:
+        payload = load_json_object(path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return ReadinessSection(name="gsi_candidate", ok=False, blockers=(str(exc),))
+
+    blockers: list[str] = []
+    append_unsupported_key_blockers(
+        payload,
+        allowed=GSI_TOP_LEVEL_KEYS,
+        label="GSI candidate evidence",
+        blockers=blockers,
+    )
+    if payload.get("schema_version") != GSI_CANDIDATE_SCHEMA_VERSION:
+        blockers.append("ROM GSI candidate evidence schema_version mismatch")
+    if payload.get("ok") is not True:
+        blockers.append("ROM GSI candidate evidence is not OK")
+    if payload.get("status") != GsiCandidateStatus.ARTIFACT_CHECKSUM_VERIFIED:
+        blockers.append("ROM GSI candidate evidence status is not ARTIFACT_CHECKSUM_VERIFIED")
+
+    candidate = mapping_value(payload.get("candidate"))
+    artifact = mapping_value(payload.get("artifact"))
+    source = mapping_value(payload.get("source"))
+    safety_payload = payload.get("safety")
+    safety = mapping_value(safety_payload)
+    validate_gsi_candidate(candidate, blockers)
+    validate_gsi_artifact(artifact, blockers)
+    validate_gsi_artifact_binding(candidate, artifact, blockers)
+    validate_gsi_source(source, artifact_name=artifact.get("artifact_name", ""), blockers=blockers)
+    validate_gsi_safety(safety_payload, safety, blockers)
+
+    return ReadinessSection(
+        name="gsi_candidate",
+        ok=not blockers,
+        blockers=tuple(dict.fromkeys(blockers)),
+        evidence={
+            "status": str(payload.get("status", "")),
+            "candidate_name": candidate.get("name", ""),
+            "android_release": candidate.get("android_release", ""),
+            "architecture": candidate.get("architecture", ""),
+            "artifact_name": artifact.get("artifact_name", ""),
+            "sha256": artifact.get("sha256", "").lower(),
+            "source_url": source.get("source_url", ""),
+            "authorization": safety.get("authorization", ""),
+        },
+    )
+
+
+def validate_gsi_candidate(candidate: Mapping[str, str], blockers: list[str]) -> None:
+    append_unsupported_key_blockers(
+        candidate,
+        allowed=GSI_CANDIDATE_KEYS,
+        label="GSI candidate",
+        blockers=blockers,
+    )
+    if candidate.get("android_release") != "16":
+        blockers.append("GSI candidate Android release must be 16 for the Moto G ROM-0 target")
+    if candidate.get("architecture") not in {"arm64", "arm64+gms"}:
+        blockers.append("GSI candidate architecture must be arm64 or arm64+gms")
+    if candidate.get("image_kind") != "archive":
+        blockers.append("GSI candidate image_kind must be archive")
+    if candidate.get("license_note_code") != "official_google_gsi_terms":
+        blockers.append(
+            "GSI candidate license_note_code must acknowledge official Google GSI terms"
+        )
+    candidate_name = candidate.get("name", "")
+    if not candidate_name:
+        blockers.append("GSI candidate name is required")
+    elif not CANDIDATE_NAME_PATTERN.fullmatch(candidate_name):
+        blockers.append("GSI candidate name contains unsupported characters")
+    elif candidate_name_contains_action_word(candidate_name):
+        blockers.append("GSI candidate name must not contain approval or device-action wording")
+
+
+def validate_gsi_artifact(artifact: Mapping[str, str], blockers: list[str]) -> None:
+    append_unsupported_key_blockers(
+        artifact,
+        allowed=GSI_ARTIFACT_KEYS,
+        label="GSI artifact",
+        blockers=blockers,
+    )
+    artifact_name = artifact.get("artifact_name", "")
+    sha256 = artifact.get("sha256", "").lower()
+    expected_sha256 = artifact.get("expected_sha256", "").lower()
+    if not ARCHIVE_NAME_PATTERN.fullmatch(artifact_name):
+        blockers.append("GSI artifact artifact_name must be a filename, not a path")
+    if not SHA256_PATTERN.fullmatch(sha256):
+        blockers.append("GSI artifact sha256 must be 64 hex characters")
+    if not SHA256_PATTERN.fullmatch(expected_sha256):
+        blockers.append("GSI artifact expected_sha256 must be 64 hex characters")
+    if sha256 and expected_sha256 and sha256 != expected_sha256:
+        blockers.append("GSI artifact sha256 must match expected_sha256")
+    byte_count = artifact.get("byte_count", "")
+    if not byte_count.isdigit() or int(byte_count) <= 0:
+        blockers.append("GSI artifact byte_count must be a positive integer")
+
+
+def validate_gsi_artifact_binding(
+    candidate: Mapping[str, str],
+    artifact: Mapping[str, str],
+    blockers: list[str],
+) -> None:
+    metadata = parse_gsi_artifact_name(artifact.get("artifact_name", ""))
+    if metadata is None:
+        blockers.append(
+            "GSI artifact artifact_name must match the official Google GSI naming pattern"
+        )
+        return
+    artifact_architecture = ARTIFACT_FAMILY_ARCHITECTURES[metadata["family"].lower()]
+    if artifact_architecture != candidate.get("architecture", ""):
+        blockers.append("GSI artifact architecture must match GSI candidate architecture")
+    if not build_matches_android_release(
+        build_id=metadata["build"],
+        android_release=candidate.get("android_release", ""),
+    ):
+        blockers.append("GSI artifact build must match GSI candidate Android release")
+    sha256 = artifact.get("sha256", "").lower()
+    if sha256 and not sha256.startswith(metadata["sha_prefix"].lower()):
+        blockers.append("GSI artifact checksum prefix must match GSI artifact sha256")
+
+
+def validate_gsi_source(
+    source: Mapping[str, str],
+    *,
+    artifact_name: str,
+    blockers: list[str],
+) -> None:
+    append_unsupported_key_blockers(
+        source,
+        allowed=GSI_SOURCE_KEYS,
+        label="GSI source",
+        blockers=blockers,
+    )
+    blockers.extend(validate_official_source_url(source.get("source_url", "")))
+    blockers.extend(
+        validate_official_download_url(source.get("download_url", ""), expected_name=artifact_name)
+    )
+
+
+def validate_gsi_safety(
+    safety_payload: object,
+    safety: Mapping[str, str],
+    blockers: list[str],
+) -> None:
+    append_unsupported_key_blockers(
+        safety,
+        allowed=GSI_SAFETY_KEYS,
+        label="GSI safety",
+        blockers=blockers,
+    )
+    if safety.get("execution_authority") != "OFFLINE_HASH_ONLY":
+        blockers.append("GSI safety execution_authority must be OFFLINE_HASH_ONLY")
+    if safety.get("device_mutation") != "NONE":
+        blockers.append("GSI safety device_mutation must be NONE")
+    if safety.get("authorization") != "NON_AUTHORIZING_EVIDENCE":
+        blockers.append("GSI safety authorization must be NON_AUTHORIZING_EVIDENCE")
+    if safety.get("destructive_actions") != "WITHHELD":
+        blockers.append("GSI safety destructive_actions must be WITHHELD")
+    if (
+        not isinstance(safety_payload, Mapping)
+        or safety_payload.get("local_path_redacted") is not True
+    ):
+        blockers.append("GSI safety local_path_redacted must be true")
 
 
 def validate_release_signing_plan_evidence(
@@ -399,6 +604,11 @@ def next_steps(sections: tuple[ReadinessSection, ...]) -> tuple[str, ...]:
             )
         elif section.name == "manual_gates":
             steps.append("Complete ROM-0 manual gate evidence without secrets or live approval.")
+        elif section.name == "gsi_candidate":
+            steps.append(
+                "Create ROM GSI candidate evidence from a downloaded official Google "
+                "ARM64 GSI archive."
+            )
         elif section.name == "release_signing_plan":
             steps.append("Create a ROM release signing plan with an external keystore.")
         elif section.name == "release_apk_verification":
@@ -455,6 +665,18 @@ def classified_presence(value: str, blockers: list[str]) -> str:
     return "configured"
 
 
+def append_unsupported_key_blockers(
+    payload: Mapping[str, object] | Mapping[str, str],
+    *,
+    allowed: frozenset[str],
+    label: str,
+    blockers: list[str],
+) -> None:
+    unsupported = sorted(set(payload) - allowed)
+    if unsupported:
+        blockers.append(f"{label} contains unsupported keys: {unsupported}")
+
+
 def render_json(report: Rom0ReadinessReport) -> str:
     return json.dumps(asdict(report), indent=2)
 
@@ -491,6 +713,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--probe-json", type=Path)
     parser.add_argument("--manual-gates-json", type=Path)
+    parser.add_argument("--gsi-candidate-evidence-json", type=Path)
     parser.add_argument("--signing-plan-json", type=Path)
     parser.add_argument("--apk-verification-json", type=Path)
     parser.add_argument("--signed-apk", type=Path)
@@ -510,6 +733,7 @@ def main(argv: list[str] | None = None) -> int:
     report = build_readiness_report(
         probe_json=args.probe_json,
         manual_gates_json=args.manual_gates_json,
+        gsi_candidate_evidence_json=args.gsi_candidate_evidence_json,
         signing_plan_json=args.signing_plan_json,
         apk_verification_json=args.apk_verification_json,
         signed_apk=args.signed_apk,
