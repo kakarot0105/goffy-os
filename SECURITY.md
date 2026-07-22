@@ -33,8 +33,9 @@ include real credentials or unrelated personal data.
   guards are configured. Challenge creation also requires bootstrap administration.
 - Challenges are memory-only, random, one-time, 120 seconds by default, capped at
   three pending entries, and invalidated after five failed attempts. Redemption
-  JSON is capped at 2 KiB, validation errors never echo secret input, and
-  secret-bearing success responses disable caching.
+  JSON is capped at 4 KiB to carry the Android approval public key, validation
+  errors never echo secret input, and secret-bearing success responses disable
+  caching.
 - Pairing bundles wrap one challenge in the versioned
   `goffy.pairing.bundle.v3` QR payload shape. The Hub creates them only through
   loopback bootstrap administration, requires a loopback Host header, marks them
@@ -107,14 +108,17 @@ include real credentials or unrelated personal data.
   MCP session for that credential and releases its capacity slot. New
   authentication checks the digest store; revoked state survives restart.
 - WebSocket tokens are passed in the `Authorization` header, never in URLs.
-- WebSocket and MCP execution can discover SAFE tools only. Configured CONFIRM
-  tools such as `mac.apps.open` remain fail-closed because a plain
-  `ApprovalResponse` from an authenticated WebSocket client is not yet
-  device-bound proof of a visible Android approval. The `goffy.approval.v1`
-  request/response protocol scaffold binds principal, task ID, tool name,
-  canonical argument SHA-256, issue time, and expiry, but execution stays
-  disabled until Android can attach non-forgeable approval proof. SAFE tools
-  reject approval task IDs.
+- WebSocket execution can discover CONFIRM tools only for paired credentials
+  that registered an Android approval public key during pairing. Configured
+  CONFIRM tools such as `mac.apps.open` remain hidden from bootstrap/dev tokens
+  and paired credentials without that key. A plain authenticated
+  `ApprovalResponse` is not enough: Android signs the Hub-issued approval
+  payload with its Keystore approval key, and the Hub verifies the signature,
+  credential ID, principal, task ID, tool name, canonical argument SHA-256,
+  issue time, and expiry before execution. SAFE tools reject approval task IDs.
+  This proves possession of the paired phone key, not hardware attestation,
+  biometric confirmation, or per-use Android user authentication. The MCP
+  endpoint remains SAFE-only.
 - Android redeems pairing challenges only against a loopback endpoint and never
   retries redemption. `MainActivity.onStop()` cancels and joins enrollment before
   local cleanup. The temporary challenge input is foreground-only,
@@ -182,10 +186,11 @@ include real credentials or unrelated personal data.
 - Android validates exact known Mac tool versions, targets, permissions, schema
   subsets, and safety annotations before sending invocation bytes. Configured
   timeout metadata is range-checked rather than treated as authority.
-- Hub registration currently rejects every non-`SAFE`, non-read-only Mac tool.
-  SAFE metadata must also be non-destructive, idempotent, closed-world, and use
-  closed object schemas. CONFIRM and SENSITIVE tools remain unavailable until an
-  explicit authorization protocol exists.
+- Hub MCP registration currently rejects every non-`SAFE`, non-read-only Mac
+  tool. SAFE metadata must also be non-destructive, idempotent, closed-world,
+  and use closed object schemas. CONFIRM WebSocket tools require device-bound
+  approval proof; CONFIRM and SENSITIVE MCP tools remain unavailable until an
+  explicit MCP authorization protocol exists.
 - A complete Android Hub attempt is bounded to 35 seconds. Timeout cancels the
   socket and reports failure without retrying an ambiguously delivered invocation.
 - The Hub rejects duplicate message IDs on a connection, caps each connection at

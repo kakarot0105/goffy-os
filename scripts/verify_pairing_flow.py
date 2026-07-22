@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import sys
 import tempfile
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 from pydantic import SecretStr
 from starlette.testclient import TestClient
 
@@ -36,6 +40,20 @@ EXPECTED_VERIFIER_TRUST_CONTRACT = {
     "certificatePinStatus": "absent",
     "trustedLanSupported": False,
 }
+
+
+def approval_public_key_request() -> dict[str, str]:
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    public_key_spki_der = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.DER,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return {
+        "schemaVersion": "goffy.approval.public-key.v1",
+        "algorithm": "ECDSA_P256_SHA256",
+        "spkiDerBase64": base64.b64encode(public_key_spki_der).decode("ascii"),
+        "spkiSha256": sha256(public_key_spki_der).hexdigest(),
+    }
 
 
 @dataclass(frozen=True)
@@ -162,6 +180,7 @@ def verify_pairing_flow(output: Path | None = None, force: bool = False) -> Pair
                 "pairingToken": challenge["pairingToken"],
                 "deviceId": "goffy-smoke-android",
                 "displayName": "GOFFY smoke phone",
+                "approvalPublicKey": approval_public_key_request(),
             }
 
             redemption_response = client.post("/pairing/v1/redeem", json=redemption_request)

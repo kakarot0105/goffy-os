@@ -4,6 +4,7 @@ import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.CapabilityDiscoveryMessage
 import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ProtocolException
+import dev.goffy.os.protocol.ApprovalResponseProof
 import dev.goffy.os.protocol.ToolInvocationRequest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -34,6 +35,7 @@ class OkHttpHubGateway private constructor(
     private val attemptTimeoutMillis: Long,
     private val timeoutDispatcher: CoroutineDispatcher,
     private val nowMillis: () -> Long,
+    private val approvalProofSigner: ApprovalProofSigner?,
 ) : HubGateway {
     constructor() : this(
         defaultClient(),
@@ -42,6 +44,7 @@ class OkHttpHubGateway private constructor(
         attemptTimeoutMillis = DEFAULT_ATTEMPT_TIMEOUT_MILLIS,
         timeoutDispatcher = Dispatchers.IO,
         nowMillis = System::currentTimeMillis,
+        approvalProofSigner = AndroidKeystoreApprovalProofSigner(),
     )
 
     internal constructor(
@@ -50,6 +53,7 @@ class OkHttpHubGateway private constructor(
         attemptTimeoutMillis: Long = DEFAULT_ATTEMPT_TIMEOUT_MILLIS,
         timeoutDispatcher: CoroutineDispatcher = Dispatchers.IO,
         nowMillis: () -> Long = System::currentTimeMillis,
+        approvalProofSigner: ApprovalProofSigner? = AndroidKeystoreApprovalProofSigner(),
     ) : this(
         client,
         codec,
@@ -57,6 +61,7 @@ class OkHttpHubGateway private constructor(
         attemptTimeoutMillis = attemptTimeoutMillis,
         timeoutDispatcher = timeoutDispatcher,
         nowMillis = nowMillis,
+        approvalProofSigner = approvalProofSigner,
     )
 
     init {
@@ -347,11 +352,46 @@ class OkHttpHubGateway private constructor(
                         )
                         return
                     }
+                    val credentialId = request.approvedCredentialId
+                    val signer = approvalProofSigner
+                    if (credentialId == null || signer == null) {
+                        closeWithOutcome(
+                            webSocket = webSocket,
+                            status = NORMAL_CLOSURE_STATUS,
+                            outcome = AttemptOutcome.FinalFailure(approvalProofRequiredError()),
+                            closingOutcome = closingOutcome,
+                            finish = ::finish,
+                        )
+                        return
+                    }
+                    val proof = try {
+                        val signature = signer.sign(
+                            codec.approvalSigningPayload(
+                                approvalRequest,
+                                credentialId,
+                            ),
+                        )
+                        ApprovalResponseProof(
+                            algorithm = signature.algorithm,
+                            publicKeySha256 = signature.publicKeySha256,
+                            signatureBase64 = signature.signatureBase64,
+                        )
+                    } catch (_: Exception) {
+                        closeWithOutcome(
+                            webSocket = webSocket,
+                            status = NORMAL_CLOSURE_STATUS,
+                            outcome = AttemptOutcome.FinalFailure(approvalProofRequiredError()),
+                            closingOutcome = closingOutcome,
+                            finish = ::finish,
+                        )
+                        return
+                    }
                     val approvalResponse = try {
                         codec.createApprovalResponse(
                             deviceId = request.deviceId,
                             correlationId = request.messageId,
                             approvalRequest = approvalRequest,
+                            proof = proof,
                         )
                     } catch (_: ProtocolException) {
                         closeWithProtocolFailure(
@@ -531,6 +571,13 @@ class OkHttpHubGateway private constructor(
         ExecutionEvent.Error(
             code = "approval_expired",
             message = "The approved action expired before it could be sent.",
+            retryable = false,
+        )
+
+    private fun approvalProofRequiredError(): ExecutionEvent.Error =
+        ExecutionEvent.Error(
+            code = "approval_proof_required",
+            message = "A paired Android approval key is required before this Mac action can run.",
             retryable = false,
         )
 

@@ -11,6 +11,7 @@ requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 dependencies = [
   "fastapi>=0.115,<1",
+  "cryptography>=49,<50",
   "mcp==1.28.1",
   "psutil>=7.0,<8",
   "pydantic>=2.10,<3",

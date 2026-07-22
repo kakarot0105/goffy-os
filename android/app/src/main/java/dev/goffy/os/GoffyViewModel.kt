@@ -23,7 +23,9 @@ import dev.goffy.os.hub.HubOperatorAuditException
 import dev.goffy.os.hub.HubOperatorAuditGateway
 import dev.goffy.os.hub.HubPairingException
 import dev.goffy.os.hub.HubPairingGateway
+import dev.goffy.os.hub.AndroidKeystoreApprovalProofSigner
 import dev.goffy.os.hub.AndroidHubCredentialStore
+import dev.goffy.os.hub.ApprovalProofSigner
 import dev.goffy.os.hub.OkHttpHubGateway
 import dev.goffy.os.hub.OkHttpHubOperatorAuditGateway
 import dev.goffy.os.hub.OkHttpHubPairingGateway
@@ -89,6 +91,7 @@ class GoffyViewModel internal constructor(
     private val pairingGateway: HubPairingGateway,
     private val operatorAuditGateway: HubOperatorAuditGateway,
     private val credentialStore: HubCredentialStore,
+    private val approvalProofSigner: ApprovalProofSigner,
     private val phoneGateway: PhoneToolGateway,
     private val codec: GoffyProtocolCodec,
     private val allowInsecureLoopback: Boolean,
@@ -127,6 +130,7 @@ class GoffyViewModel internal constructor(
             dependencies.context,
             allowInsecureLoopback = BuildConfig.DEBUG,
         ),
+        approvalProofSigner = AndroidKeystoreApprovalProofSigner(),
         phoneGateway = DefaultPhoneToolGateway(
             batteryStatusSource = AndroidBatteryStatusSource(dependencies.context),
             deviceInfoSource = AndroidDeviceInfoSource(dependencies.context),
@@ -258,9 +262,7 @@ class GoffyViewModel internal constructor(
                         pairedCredentialCreatedAt = null
                         pairedCredentialTokenIssuedAt = null
                         pairedHubIdentity = null
-                        runCatching {
-                            withContext(credentialDispatcher) { credentialStore.clear() }
-                        }
+                        clearLocalHubAuthorityBestEffort()
                         mutableUiState.value = mutableUiState.value.hubRestoreFailed(
                             "The saved Hub credential was invalid and has been removed. Pair again.",
                         )
@@ -456,11 +458,13 @@ class GoffyViewModel internal constructor(
         mutableUiState.value = mutableUiState.value.hubPairingStarted(parsedEndpoint.webSocketUrl)
         linkJob = viewModelScope.launch {
             try {
+                val approvalPublicKey = approvalProofSigner.publicKey()
                 val issued = pairingGateway.redeem(
                     parsedEndpoint,
                     challengeJson,
                     deviceId,
                     deviceDisplayName,
+                    approvalPublicKey,
                 )
                 val candidate = StoredHubCredential.create(
                     endpoint = parsedEndpoint.webSocketUrl,
@@ -493,12 +497,14 @@ class GoffyViewModel internal constructor(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: HubPairingException) {
+                clearLocalHubAuthorityBestEffort()
                 if (revision == linkRevision) {
                     mutableUiState.value = mutableUiState.value.hubPairingRejected(
                         error.message ?: "Pairing failed safely.",
                     )
                 }
             } catch (_: Exception) {
+                clearLocalHubAuthorityBestEffort()
                 if (revision == linkRevision) {
                     hubConfig = null
                     pairedCredentialId = null
@@ -534,8 +540,7 @@ class GoffyViewModel internal constructor(
         linkJob = viewModelScope.launch {
             previousLinkJob?.join()
             val localCleared = try {
-                withContext(credentialDispatcher) { credentialStore.clear() }
-                true
+                clearLocalHubAuthority()
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
@@ -663,9 +668,7 @@ class GoffyViewModel internal constructor(
                     pairedCredentialCreatedAt = null
                     pairedCredentialTokenIssuedAt = null
                     pairedHubIdentity = null
-                    runCatching {
-                        withContext(credentialDispatcher) { credentialStore.clear() }
-                    }
+                    clearLocalHubAuthorityBestEffort()
                     mutableUiState.value = mutableUiState.value.hubRotationFailed(
                         "Hub token rotation was not verified. Mac access is disabled; pair again and inspect Hub credentials.",
                     )
@@ -692,7 +695,13 @@ class GoffyViewModel internal constructor(
         linkJob = viewModelScope.launch {
             enrollmentJob?.join()
             try {
-                withContext(credentialDispatcher) { credentialStore.clear() }
+                if (!clearLocalHubAuthority()) {
+                    mutableUiState.value = mutableUiState.value.hubRestoreFailed(
+                        "Pairing stopped, but local credential cleanup could not be fully verified.",
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
             } catch (_: Exception) {
                 mutableUiState.value = mutableUiState.value.hubRestoreFailed(
                     "Pairing stopped, but local credential cleanup could not be fully verified.",
@@ -775,6 +784,35 @@ class GoffyViewModel internal constructor(
             tokenAgeDays = ageDays,
             message = "Hub token is ${ageDays}d old. Rotate it from this card while USB loopback is active.",
         )
+    }
+
+    private suspend fun clearLocalHubAuthority(): Boolean = withContext(credentialDispatcher) {
+        var cleared = true
+        try {
+            credentialStore.clear()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            cleared = false
+        }
+        try {
+            approvalProofSigner.deleteKey()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            cleared = false
+        }
+        cleared
+    }
+
+    private suspend fun clearLocalHubAuthorityBestEffort() {
+        try {
+            clearLocalHubAuthority()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            // Callers report the primary failure; cleanup errors must not reactivate authority.
+        }
     }
 
     fun recordForegroundQrScan(rawPayload: String) {
@@ -1211,12 +1249,26 @@ class GoffyViewModel internal constructor(
                     )
                     return false
                 }
+                val credentialId = pairedCredentialId
+                if (credentialId == null) {
+                    mutableUiState.value = mutableUiState.value.applyTaskEvent(
+                        taskId,
+                        ExecutionEvent.Error(
+                            code = "approval_proof_required",
+                            message = "Mac approvals require a paired phone approval key",
+                            retryable = false,
+                        ),
+                        nowMillis(),
+                    )
+                    return false
+                }
                 val request = codec.createToolInvocation(
                     deviceId,
                     pending.plan.toolName,
                     pending.plan.arguments,
                     approvalGrant = ToolApprovalGrant(
                         taskId = taskId,
+                        credentialId = credentialId,
                         issuedAtEpochMillis = approvedAtEpochMillis,
                         expiresAtEpochMillis = pending.expiresAtEpochMillis,
                     ),

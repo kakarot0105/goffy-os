@@ -21,6 +21,7 @@ PAIRING_TOKEN = "pairing-token-" + "p" * 32  # noqa: S105
 ACCESS_TOKEN = "credential-token-" + "c" * 32  # noqa: S105
 CHALLENGE_ID = UUID("30303030-3030-4030-8030-303030303030")
 CREDENTIAL_ID = UUID("40404040-4040-4040-8040-404040404040")
+APPROVAL_PUBLIC_KEY = b"x" * 91
 
 
 @dataclass
@@ -59,16 +60,19 @@ async def test_pairing_challenge_succeeds_before_expiry_and_is_single_use(tmp_pa
         challenge.pairing_token,
         "setup-observation-1",
         "Moto G",
+        APPROVAL_PUBLIC_KEY,
     )
 
     assert issued.access_token == ACCESS_TOKEN
     assert issued.credential.credential_id == CREDENTIAL_ID
+    assert issued.credential.approval_public_key_spki_der == APPROVAL_PUBLIC_KEY
     with pytest.raises(InvalidPairingChallengeError):
         await service.complete(
             challenge.challenge_id,
             challenge.pairing_token,
             "setup-observation-1",
             "Moto G",
+            APPROVAL_PUBLIC_KEY,
         )
     assert len(await service.list_credentials()) == 1
 
@@ -86,6 +90,7 @@ async def test_pairing_challenge_expires_at_exact_ttl_boundary(tmp_path: Path) -
             challenge.pairing_token,
             "setup-observation-1",
             "Moto G",
+            APPROVAL_PUBLIC_KEY,
         )
 
     assert await service.list_credentials() == ()
@@ -104,6 +109,7 @@ async def test_fifth_bad_pairing_attempt_invalidates_challenge(tmp_path: Path) -
                 f"wrong-token-{attempt}",
                 "setup-observation-1",
                 "Moto G",
+                APPROVAL_PUBLIC_KEY,
             )
 
     with pytest.raises(PairingAttemptLimitError):
@@ -112,6 +118,7 @@ async def test_fifth_bad_pairing_attempt_invalidates_challenge(tmp_path: Path) -
             "last-wrong-token",
             "setup-observation-1",
             "Moto G",
+            APPROVAL_PUBLIC_KEY,
         )
     with pytest.raises(InvalidPairingChallengeError):
         await service.complete(
@@ -119,6 +126,7 @@ async def test_fifth_bad_pairing_attempt_invalidates_challenge(tmp_path: Path) -
             challenge.pairing_token,
             "setup-observation-1",
             "Moto G",
+            APPROVAL_PUBLIC_KEY,
         )
     assert await service.list_credentials() == ()
 
@@ -162,6 +170,7 @@ async def test_concurrent_redemption_mints_exactly_one_credential(tmp_path: Path
                 challenge.pairing_token,
                 "setup-observation-1",
                 "Moto G",
+                APPROVAL_PUBLIC_KEY,
             )
         except InvalidPairingChallengeError:
             return "rejected"

@@ -9,6 +9,7 @@ interface HubPairingGateway {
         challengeJson: String,
         deviceId: String,
         displayName: String,
+        approvalPublicKey: ApprovalSigningPublicKey,
     ): IssuedHubCredential
 
     suspend fun revokeSelf(config: HubConfig, expectedCredentialId: UUID): SelfRevocationResult

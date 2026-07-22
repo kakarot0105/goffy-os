@@ -30,6 +30,7 @@ class OkHttpHubPairingGatewayTest {
                     CHALLENGE_JSON,
                     "goffy-android-test",
                     "Moto G",
+                    TEST_APPROVAL_PUBLIC_KEY,
                 )
             }.exceptionOrNull()
 
@@ -53,6 +54,7 @@ class OkHttpHubPairingGatewayTest {
                 pairingBundle(server),
                 "goffy-android-test",
                 "Moto G",
+                TEST_APPROVAL_PUBLIC_KEY,
             )
             val request = server.takeRequest()
 
@@ -61,7 +63,7 @@ class OkHttpHubPairingGatewayTest {
             assertNull(request.headers["Authorization"])
             assertEquals("application/json; charset=utf-8", request.headers["Content-Type"])
             assertEquals(
-                """{"challengeId":"$CHALLENGE_ID","pairingToken":"$PAIRING_TOKEN","deviceId":"goffy-android-test","displayName":"Moto G"}""",
+                """{"challengeId":"$CHALLENGE_ID","pairingToken":"$PAIRING_TOKEN","deviceId":"goffy-android-test","displayName":"Moto G","approvalPublicKey":{"schemaVersion":"goffy.approval.public-key.v1","algorithm":"ECDSA_P256_SHA256","spkiDerBase64":"$APPROVAL_PUBLIC_KEY_BASE64","spkiSha256":"$APPROVAL_PUBLIC_KEY_SHA256"}}""",
                 request.body?.utf8(),
             )
             assertEquals(UUID.fromString(CREDENTIAL_ID), issued.credentialId)
@@ -89,10 +91,10 @@ class OkHttpHubPairingGatewayTest {
             )
 
             val identityFailure = runCatching {
-                gateway.redeem(endpoint(server), badIdentity, "goffy-test", "Moto G")
+                gateway.redeem(endpoint(server), badIdentity, "goffy-test", "Moto G", TEST_APPROVAL_PUBLIC_KEY)
             }.exceptionOrNull()
             val challengeFailure = runCatching {
-                gateway.redeem(endpoint(server), badChallenge, "goffy-test", "Moto G")
+                gateway.redeem(endpoint(server), badChallenge, "goffy-test", "Moto G", TEST_APPROVAL_PUBLIC_KEY)
             }.exceptionOrNull()
 
             assertTrue(identityFailure is HubPairingException)
@@ -114,11 +116,35 @@ class OkHttpHubPairingGatewayTest {
 
             val extraField = pairingBundle(server).dropLast(1) + ",\"unexpected\":true}"
             val failure = runCatching {
-                gateway.redeem(endpoint(server), extraField, "goffy-test", "Moto G")
+                gateway.redeem(endpoint(server), extraField, "goffy-test", "Moto G", TEST_APPROVAL_PUBLIC_KEY)
             }.exceptionOrNull()
 
             assertTrue(failure is HubPairingException)
             assertEquals("invalid_pairing_payload", (failure as HubPairingException).code)
+            assertFalse(failure.message.orEmpty().contains(PAIRING_TOKEN))
+            assertEquals(0, server.requestCount)
+            gateway.close()
+        }
+    }
+
+    @Test
+    fun rejectsMalformedApprovalPublicKeyBeforeAnyNetworkCall() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            val gateway = OkHttpHubPairingGateway(OkHttpClient())
+
+            val failure = runCatching {
+                gateway.redeem(
+                    endpoint(server),
+                    pairingBundle(server),
+                    "goffy-test",
+                    "Moto G",
+                    TEST_APPROVAL_PUBLIC_KEY.copy(spkiSha256 = "not-a-sha"),
+                )
+            }.exceptionOrNull()
+
+            assertTrue(failure is HubPairingException)
+            assertEquals("invalid_approval_public_key", (failure as HubPairingException).code)
             assertFalse(failure.message.orEmpty().contains(PAIRING_TOKEN))
             assertEquals(0, server.requestCount)
             gateway.close()
@@ -137,10 +163,10 @@ class OkHttpHubPairingGatewayTest {
             val extended = pairingBundle(server).dropLast(1) + ",\"unexpected\":true}"
 
             val mismatchFailure = runCatching {
-                gateway.redeem(endpoint(server), mismatchedEndpoint, "goffy-test", "Moto G")
+                gateway.redeem(endpoint(server), mismatchedEndpoint, "goffy-test", "Moto G", TEST_APPROVAL_PUBLIC_KEY)
             }.exceptionOrNull()
             val extendedFailure = runCatching {
-                gateway.redeem(endpoint(server), extended, "goffy-test", "Moto G")
+                gateway.redeem(endpoint(server), extended, "goffy-test", "Moto G", TEST_APPROVAL_PUBLIC_KEY)
             }.exceptionOrNull()
 
             assertTrue(mismatchFailure is HubPairingException)
@@ -162,7 +188,7 @@ class OkHttpHubPairingGatewayTest {
             val gateway = OkHttpHubPairingGateway(OkHttpClient())
 
             val failure = runCatching {
-                gateway.redeem(endpoint(server), pairingBundle(server), "goffy-test", "Moto G")
+                gateway.redeem(endpoint(server), pairingBundle(server), "goffy-test", "Moto G", TEST_APPROVAL_PUBLIC_KEY)
             }.exceptionOrNull()
 
             assertTrue(failure is HubPairingException)
@@ -191,7 +217,7 @@ class OkHttpHubPairingGatewayTest {
             val gateway = OkHttpHubPairingGateway(OkHttpClient())
 
             val failure = runCatching {
-                gateway.redeem(endpoint(server), pairingBundle(server), "goffy-test", "Moto G")
+                gateway.redeem(endpoint(server), pairingBundle(server), "goffy-test", "Moto G", TEST_APPROVAL_PUBLIC_KEY)
             }.exceptionOrNull()
 
             assertTrue(failure is HubPairingException)
@@ -210,7 +236,7 @@ class OkHttpHubPairingGatewayTest {
             val gateway = OkHttpHubPairingGateway(OkHttpClient())
 
             val failure = runCatching {
-                gateway.redeem(endpoint(server), pairingBundle(server), "goffy-test", "Moto G")
+                gateway.redeem(endpoint(server), pairingBundle(server), "goffy-test", "Moto G", TEST_APPROVAL_PUBLIC_KEY)
             }.exceptionOrNull()
 
             assertTrue(failure is HubPairingException)
@@ -231,6 +257,7 @@ class OkHttpHubPairingGatewayTest {
                 CHALLENGE_JSON,
                 "goffy-test",
                 "Moto G",
+                TEST_APPROVAL_PUBLIC_KEY,
             )
         }.exceptionOrNull()
 
@@ -514,7 +541,7 @@ class OkHttpHubPairingGatewayTest {
             )
 
             val failure = runCatching {
-                gateway.redeem(endpoint(server), missingFingerprint, "goffy-test", "Moto G")
+                gateway.redeem(endpoint(server), missingFingerprint, "goffy-test", "Moto G", TEST_APPROVAL_PUBLIC_KEY)
             }.exceptionOrNull()
 
             assertTrue(failure is HubPairingException)
@@ -551,7 +578,7 @@ class OkHttpHubPairingGatewayTest {
 
             unsupportedClaims.forEach { unsupportedClaim ->
                 val failure = runCatching {
-                    gateway.redeem(endpoint(server), unsupportedClaim, "goffy-test", "Moto G")
+                    gateway.redeem(endpoint(server), unsupportedClaim, "goffy-test", "Moto G", TEST_APPROVAL_PUBLIC_KEY)
                 }.exceptionOrNull()
 
                 assertTrue(failure is HubPairingException)
@@ -609,6 +636,15 @@ class OkHttpHubPairingGatewayTest {
         const val PAIRING_TOKEN = "pairing-token-abcdefghijklmnopqrstuvwxyz0123456789"
         const val ACCESS_TOKEN = "paired-access-token-abcdefghijklmnopqrstuvwxyz0123456789"
         const val ROTATED_ACCESS_TOKEN = "rotated-access-token-abcdefghijklmnopqrstuvwxyz0123456789"
+        const val APPROVAL_PUBLIC_KEY_BASE64 =
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEOOfgXUBRzlGKAHgBQ47lu/jpynJF7oKXNWncrevNNyaERKuUWG3Vy3VM1ddPI9SjbGe3y41q1hQLFqlkw5KoQA=="
+        const val APPROVAL_PUBLIC_KEY_SHA256 =
+            "c9b99ef51fd73a4e77e4a5b6dd97636c156d7dde79e9daf5a6d1a9363fb52ac7"
+        val TEST_APPROVAL_PUBLIC_KEY = ApprovalSigningPublicKey(
+            algorithm = "ECDSA_P256_SHA256",
+            spkiDerBase64 = APPROVAL_PUBLIC_KEY_BASE64,
+            spkiSha256 = APPROVAL_PUBLIC_KEY_SHA256,
+        )
         const val CHALLENGE_JSON =
             "{\"challengeId\":\"$CHALLENGE_ID\",\"pairingToken\":\"$PAIRING_TOKEN\"," +
                 "\"expiresAt\":\"2026-07-13T16:02:00Z\"}"

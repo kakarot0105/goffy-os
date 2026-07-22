@@ -3,6 +3,10 @@
 - Status: Accepted
 - Date: 2026-07-13
 
+ADR 0037 supersedes the redemption-size portion of this decision: pairing
+redemption JSON is now capped at 4 KiB so Android can register its approval
+public key.
+
 ## Context
 
 The original development bearer authenticated transport access but mapped every
@@ -26,7 +30,7 @@ protocol `deviceId` is process-generated and is not a durable security identity.
   live in memory for 120 seconds by default, are limited to three pending entries,
   allow at most five failed redemptions, and are consumed exactly once.
 - Redeem through loopback-only `POST /pairing/v1/redeem`. The typed JSON body is
-  capped at 2 KiB. Invalid requests and errors never echo pairing material, and
+  capped at 4 KiB. Invalid requests and errors never echo pairing material, and
   successful secret-bearing responses set `Cache-Control: no-store`.
 - Mint a random 256-bit paired bearer and return it once. Persist only a
   domain-separated SHA-256 digest plus bounded device metadata, generated

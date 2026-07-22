@@ -166,13 +166,14 @@
    - [x] Android route, typed codec, timeline, speech, and audit handling for
      default `mac.apps.list`
    - [x] Optional `CONFIRM mac.apps.open` Hub tool scaffold, fail-closed
-     without device-bound approval proof
+     unless paired device-bound approval proof is available
    - [x] Android route, typed codec, timeline, speech, and audit handling
      scaffold for approved `mac.apps.open`
-   - [x] Hub-issued, one-time approval request/response protocol scaffold for
-     future CONFIRM Mac WebSocket execution
-   - [ ] Device-bound Android approval proof for executing CONFIRM Mac tools
+   - [x] Hub-issued, one-time approval request/response protocol for
+     CONFIRM Mac WebSocket execution
+   - [x] Device-bound Android approval proof for executing CONFIRM Mac tools
      over WebSocket
+   - [ ] Hardware-attested or per-use user-authenticated Android approval keys
 6. Inspectable and deletable user-approved memory
 7. Polished, accessible, battery-aware GOFFY UI
    - [x] Jarvis-style home/ROM UX design contract

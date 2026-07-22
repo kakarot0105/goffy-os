@@ -14,6 +14,7 @@ from pydantic import SecretStr
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from approval_key_helpers import approval_key_fixture
 from goffy_hub.app import create_app
 from goffy_hub.operator_audit import OperatorAuditStoreError
 from goffy_hub.settings import HubSettings
@@ -21,6 +22,7 @@ from goffy_protocol import MCP_PROTOCOL_VERSION, PROTOCOL_VERSION, MessageEnvelo
 
 BOOTSTRAP_TOKEN = "bootstrap-token-that-is-long-enough"  # noqa: S105
 BOOTSTRAP_HEADERS = {"Authorization": f"Bearer {BOOTSTRAP_TOKEN}"}
+APPROVAL_KEY = approval_key_fixture()
 EXPECTED_TRUST_CONTRACT = {
     "schemaVersion": "goffy.hub.trust.v1",
     "proofKind": "loopback_fingerprint_only",
@@ -29,6 +31,10 @@ EXPECTED_TRUST_CONTRACT = {
     "certificatePinStatus": "absent",
     "trustedLanSupported": False,
 }
+
+
+def approval_public_key_request() -> dict[str, str]:
+    return APPROVAL_KEY.pairing_request
 
 
 @contextmanager
@@ -72,6 +78,7 @@ def pair_device(
             "pairingToken": challenge["pairingToken"],
             "deviceId": device_id,
             "displayName": display_name,
+            "approvalPublicKey": approval_public_key_request(),
         },
     )
     assert redemption_response.status_code == 201
@@ -237,6 +244,7 @@ def test_pairing_bundle_contains_loopback_identity_and_redeemable_challenge(
                 "pairingToken": bundle["challenge"]["pairingToken"],
                 "deviceId": "qr-observation-1",
                 "displayName": "Moto G",
+                "approvalPublicKey": approval_public_key_request(),
             },
         )
 
@@ -281,6 +289,7 @@ def test_operator_audit_records_pairing_and_mcp_without_secrets(tmp_path: Path) 
                 "pairingToken": bundle["challenge"]["pairingToken"],
                 "deviceId": "audit-observation-1",
                 "displayName": "Moto G",
+                "approvalPublicKey": approval_public_key_request(),
             },
         )
         access_token = redemption_response.json()["accessToken"]
@@ -666,6 +675,7 @@ def test_redeem_fails_closed_when_pre_mutation_audit_record_fails(
                 "pairingToken": challenge["pairingToken"],
                 "deviceId": "audit-fail-closed",
                 "displayName": "Moto G",
+                "approvalPublicKey": approval_public_key_request(),
             },
         )
         stored_credentials = app.state.credential_store.list_credentials()
@@ -785,7 +795,7 @@ def test_invalid_pairing_request_is_bounded_and_never_echoes_token(tmp_path: Pat
         )
         oversized = client.post(
             "/pairing/v1/redeem",
-            content=b"x" * 2_049,
+            content=b"x" * 4_097,
             headers={"Content-Type": "application/json"},
         )
 
@@ -794,6 +804,45 @@ def test_invalid_pairing_request_is_bounded_and_never_echoes_token(tmp_path: Pat
     assert secret_marker not in invalid.text
     assert oversized.status_code == 413
     assert oversized.json()["detail"]["code"] == "pairing_request_too_large"
+
+
+def test_redeem_rejects_bad_approval_public_key_without_consuming_challenge(
+    tmp_path: Path,
+) -> None:
+    with pairing_client(tmp_path) as client:
+        challenge = client.post(
+            "/admin/v1/pairing/challenges",
+            headers=BOOTSTRAP_HEADERS,
+        ).json()
+        bad_public_key = {
+            **approval_public_key_request(),
+            "spkiSha256": "0" * 64,
+        }
+        rejected = client.post(
+            "/pairing/v1/redeem",
+            json={
+                "challengeId": challenge["challengeId"],
+                "pairingToken": challenge["pairingToken"],
+                "deviceId": "setup-observation-1",
+                "displayName": "Moto G",
+                "approvalPublicKey": bad_public_key,
+            },
+        )
+        redeemed = client.post(
+            "/pairing/v1/redeem",
+            json={
+                "challengeId": challenge["challengeId"],
+                "pairingToken": challenge["pairingToken"],
+                "deviceId": "setup-observation-1",
+                "displayName": "Moto G",
+                "approvalPublicKey": approval_public_key_request(),
+            },
+        )
+
+    assert rejected.status_code == 400
+    assert rejected.json()["detail"]["code"] == "invalid_pairing_request"
+    assert challenge["pairingToken"] not in rejected.text
+    assert redeemed.status_code == 201
 
 
 def test_bootstrap_is_admin_only_after_pairing_is_enabled(tmp_path: Path) -> None:
@@ -990,6 +1039,7 @@ def test_paired_credential_survives_hub_restart_but_pending_challenge_does_not(
                 "pairingToken": pending["pairingToken"],
                 "deviceId": "setup-observation-2",
                 "displayName": "Second phone",
+                "approvalPublicKey": approval_public_key_request(),
             },
         )
 
@@ -1044,6 +1094,7 @@ def test_runtime_credential_store_failure_fails_closed_without_secret_echo(
                 "pairingToken": challenge["pairingToken"],
                 "deviceId": "observation-2",
                 "displayName": "Second phone",
+                "approvalPublicKey": approval_public_key_request(),
             },
         )
         self_revoked = client.delete(

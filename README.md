@@ -18,9 +18,10 @@ the capability boundary.
 > Streamable HTTP boundary, stable Hub paired-device credentials, Keystore-backed
 > Android pairing restore, and a persistent user-visible Android audit trail
 > for the newest 50 terminal tasks. MCP tool-list changes now stream with
-> bounded, session-local reconnect replay. Paired phones can now forget locally
-> and ask the Hub once to revoke or rotate the exact matching credential over
-> loopback. The Hub now emits a versioned USB-loopback pairing bundle with its
+> bounded, session-local reconnect replay. Paired phones can now forget locally,
+> ask the Hub once to revoke or rotate the exact matching credential over
+> loopback, and register an Android approval signing public key during pairing.
+> The Hub now emits a versioned USB-loopback pairing bundle with its
 > public loopback identity fingerprint, and Android can scan that bundle through
 > a foreground-only QR pairing panel, reject bundles without the fingerprint, and
 > restore the pinned identity from encrypted paired credentials. The Hub also
@@ -30,7 +31,9 @@ the capability boundary.
 > public-key, and LAN trust claims until those are actually implemented.
 > Android paired links now track the current bearer issue time and show a
 > foreground token-rotation reminder when the bearer ages past local policy; no
-> background rotation is performed.
+> background rotation is performed. CONFIRM Mac WebSocket execution is now
+> device-bound: paired Android approval responses are signed with the phone
+> approval key and verified by the Hub before `mac.apps.open` can run.
 > Physical Moto G PHONE and MAC
 > localhost smoke now verify the home shell, `phone.battery.status`, and
 > `mac.system_info` over USB `adb reverse`; physical Moto G LiteRT-LM
@@ -129,10 +132,9 @@ the capability boundary.
   `Read my Mac clipboard` route that does not read clipboard text aloud
 - Optional `SAFE mac.apps.list` Hub/MCP tool for configured app-catalog reads,
   including an Android `List my Mac apps` route that cannot launch apps
-- Optional `CONFIRM mac.apps.open` Hub tool scaffold for approved app launching;
-  Android approval UI and Hub-issued approval request/response protocol
-  groundwork exist, but WebSocket and MCP execution remain fail-closed until
-  device-bound approval proof is added
+- Optional `CONFIRM mac.apps.open` Hub WebSocket tool for approved app
+  launching; Android approval responses are signed with the paired phone
+  approval key and Hub-verified before execution
 - Strict Kotlin codec plus typed Python protocol models
 - Shared typed execution events with separate result, verified, and unverified states
 - Shared fixture `protocol/fixtures/mac-system-info-flow.jsonl`
@@ -280,11 +282,14 @@ export GOFFY_MAC_APP_OPEN_ENABLED=true
 
 When enabled, the Hub registers `CONFIRM mac.apps.open` internally, and Android
 can prepare the typed route plus visible approval prompt for commands like
-`Open Safari on my Mac`. The authenticated WebSocket and MCP endpoints still do
-not expose or execute the CONFIRM tool yet. The `goffy.approval.v1`
-request/response protocol groundwork is present, but it remains fail-closed
-until Android approval responses include a device-bound proof that another
-authenticated WebSocket client cannot forge.
+`Open Safari on my Mac`. The authenticated WebSocket endpoint exposes and
+executes the CONFIRM tool only for paired credentials that registered an Android
+approval public key during pairing. Android signs the Hub-issued
+`goffy.approval.v1` response payload with its Keystore approval key, and the Hub
+verifies the signature, credential ID, exact task, exact tool, canonical
+argument hash, issue time, and expiry before launching the app. Bootstrap/dev
+tokens and paired credentials without an approval key still discover SAFE tools
+only. The MCP endpoint remains SAFE-only.
 
 The Hub seals its registry before serving, checks registered tools locally at
 startup and every 30 seconds by default, and removes an unhealthy tool from both

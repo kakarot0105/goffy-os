@@ -36,6 +36,7 @@ class OkHttpHubPairingGateway internal constructor(
         challengeJson: String,
         deviceId: String,
         displayName: String,
+        approvalPublicKey: ApprovalSigningPublicKey,
     ): IssuedHubCredential {
         if (!endpoint.isLoopback) {
             throw HubPairingException(
@@ -45,11 +46,18 @@ class OkHttpHubPairingGateway internal constructor(
         }
         val challenge = parseChallenge(challengeJson, endpoint.webSocketUrl)
         validateMetadata(deviceId, displayName)
+        validateApprovalPublicKey(approvalPublicKey)
         val body = buildJsonObject {
             put("challengeId", challenge.challengeId.toString())
             put("pairingToken", challenge.pairingToken)
             put("deviceId", deviceId)
             put("displayName", displayName)
+            put("approvalPublicKey", buildJsonObject {
+                put("schemaVersion", APPROVAL_PUBLIC_KEY_SCHEMA_VERSION)
+                put("algorithm", approvalPublicKey.algorithm)
+                put("spkiDerBase64", approvalPublicKey.spkiDerBase64)
+                put("spkiSha256", approvalPublicKey.spkiSha256)
+            })
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
         val request = Request.Builder()
             .url(endpoint.pairingRedemptionUrl)
@@ -281,6 +289,20 @@ class OkHttpHubPairingGateway internal constructor(
             throw HubPairingException(
                 "invalid_device_metadata",
                 "This phone's pairing metadata is invalid.",
+            )
+        }
+    }
+
+    private fun validateApprovalPublicKey(publicKey: ApprovalSigningPublicKey) {
+        if (
+            publicKey.algorithm != APPROVAL_PUBLIC_KEY_ALGORITHM ||
+            publicKey.spkiDerBase64.length !in MIN_APPROVAL_PUBLIC_KEY_BASE64_LENGTH..MAX_APPROVAL_PUBLIC_KEY_BASE64_LENGTH ||
+            !BASE64_REGEX.matches(publicKey.spkiDerBase64) ||
+            !SHA256_REGEX.matches(publicKey.spkiSha256)
+        ) {
+            throw HubPairingException(
+                "invalid_approval_public_key",
+                "This phone's approval public key is invalid.",
             )
         }
     }
@@ -562,7 +584,13 @@ class OkHttpHubPairingGateway internal constructor(
         const val MAX_ACCESS_TOKEN_LENGTH = 4_096
         const val MAX_DISPLAY_NAME_LENGTH = 80
         val DEVICE_ID_REGEX = Regex("^[A-Za-z0-9._:-]{1,64}$")
+        val SHA256_REGEX = Regex("^[a-f0-9]{64}$")
+        val BASE64_REGEX = Regex("^[A-Za-z0-9+/]+={0,2}$")
         const val PAIRING_BUNDLE_VERSION = "goffy.pairing.bundle.v3"
+        const val APPROVAL_PUBLIC_KEY_SCHEMA_VERSION = "goffy.approval.public-key.v1"
+        const val APPROVAL_PUBLIC_KEY_ALGORITHM = "ECDSA_P256_SHA256"
+        const val MIN_APPROVAL_PUBLIC_KEY_BASE64_LENGTH = 80
+        const val MAX_APPROVAL_PUBLIC_KEY_BASE64_LENGTH = 512
         val CHALLENGE_KEYS = setOf("challengeId", "pairingToken", "expiresAt")
         val PAIRING_BUNDLE_KEYS = setOf(
             "bundleVersion",

@@ -6,6 +6,7 @@ from enum import StrEnum
 from hmac import compare_digest
 from uuid import UUID
 
+from goffy_hub.approval import ApprovalValidationError, validate_approval_public_key_spki_der
 from goffy_hub.credentials import CredentialStore, CredentialStoreError, PairedCredential
 from goffy_hub.settings import HubSettings
 
@@ -28,6 +29,7 @@ class AuthenticatedPrincipal:
     subject: str
     scopes: tuple[str, ...]
     credential_id: UUID | None = None
+    approval_public_key_spki_der: bytes | None = None
 
     def has_scope(self, scope: str) -> bool:
         return scope in self.scopes
@@ -98,12 +100,19 @@ class CredentialAuthenticator:
 def _paired_principal(credential: PairedCredential) -> AuthenticatedPrincipal:
     credential_id = credential.credential_id
     principal_id = paired_client_id(credential_id)
+    approval_public_key = credential.approval_public_key_spki_der
+    if approval_public_key is not None:
+        try:
+            validate_approval_public_key_spki_der(approval_public_key)
+        except ApprovalValidationError:
+            approval_public_key = None
     return AuthenticatedPrincipal(
         kind=PrincipalKind.PAIRED,
         client_id=principal_id,
         subject=principal_id,
         scopes=(SAFE_TOOL_SCOPE,),
         credential_id=credential_id,
+        approval_public_key_spki_der=approval_public_key,
     )
 
 

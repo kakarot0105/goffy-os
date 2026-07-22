@@ -204,10 +204,13 @@ class OkHttpHubGatewayTest {
     fun answersHubApprovalRequestBeforeStreamingConfirmResult() = runTest {
         val taskId = UUID.fromString("33333333-3333-4333-8333-333333333333")
         val approvalId = UUID.fromString("44444444-4444-4444-8444-444444444444")
+        val credentialId = UUID.fromString("55555555-5555-4555-8555-555555555555")
         val argumentsHash = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        val signer = FakeApprovalProofSigner()
         val approvedRequest = TEST_REQUEST.copy(
             expiresAtEpochMillis = 2_000L,
             approvedTaskId = taskId,
+            approvedCredentialId = credentialId,
             approvedArgumentsSha256 = argumentsHash,
         )
         MockWebServer().use { server ->
@@ -235,6 +238,10 @@ class OkHttpHubGatewayTest {
                                         assertTrue(text.contains("\"approvalId\":\"$approvalId\""))
                                         assertTrue(text.contains("\"taskId\":\"$taskId\""))
                                         assertTrue(text.contains("\"approved\":true"))
+                                        assertTrue(text.contains("\"proof\""))
+                                        assertTrue(text.contains("\"algorithm\":\"ECDSA_P256_SHA256\""))
+                                        assertTrue(text.contains("\"publicKeySha256\":\"$APPROVAL_PUBLIC_KEY_SHA256\""))
+                                        assertTrue(text.contains("\"signatureBase64\":\"$APPROVAL_SIGNATURE_BASE64\""))
                                         assertTrue(text.contains("\"correlationId\":\"${TEST_REQUEST.messageId}\""))
                                         webSocket.send(
                                             progressEnvelope(
@@ -264,7 +271,11 @@ class OkHttpHubGatewayTest {
             )
 
             val client = okhttp3.OkHttpClient()
-            val gateway = OkHttpHubGateway(client, nowMillis = { 1_000L })
+            val gateway = OkHttpHubGateway(
+                client,
+                nowMillis = { 1_000L },
+                approvalProofSigner = signer,
+            )
             val events = try {
                 gateway.invoke(loopbackConfig(server), approvedRequest).toList()
             } finally {
@@ -274,6 +285,7 @@ class OkHttpHubGatewayTest {
             }
 
             assertEquals(1, approvalResponses.get())
+            assertTrue(signer.payloads.single().contains("\"credentialId\":\"$credentialId\""))
             assertEquals(ExecutionEvent.Ready, events[1])
             assertTrue(events[2] is ExecutionEvent.Progress)
             assertTrue(events.last() is ExecutionEvent.Verification)
@@ -284,10 +296,12 @@ class OkHttpHubGatewayTest {
     fun approvalRequestAfterLocalDeadlineFailsClosed() = runTest {
         val taskId = UUID.fromString("33333333-3333-4333-8333-333333333333")
         val approvalId = UUID.fromString("44444444-4444-4444-8444-444444444444")
+        val credentialId = UUID.fromString("55555555-5555-4555-8555-555555555555")
         val argumentsHash = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
         val approvedRequest = TEST_REQUEST.copy(
             expiresAtEpochMillis = 2_000L,
             approvedTaskId = taskId,
+            approvedCredentialId = credentialId,
             approvedArgumentsSha256 = argumentsHash,
         )
         MockWebServer().use { server ->
@@ -343,10 +357,12 @@ class OkHttpHubGatewayTest {
     fun approvalRequestCannotExtendLocalApprovalDeadline() = runTest {
         val taskId = UUID.fromString("33333333-3333-4333-8333-333333333333")
         val approvalId = UUID.fromString("44444444-4444-4444-8444-444444444444")
+        val credentialId = UUID.fromString("55555555-5555-4555-8555-555555555555")
         val argumentsHash = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
         val approvedRequest = TEST_REQUEST.copy(
             expiresAtEpochMillis = 2_000L,
             approvedTaskId = taskId,
+            approvedCredentialId = credentialId,
             approvedArgumentsSha256 = argumentsHash,
         )
         MockWebServer().use { server ->
@@ -400,10 +416,12 @@ class OkHttpHubGatewayTest {
     fun approvalRequestIssuedTooFarInFutureFailsClosed() = runTest {
         val taskId = UUID.fromString("33333333-3333-4333-8333-333333333333")
         val approvalId = UUID.fromString("44444444-4444-4444-8444-444444444444")
+        val credentialId = UUID.fromString("55555555-5555-4555-8555-555555555555")
         val argumentsHash = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
         val approvedRequest = TEST_REQUEST.copy(
             expiresAtEpochMillis = 20_000L,
             approvedTaskId = taskId,
+            approvedCredentialId = credentialId,
             approvedArgumentsSha256 = argumentsHash,
         )
         MockWebServer().use { server ->
@@ -879,7 +897,34 @@ class OkHttpHubGatewayTest {
         open fun onInvocation(webSocket: WebSocket) = Unit
     }
 
+    private class FakeApprovalProofSigner : ApprovalProofSigner {
+        val payloads = mutableListOf<String>()
+
+        override fun publicKey(): ApprovalSigningPublicKey = ApprovalSigningPublicKey(
+            algorithm = "ECDSA_P256_SHA256",
+            spkiDerBase64 = APPROVAL_PUBLIC_KEY_BASE64,
+            spkiSha256 = APPROVAL_PUBLIC_KEY_SHA256,
+        )
+
+        override fun sign(payload: ByteArray): ApprovalProof {
+            payloads += payload.decodeToString()
+            return ApprovalProof(
+                algorithm = "ECDSA_P256_SHA256",
+                publicKeySha256 = APPROVAL_PUBLIC_KEY_SHA256,
+                signatureBase64 = APPROVAL_SIGNATURE_BASE64,
+            )
+        }
+
+        override fun deleteKey() = Unit
+    }
+
     private companion object {
+        const val APPROVAL_PUBLIC_KEY_BASE64 =
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEOOfgXUBRzlGKAHgBQ47lu/jpynJF7oKXNWncrevNNyaERKuUWG3Vy3VM1ddPI9SjbGe3y41q1hQLFqlkw5KoQA=="
+        const val APPROVAL_PUBLIC_KEY_SHA256 =
+            "c9b99ef51fd73a4e77e4a5b6dd97636c156d7dde79e9daf5a6d1a9363fb52ac7"
+        const val APPROVAL_SIGNATURE_BASE64 =
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         private val TEST_REQUEST = ToolInvocationRequest(
             messageId = UUID.fromString("11111111-1111-4111-8111-111111111111"),
             toolName = "mac.system_info",

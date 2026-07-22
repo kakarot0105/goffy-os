@@ -120,12 +120,14 @@ class GoffyProtocolCodecTest {
     @Test
     fun createsConfirmMacAppsOpenInvocationWithTaskBoundApprovalState() {
         val taskId = UUID.fromString("33333333-3333-4333-8333-333333333333")
+        val credentialId = UUID.fromString("55555555-5555-4555-8555-555555555555")
         val request = codec.createToolInvocation(
             "android-test",
             "mac.apps.open",
             MacAppsOpenArguments(displayName = "Safari"),
             approvalGrant = ToolApprovalGrant(
                 taskId = taskId,
+                credentialId = credentialId,
                 issuedAtEpochMillis = 1_784_300_400_000,
                 expiresAtEpochMillis = 1_784_300_460_000,
             ),
@@ -135,6 +137,7 @@ class GoffyProtocolCodecTest {
         assertEquals("mac.apps.open", request.toolName)
         assertEquals(1_784_300_460_000, request.expiresAtEpochMillis)
         assertEquals(taskId, request.approvedTaskId)
+        assertEquals(credentialId, request.approvedCredentialId)
         assertEquals(
             "48bcd955f3fdbcaddfc3844e3a9bdc8a9a3791bab296bec333e8e7231244793e",
             request.approvedArgumentsSha256,
@@ -154,6 +157,7 @@ class GoffyProtocolCodecTest {
         val taskId = UUID.fromString("33333333-3333-4333-8333-333333333333")
         val responseMessageId = UUID.fromString("44444444-4444-4444-8444-444444444444")
         val approvalId = UUID.fromString("55555555-5555-4555-8555-555555555555")
+        val credentialId = UUID.fromString("77777777-7777-4777-8777-777777777777")
         val ids = ArrayDeque(listOf(messageId, discoveryMessageId, responseMessageId))
         val localCodec = GoffyProtocolCodec(
             now = { Instant.parse("2026-07-13T16:00:00Z") },
@@ -165,6 +169,7 @@ class GoffyProtocolCodecTest {
             MacAppsOpenArguments(displayName = "Safari"),
             approvalGrant = ToolApprovalGrant(
                 taskId = taskId,
+                credentialId = credentialId,
                 issuedAtEpochMillis = 1_784_300_400_000,
                 expiresAtEpochMillis = 1_784_300_460_000,
             ),
@@ -196,13 +201,35 @@ class GoffyProtocolCodecTest {
         assertEquals(1_784_300_401_000, approval.issuedAtEpochMillis)
         assertEquals(1_784_300_461_000, approval.expiresAtEpochMillis)
         assertEquals(
+            "{\"approvalId\":\"55555555-5555-4555-8555-555555555555\"," +
+                "\"approved\":true,\"argumentsSha256\":\"48bcd955f3fdbcaddfc3844e3a9bdc8a9a3791bab296bec333e8e7231244793e\"," +
+                "\"credentialId\":\"77777777-7777-4777-8777-777777777777\"," +
+                "\"expiresAtEpochMillis\":1784300461000,\"issuedAtEpochMillis\":1784300401000," +
+                "\"schemaVersion\":\"goffy.approval.signed-payload.v1\"," +
+                "\"taskId\":\"33333333-3333-4333-8333-333333333333\"," +
+                "\"toolName\":\"mac.apps.open\"}",
+            localCodec.approvalSigningPayload(approval, credentialId).decodeToString(),
+        )
+        assertEquals(
             "{\"protocolVersion\":\"0.2.0\",\"messageId\":\"44444444-4444-4444-8444-444444444444\"," +
                 "\"timestamp\":\"2026-07-13T16:00:00Z\",\"deviceId\":\"android-test\"," +
                 "\"messageType\":\"ApprovalResponse\",\"payload\":{\"schemaVersion\":\"goffy.approval.v1\"," +
                 "\"approvalId\":\"55555555-5555-4555-8555-555555555555\"," +
                 "\"taskId\":\"33333333-3333-4333-8333-333333333333\"," +
-                "\"approved\":true},\"correlationId\":\"11111111-1111-4111-8111-111111111111\"}",
-            localCodec.createApprovalResponse("android-test", request.messageId, approval),
+                "\"approved\":true,\"proof\":{\"schemaVersion\":\"goffy.approval.proof.v1\"," +
+                "\"algorithm\":\"ECDSA_P256_SHA256\"," +
+                "\"publicKeySha256\":\"0000000000000000000000000000000000000000000000000000000000000000\"," +
+                "\"signatureBase64\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}},\"correlationId\":\"11111111-1111-4111-8111-111111111111\"}",
+            localCodec.createApprovalResponse(
+                "android-test",
+                request.messageId,
+                approval,
+                proof = ApprovalResponseProof(
+                    algorithm = "ECDSA_P256_SHA256",
+                    publicKeySha256 = "0".repeat(64),
+                    signatureBase64 = "A".repeat(96),
+                ),
+            ),
         )
     }
 

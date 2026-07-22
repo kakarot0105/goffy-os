@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from hmac import compare_digest
 from pathlib import Path
 from secrets import token_urlsafe
+from typing import cast
 from uuid import UUID, uuid4
 
 TOKEN_DIGEST_DOMAIN = b"goffy-paired-credential-v1\x00"
@@ -19,6 +20,8 @@ MAX_ACTIVE_CREDENTIALS = 32
 MAX_RETAINED_CREDENTIALS = 64
 MIN_GENERATED_TOKEN_LENGTH = 32
 DEVICE_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,64}$")
+MIN_APPROVAL_PUBLIC_KEY_BYTES = 64
+MAX_APPROVAL_PUBLIC_KEY_BYTES = 512
 
 Clock = Callable[[], datetime]
 TokenFactory = Callable[[], str]
@@ -48,6 +51,7 @@ class PairedCredential:
     display_name: str
     created_at: datetime
     revoked_at: datetime | None
+    approval_public_key_spki_der: bytes | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,13 +93,24 @@ class CredentialStore:
     def database_path(self) -> Path:
         return self._database_path
 
-    def issue(self, device_id: str, display_name: str) -> IssuedCredential:
+    def issue(
+        self,
+        device_id: str,
+        display_name: str,
+        approval_public_key_spki_der: bytes | None = None,
+    ) -> IssuedCredential:
         if DEVICE_ID_PATTERN.fullmatch(device_id) is None:
             raise InvalidCredentialMetadataError("device observation ID is invalid")
         if not 1 <= len(display_name) <= 80 or any(
             ord(character) < 32 or ord(character) == 127 for character in display_name
         ):
             raise InvalidCredentialMetadataError("device display name is invalid")
+        if approval_public_key_spki_der is not None and not (
+            MIN_APPROVAL_PUBLIC_KEY_BYTES
+            <= len(approval_public_key_spki_der)
+            <= MAX_APPROVAL_PUBLIC_KEY_BYTES
+        ):
+            raise InvalidCredentialMetadataError("approval public key is invalid")
         access_token = self._token_factory()
         if len(access_token) < MIN_GENERATED_TOKEN_LENGTH:
             raise CredentialStoreError("generated credential token is too short")
@@ -106,6 +121,7 @@ class CredentialStore:
             display_name=display_name,
             created_at=_as_utc(self._clock()),
             revoked_at=None,
+            approval_public_key_spki_der=approval_public_key_spki_der,
         )
         digest = _token_digest(access_token)
 
@@ -121,8 +137,9 @@ class CredentialStore:
             connection.execute(
                 """
                 INSERT INTO paired_credentials (
-                    credential_id, device_id, display_name, token_digest, created_at, revoked_at
-                ) VALUES (?, ?, ?, ?, ?, NULL)
+                    credential_id, device_id, display_name, token_digest, created_at, revoked_at,
+                    approval_public_key_spki_der
+                ) VALUES (?, ?, ?, ?, ?, NULL, ?)
                 """,
                 (
                     str(credential.credential_id),
@@ -130,6 +147,7 @@ class CredentialStore:
                     credential.display_name,
                     digest,
                     _serialize_datetime(credential.created_at),
+                    credential.approval_public_key_spki_der,
                 ),
             )
 
@@ -143,7 +161,8 @@ class CredentialStore:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT credential_id, device_id, display_name, token_digest, created_at, revoked_at
+                SELECT credential_id, device_id, display_name, token_digest, created_at,
+                    revoked_at, approval_public_key_spki_der
                 FROM paired_credentials
                 WHERE revoked_at IS NULL
                 ORDER BY created_at, credential_id
@@ -159,7 +178,8 @@ class CredentialStore:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                SELECT credential_id, device_id, display_name, token_digest, created_at, revoked_at
+                SELECT credential_id, device_id, display_name, token_digest, created_at,
+                    revoked_at, approval_public_key_spki_der
                 FROM paired_credentials
                 ORDER BY created_at DESC, credential_id DESC
                 LIMIT ?
@@ -174,7 +194,8 @@ class CredentialStore:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 """
-                SELECT credential_id, device_id, display_name, token_digest, created_at, revoked_at
+                SELECT credential_id, device_id, display_name, token_digest, created_at,
+                    revoked_at, approval_public_key_spki_der
                 FROM paired_credentials
                 WHERE credential_id = ? AND revoked_at IS NULL
                 """,
@@ -194,6 +215,7 @@ class CredentialStore:
             display_name=credential.display_name,
             created_at=credential.created_at,
             revoked_at=revoked_at,
+            approval_public_key_spki_der=credential.approval_public_key_spki_der,
         )
 
     def rotate(self, credential_id: UUID, current_access_token: str) -> RotatedCredential | None:
@@ -206,7 +228,8 @@ class CredentialStore:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 """
-                SELECT credential_id, device_id, display_name, token_digest, created_at, revoked_at
+                SELECT credential_id, device_id, display_name, token_digest, created_at,
+                    revoked_at, approval_public_key_spki_der
                 FROM paired_credentials
                 WHERE credential_id = ? AND revoked_at IS NULL
                 """,
@@ -293,7 +316,7 @@ class CredentialStore:
         try:
             with self._connect() as connection:
                 schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
-                if schema_version not in {0, 1}:
+                if schema_version not in {0, 1, 2}:
                     raise CredentialStoreUnavailableError(
                         "credential database schema is unsupported"
                     )
@@ -305,10 +328,24 @@ class CredentialStore:
                         display_name TEXT NOT NULL,
                         token_digest BLOB NOT NULL UNIQUE CHECK(length(token_digest) = 32),
                         created_at TEXT NOT NULL,
-                        revoked_at TEXT
+                        revoked_at TEXT,
+                        approval_public_key_spki_der BLOB CHECK(
+                            approval_public_key_spki_der IS NULL OR
+                            length(approval_public_key_spki_der) BETWEEN 64 AND 512
+                        )
                     ) STRICT
                     """
                 )
+                if schema_version == 1:
+                    connection.execute(
+                        """
+                        ALTER TABLE paired_credentials
+                        ADD COLUMN approval_public_key_spki_der BLOB CHECK(
+                            approval_public_key_spki_der IS NULL OR
+                            length(approval_public_key_spki_der) BETWEEN 64 AND 512
+                        )
+                        """
+                    )
                 columns = {
                     str(row[1])
                     for row in connection.execute("PRAGMA table_info(paired_credentials)")
@@ -320,9 +357,10 @@ class CredentialStore:
                     "token_digest",
                     "created_at",
                     "revoked_at",
+                    "approval_public_key_spki_der",
                 }:
                     raise CredentialStoreUnavailableError("credential database schema is invalid")
-                connection.execute("PRAGMA user_version = 1")
+                connection.execute("PRAGMA user_version = 2")
         except sqlite3.DatabaseError as error:
             raise CredentialStoreUnavailableError(
                 "credential database could not be initialized"
@@ -375,12 +413,14 @@ def _token_digest(token: str) -> bytes:
 
 
 def _row_to_credential(row: sqlite3.Row | tuple[object, ...]) -> PairedCredential:
+    public_key = cast(bytes, row[6]) if row[6] is not None else None
     return PairedCredential(
         credential_id=UUID(str(row[0])),
         device_id=str(row[1]),
         display_name=str(row[2]),
         created_at=_parse_datetime(str(row[4])),
         revoked_at=_parse_datetime(str(row[5])) if row[5] is not None else None,
+        approval_public_key_spki_der=public_key,
     )
 
 

@@ -28,6 +28,7 @@ MIN_PYTHON = (3, 12)
 HUB_REVERSE_ENDPOINT = "tcp:8787"
 DEV_MODULES = {
     "build": "build",
+    "cryptography": "cryptography",
     "fastapi": "fastapi",
     "httpx2": "httpx",
     "jsonschema": "jsonschema",

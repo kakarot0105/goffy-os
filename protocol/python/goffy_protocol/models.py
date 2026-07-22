@@ -17,7 +17,10 @@ MAC_SYSTEM_INFO_TOOL_NAME = "mac.system_info"
 MAC_SYSTEM_INFO_TOOL_VERSION = "1.0.0"
 MAC_SYSTEM_INFO_FIELDS = frozenset({"status", "operatingSystem", "architecture"})
 APPROVAL_SCHEMA_VERSION: Literal["goffy.approval.v1"] = "goffy.approval.v1"
+APPROVAL_PROOF_SCHEMA_VERSION: Literal["goffy.approval.proof.v1"] = "goffy.approval.proof.v1"
+APPROVAL_PROOF_ALGORITHM: Literal["ECDSA_P256_SHA256"] = "ECDSA_P256_SHA256"
 SHA256_HEX_PATTERN = r"^[a-f0-9]{64}$"
+BASE64_PATTERN = r"^[A-Za-z0-9+/]+={0,2}$"
 
 
 class GoffyModel(BaseModel):
@@ -102,11 +105,23 @@ class ApprovalRequestPayload(GoffyModel):
         return self
 
 
+class ApprovalProofPayload(GoffyModel):
+    schema_version: Literal["goffy.approval.proof.v1"] = Field(alias="schemaVersion")
+    algorithm: Literal["ECDSA_P256_SHA256"]
+    public_key_sha256: str = Field(pattern=SHA256_HEX_PATTERN)
+    signature_base64: str = Field(
+        min_length=64,
+        max_length=512,
+        pattern=BASE64_PATTERN,
+    )
+
+
 class ApprovalResponsePayload(GoffyModel):
     schema_version: Literal["goffy.approval.v1"] = Field(alias="schemaVersion")
     approval_id: UUID
     task_id: UUID
     approved: bool
+    proof: ApprovalProofPayload | None = None
 
     @field_validator("approval_id", "task_id", mode="before")
     @classmethod

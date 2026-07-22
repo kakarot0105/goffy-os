@@ -105,6 +105,7 @@ class PairingService:
         pairing_token: str,
         device_id: str,
         display_name: str,
+        approval_public_key_spki_der: bytes,
     ) -> IssuedCredential:
         now = _as_utc(self._clock())
         async with self._lock:
@@ -123,7 +124,12 @@ class PairingService:
 
             self._pending.pop(challenge_id)
 
-        return await asyncio.to_thread(self._credential_store.issue, device_id, display_name)
+        return await asyncio.to_thread(
+            self._credential_store.issue,
+            device_id,
+            display_name,
+            approval_public_key_spki_der,
+        )
 
     async def list_credentials(self) -> tuple[PairedCredential, ...]:
         return await asyncio.to_thread(self._credential_store.list_credentials)

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+from binascii import Error as Base64DecodeError
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from hashlib import sha256
 from ipaddress import ip_address
 from typing import Literal
 from uuid import UUID
@@ -10,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 from pydantic.alias_generators import to_camel
 
+from goffy_hub.approval import ApprovalValidationError, validate_approval_public_key_spki_der
 from goffy_hub.auth import (
     BEARER_PREFIX,
     PAIRING_ADMIN_SCOPE,
@@ -35,9 +39,13 @@ from goffy_hub.pairing import (
 RevokeCallback = Callable[[UUID], Awaitable[None]]
 DEVICE_ID_PATTERN = r"^[A-Za-z0-9._:-]{1,64}$"
 DISPLAY_NAME_PATTERN = r"^[^\x00-\x1F\x7F]{1,80}$"
-MAX_PAIRING_REQUEST_BYTES = 2_048
+MAX_PAIRING_REQUEST_BYTES = 4_096
 PAIRING_BUNDLE_VERSION: Literal["goffy.pairing.bundle.v3"] = "goffy.pairing.bundle.v3"
 HUB_TRUST_CONTRACT_VERSION: Literal["goffy.hub.trust.v1"] = "goffy.hub.trust.v1"
+APPROVAL_PUBLIC_KEY_SCHEMA_VERSION: Literal["goffy.approval.public-key.v1"] = (
+    "goffy.approval.public-key.v1"
+)
+APPROVAL_PUBLIC_KEY_ALGORITHM: Literal["ECDSA_P256_SHA256"] = "ECDSA_P256_SHA256"
 
 
 class PairingApiModel(BaseModel):
@@ -92,11 +100,32 @@ class PairingBundleResponse(PairingApiModel):
     challenge: PairingChallengeResponse
 
 
+class ApprovalPublicKeyRequest(PairingApiModel):
+    schema_version: Literal["goffy.approval.public-key.v1"]
+    algorithm: Literal["ECDSA_P256_SHA256"]
+    spki_der_base64: str = Field(min_length=80, max_length=512)
+    spki_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+    def decode_spki_der(self) -> bytes:
+        try:
+            decoded = base64.b64decode(self.spki_der_base64, validate=True)
+        except (Base64DecodeError, ValueError) as error:
+            raise ValueError("approval public key is not valid base64") from error
+        if sha256(decoded).hexdigest() != self.spki_sha256:
+            raise ValueError("approval public key hash mismatch")
+        try:
+            validate_approval_public_key_spki_der(decoded)
+        except ApprovalValidationError as error:
+            raise ValueError("approval public key is invalid") from error
+        return decoded
+
+
 class PairingRedemptionRequest(PairingApiModel):
     challenge_id: UUID
     pairing_token: SecretStr = Field(min_length=32, max_length=128)
     device_id: str = Field(pattern=DEVICE_ID_PATTERN)
     display_name: str = Field(pattern=DISPLAY_NAME_PATTERN)
+    approval_public_key: ApprovalPublicKeyRequest
 
     @field_validator("challenge_id", mode="before")
     @classmethod
@@ -251,11 +280,20 @@ def build_pairing_router(
             principal=None,
         )
         try:
+            approval_public_key_spki_der = redemption.approval_public_key.decode_spki_der()
+        except ValueError as error:
+            raise _api_error(
+                400,
+                "invalid_pairing_request",
+                "Pairing request is invalid.",
+            ) from error
+        try:
             issued = await pairing_service.complete(
                 redemption.challenge_id,
                 redemption.pairing_token.get_secret_value(),
                 redemption.device_id,
                 redemption.display_name,
+                approval_public_key_spki_der,
             )
         except InvalidPairingChallengeError as error:
             raise _api_error(

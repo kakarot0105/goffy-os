@@ -1,6 +1,7 @@
 import platform
 from datetime import UTC, datetime
-from typing import cast
+from pathlib import Path
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -8,12 +9,15 @@ from fastapi import FastAPI
 from pydantic import SecretStr
 from starlette.testclient import TestClient, WebSocketTestSession
 
+import goffy_hub.approval as approval_module
+from approval_key_helpers import approval_key_fixture, signed_approval_response
 from goffy_hub.app import create_app
-from goffy_hub.approval import canonical_arguments_sha256
+from goffy_hub.approval import IssuedApprovalRecord, canonical_arguments_sha256
 from goffy_hub.settings import HubSettings
 from goffy_hub.tools import mac_apps
 from goffy_protocol import (
     PROTOCOL_VERSION,
+    ApprovalRequestPayload,
     CapabilityDiscoveryResponsePayload,
     MessageEnvelope,
     MessageType,
@@ -55,6 +59,10 @@ def invocation(
 def receive_envelope(socket: WebSocketTestSession) -> MessageEnvelope:
     raw = socket.receive_text()
     return MessageEnvelope.model_validate_json(raw)
+
+
+def paired_headers(access_token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {access_token}"}
 
 
 def test_capability_discovery_returns_filtered_tool_metadata(client: TestClient) -> None:
@@ -219,6 +227,37 @@ def test_confirm_mac_app_open_stays_fail_closed_without_device_bound_proof(
     assert invocation_error.correlation_id == invocation_request.message_id
 
 
+def test_confirm_mac_app_open_stays_hidden_for_invalid_stored_approval_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mac_apps, "is_mac_apps_supported", lambda: True)
+    monkeypatch.setattr(mac_apps, "mac_app_open_supported", lambda: True)
+    settings = HubSettings(
+        auth_token=SecretStr("test-token-that-is-long-enough"),
+        pairing_database_path=tmp_path / "state" / "credentials.sqlite3",
+        mac_app_allowlist=("Safari=com.apple.Safari",),
+        mac_app_open_enabled=True,
+    )
+    app = create_app(settings)
+    issued = app.state.credential_store.issue("android-test", "Moto G", b"x" * 91)
+    request = discovery("mac.apps.open")
+
+    with (
+        TestClient(app, base_url="http://127.0.0.1:8787") as client,
+        client.websocket_connect(
+            "/ws/v1",
+            headers=paired_headers(issued.access_token),
+        ) as socket,
+    ):
+        socket.send_text(request.model_dump_json(by_alias=True))
+        response = receive_envelope(socket)
+
+    payload = CapabilityDiscoveryResponsePayload.model_validate(response.payload)
+    assert response.message_type is MessageType.CAPABILITY_DISCOVERY_RESPONSE
+    assert payload.tools == []
+
+
 def test_approval_response_is_rejected_while_confirm_execution_is_fail_closed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -251,6 +290,157 @@ def test_approval_response_is_rejected_while_confirm_execution_is_fail_closed(
     assert error.correlation_id == request.message_id
 
 
+def test_paired_confirm_mac_app_open_requires_signed_phone_approval_proof(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mac_apps, "is_mac_apps_supported", lambda: True)
+    monkeypatch.setattr(mac_apps, "mac_app_open_supported", lambda: True)
+    opened_apps: list[str] = []
+
+    def fake_open_and_verify_app(
+        app: mac_apps.ApprovedMacApp,
+        _: float,
+    ) -> dict[str, Any]:
+        opened_apps.append(app.display_name)
+        return {
+            "status": "running",
+            "displayName": app.display_name,
+            "bundleId": app.bundle_id,
+            "verified": True,
+        }
+
+    monkeypatch.setattr(mac_apps, "_open_and_verify_app", fake_open_and_verify_app)
+    key = approval_key_fixture()
+    settings = HubSettings(
+        auth_token=SecretStr("test-token-that-is-long-enough"),
+        pairing_database_path=tmp_path / "state" / "credentials.sqlite3",
+        mac_app_allowlist=("Safari=com.apple.Safari",),
+        mac_app_open_enabled=True,
+        tool_timeout_seconds=3.0,
+    )
+    app = create_app(settings)
+    issued = app.state.credential_store.issue(
+        "android-test",
+        "Moto G",
+        key.public_key_spki_der,
+    )
+    task_id = uuid4()
+    discovery_request = discovery("mac.apps.open")
+    invocation_request = invocation(
+        "mac.apps.open",
+        payload={
+            "toolName": "mac.apps.open",
+            "arguments": {"displayName": "Safari"},
+            "taskId": str(task_id),
+        },
+    )
+
+    with (
+        TestClient(app, base_url="http://127.0.0.1:8787") as client,
+        client.websocket_connect(
+            "/ws/v1",
+            headers=paired_headers(issued.access_token),
+        ) as socket,
+    ):
+        socket.send_text(discovery_request.model_dump_json(by_alias=True))
+        discovery_response = receive_envelope(socket)
+        socket.send_text(invocation_request.model_dump_json(by_alias=True))
+        approval_envelope = receive_envelope(socket)
+        approval_payload = ApprovalRequestPayload.model_validate(approval_envelope.payload)
+        record = IssuedApprovalRecord(
+            approval_id=approval_payload.approval_id,
+            principal_key=f"paired:{issued.credential.credential_id}",
+            task_id=approval_payload.task_id,
+            tool_name=approval_payload.tool_name,
+            arguments_sha256=approval_payload.arguments_sha256,
+            issued_at_epoch_millis=approval_payload.issued_at_epoch_millis,
+            expires_at_epoch_millis=approval_payload.expires_at_epoch_millis,
+        )
+        approval_response = MessageEnvelope(
+            protocol_version=PROTOCOL_VERSION,
+            message_id=uuid4(),
+            timestamp=datetime.now(UTC),
+            device_id="android-test",
+            message_type=MessageType.APPROVAL_RESPONSE,
+            payload=signed_approval_response(
+                record=record,
+                credential_id=issued.credential.credential_id,
+                key=key,
+            ).model_dump(mode="json", by_alias=True),
+            correlation_id=invocation_request.message_id,
+        )
+        socket.send_text(approval_response.model_dump_json(by_alias=True))
+        events = [receive_envelope(socket) for _ in range(4)]
+
+    discovered = CapabilityDiscoveryResponsePayload.model_validate(discovery_response.payload)
+    assert [tool.name for tool in discovered.tools] == ["mac.apps.open"]
+    assert approval_envelope.message_type is MessageType.APPROVAL_REQUEST
+    assert approval_envelope.correlation_id == invocation_request.message_id
+    assert [event.message_type for event in events] == [
+        MessageType.TOOL_PROGRESS,
+        MessageType.TOOL_PROGRESS,
+        MessageType.TOOL_RESULT,
+        MessageType.VERIFICATION_RESULT,
+    ]
+    assert events[2].payload["structuredContent"]["verified"] is True
+    assert opened_apps == ["Safari"]
+
+
+def test_pending_confirm_approval_is_discarded_when_websocket_disconnects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(approval_module, "MAX_PENDING_APPROVALS", 1)
+    monkeypatch.setattr(mac_apps, "is_mac_apps_supported", lambda: True)
+    monkeypatch.setattr(mac_apps, "mac_app_open_supported", lambda: True)
+    key = approval_key_fixture()
+    settings = HubSettings(
+        auth_token=SecretStr("test-token-that-is-long-enough"),
+        pairing_database_path=tmp_path / "state" / "credentials.sqlite3",
+        mac_app_allowlist=("Safari=com.apple.Safari",),
+        mac_app_open_enabled=True,
+    )
+    app = create_app(settings)
+    issued = app.state.credential_store.issue(
+        "android-test",
+        "Moto G",
+        key.public_key_spki_der,
+    )
+
+    with TestClient(app, base_url="http://127.0.0.1:8787") as client:
+        with client.websocket_connect(
+            "/ws/v1",
+            headers=paired_headers(issued.access_token),
+        ) as socket:
+            socket.send_text(discovery("mac.apps.open").model_dump_json(by_alias=True))
+            receive_envelope(socket)
+            socket.send_text(
+                invocation(
+                    "mac.apps.open",
+                    payload=approved_mac_app_open_payload(),
+                ).model_dump_json(by_alias=True)
+            )
+            first_approval = receive_envelope(socket)
+
+        with client.websocket_connect(
+            "/ws/v1",
+            headers=paired_headers(issued.access_token),
+        ) as socket:
+            second_invocation = invocation(
+                "mac.apps.open",
+                payload=approved_mac_app_open_payload(),
+            )
+            socket.send_text(discovery("mac.apps.open").model_dump_json(by_alias=True))
+            receive_envelope(socket)
+            socket.send_text(second_invocation.model_dump_json(by_alias=True))
+            second_approval = receive_envelope(socket)
+
+    assert first_approval.message_type is MessageType.APPROVAL_REQUEST
+    assert second_approval.message_type is MessageType.APPROVAL_REQUEST
+    assert second_approval.correlation_id == second_invocation.message_id
+
+
 def test_safe_tool_rejects_unexpected_approval_artifact(client: TestClient) -> None:
     request = invocation(
         "mac.system_info",
@@ -273,11 +463,24 @@ def test_safe_tool_rejects_unexpected_approval_artifact(client: TestClient) -> N
 
 
 def test_confirm_mac_app_open_rejects_client_minted_approval_artifact(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(mac_apps, "is_mac_apps_supported", lambda: True)
     monkeypatch.setattr(mac_apps, "mac_app_open_supported", lambda: True)
-    app = create_app(mac_app_open_settings())
+    key = approval_key_fixture()
+    settings = HubSettings(
+        auth_token=SecretStr("test-token-that-is-long-enough"),
+        pairing_database_path=tmp_path / "state" / "credentials.sqlite3",
+        mac_app_allowlist=("Safari=com.apple.Safari",),
+        mac_app_open_enabled=True,
+    )
+    app = create_app(settings)
+    issued = app.state.credential_store.issue(
+        "android-test",
+        "Moto G",
+        key.public_key_spki_der,
+    )
     task_id = uuid4()
     request = invocation(
         "mac.apps.open",
@@ -299,7 +502,7 @@ def test_confirm_mac_app_open_rejects_client_minted_approval_artifact(
 
     with (
         TestClient(app, base_url="http://127.0.0.1:8787") as client,
-        client.websocket_connect("/ws/v1", headers=AUTH_HEADERS) as socket,
+        client.websocket_connect("/ws/v1", headers=paired_headers(issued.access_token)) as socket,
     ):
         socket.send_text(discovery("mac.apps.open").model_dump_json(by_alias=True))
         receive_envelope(socket)

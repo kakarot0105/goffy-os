@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import time
 from collections.abc import Callable
@@ -8,10 +9,25 @@ from hashlib import sha256
 from typing import Any
 from uuid import UUID, uuid4
 
-from goffy_protocol import ApprovalRequestPayload, ApprovalResponsePayload, ToolInvocationPayload
+from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.serialization import load_der_public_key
+
+from goffy_protocol import (
+    APPROVAL_PROOF_ALGORITHM,
+    APPROVAL_PROOF_SCHEMA_VERSION,
+    ApprovalRequestPayload,
+    ApprovalResponsePayload,
+    ToolInvocationPayload,
+)
 
 HUB_APPROVAL_TTL_MILLIS = 60_000
 MAX_PENDING_APPROVALS = 1_024
+MIN_APPROVAL_PUBLIC_KEY_DER_BYTES = 64
+MAX_APPROVAL_PUBLIC_KEY_DER_BYTES = 256
+MAX_APPROVAL_SIGNATURE_BYTES = 256
+APPROVAL_SIGNING_PAYLOAD_SCHEMA_VERSION = "goffy.approval.signed-payload.v1"
 
 
 class ApprovalValidationError(Exception):
@@ -84,19 +100,29 @@ class ApprovalArtifactStore:
         principal_key: str,
         response: ApprovalResponsePayload,
         invocation: ToolInvocationPayload,
+        credential_id: UUID | None,
+        approval_public_key_spki_der: bytes | None,
     ) -> IssuedApprovalRecord:
-        record = self._pending_approvals.pop(response.approval_id, None)
+        record = self._pending_approvals.get(response.approval_id)
         if record is None:
             raise ApprovalValidationError(
                 "approval_invalid",
                 "Approval request is unknown or already consumed.",
             )
         if not response.approved:
+            self._pending_approvals.pop(response.approval_id, None)
             raise ApprovalValidationError(
                 "approval_denied",
                 "Approval was denied; no tool was invoked.",
             )
         self._validate(record, principal_key, response, invocation)
+        verify_approval_response_proof(
+            record=record,
+            response=response,
+            credential_id=credential_id,
+            approval_public_key_spki_der=approval_public_key_spki_der,
+        )
+        self._pending_approvals.pop(response.approval_id, None)
         return record
 
     def discard(self, approval_id: UUID) -> None:
@@ -154,3 +180,124 @@ def canonical_arguments_sha256(arguments: dict[str, Any]) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return sha256(encoded).hexdigest()
+
+
+def approval_public_key_sha256(public_key_spki_der: bytes) -> str:
+    validate_approval_public_key_spki_der(public_key_spki_der)
+    return sha256(public_key_spki_der).hexdigest()
+
+
+def validate_approval_public_key_spki_der(public_key_spki_der: bytes) -> None:
+    if not (
+        MIN_APPROVAL_PUBLIC_KEY_DER_BYTES
+        <= len(public_key_spki_der)
+        <= MAX_APPROVAL_PUBLIC_KEY_DER_BYTES
+    ):
+        raise ApprovalValidationError(
+            "approval_public_key_invalid",
+            "Approval public key is outside the supported size range.",
+        )
+    try:
+        public_key = load_der_public_key(public_key_spki_der)
+    except (ValueError, UnsupportedAlgorithm) as error:
+        raise ApprovalValidationError(
+            "approval_public_key_invalid",
+            "Approval public key could not be decoded.",
+        ) from error
+    if not isinstance(public_key, ec.EllipticCurvePublicKey) or not isinstance(
+        public_key.curve,
+        ec.SECP256R1,
+    ):
+        raise ApprovalValidationError(
+            "approval_public_key_invalid",
+            "Approval public key must be an ECDSA P-256 key.",
+        )
+
+
+def approval_signing_payload(
+    *,
+    record: IssuedApprovalRecord,
+    credential_id: UUID,
+    approved: bool,
+) -> bytes:
+    payload = {
+        "schemaVersion": APPROVAL_SIGNING_PAYLOAD_SCHEMA_VERSION,
+        "approvalId": str(record.approval_id),
+        "taskId": str(record.task_id),
+        "credentialId": str(credential_id),
+        "toolName": record.tool_name,
+        "argumentsSha256": record.arguments_sha256,
+        "issuedAtEpochMillis": record.issued_at_epoch_millis,
+        "expiresAtEpochMillis": record.expires_at_epoch_millis,
+        "approved": approved,
+    }
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+
+def verify_approval_response_proof(
+    *,
+    record: IssuedApprovalRecord,
+    response: ApprovalResponsePayload,
+    credential_id: UUID | None,
+    approval_public_key_spki_der: bytes | None,
+) -> None:
+    if credential_id is None or approval_public_key_spki_der is None:
+        raise ApprovalValidationError(
+            "approval_proof_required",
+            "A paired Android approval public key is required for this action.",
+        )
+    proof = response.proof
+    if proof is None:
+        raise ApprovalValidationError(
+            "approval_proof_required",
+            "A device-bound Android approval proof is required for this action.",
+        )
+    if (
+        proof.schema_version != APPROVAL_PROOF_SCHEMA_VERSION
+        or proof.algorithm != APPROVAL_PROOF_ALGORITHM
+    ):
+        raise ApprovalValidationError(
+            "approval_proof_invalid",
+            "Approval proof metadata is invalid.",
+        )
+    expected_key_hash = approval_public_key_sha256(approval_public_key_spki_der)
+    if proof.public_key_sha256 != expected_key_hash:
+        raise ApprovalValidationError(
+            "approval_proof_invalid",
+            "Approval proof key does not match this paired credential.",
+        )
+    try:
+        signature = base64.b64decode(proof.signature_base64, validate=True)
+    except ValueError as error:
+        raise ApprovalValidationError(
+            "approval_proof_invalid",
+            "Approval proof signature is invalid.",
+        ) from error
+    if not 1 <= len(signature) <= MAX_APPROVAL_SIGNATURE_BYTES:
+        raise ApprovalValidationError(
+            "approval_proof_invalid",
+            "Approval proof signature is outside the supported size range.",
+        )
+    public_key = load_der_public_key(approval_public_key_spki_der)
+    if not isinstance(public_key, ec.EllipticCurvePublicKey):
+        raise ApprovalValidationError(
+            "approval_public_key_invalid",
+            "Approval public key must be an ECDSA key.",
+        )
+    payload = approval_signing_payload(
+        record=record,
+        credential_id=credential_id,
+        approved=response.approved,
+    )
+    try:
+        public_key.verify(signature, payload, ec.ECDSA(hashes.SHA256()))
+    except InvalidSignature as error:
+        raise ApprovalValidationError(
+            "approval_proof_invalid",
+            "Approval proof signature did not verify.",
+        ) from error

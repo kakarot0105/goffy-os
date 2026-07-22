@@ -18,6 +18,7 @@ from goffy_hub.credentials import (
 ACCESS_TOKEN = "paired-access-token-" + "a" * 32  # noqa: S105
 CREDENTIAL_ID = UUID("10101010-1010-4010-8010-101010101010")
 NOW = datetime(2026, 7, 13, 12, 0, tzinfo=UTC)
+APPROVAL_PUBLIC_KEY = b"x" * 91
 
 
 def build_store(path: Path, *, now: datetime = NOW) -> CredentialStore:
@@ -50,8 +51,24 @@ def test_credential_store_persists_only_digest_and_authenticates_after_reopen(
         schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
     assert isinstance(digest, bytes)
     assert len(digest) == 32
-    assert schema_version == 1
+    assert schema_version == 2
     assert stat.S_IMODE(database_path.stat().st_mode) == 0o600
+
+
+def test_credential_store_persists_approval_public_key_metadata(tmp_path: Path) -> None:
+    database_path = tmp_path / "state" / "credentials.sqlite3"
+    store = build_store(database_path)
+
+    issued = store.issue("setup-observation-1", "Moto G", APPROVAL_PUBLIC_KEY)
+    reopened = CredentialStore(database_path)
+
+    assert issued.credential.approval_public_key_spki_der == APPROVAL_PUBLIC_KEY
+    assert reopened.authenticate(ACCESS_TOKEN) == issued.credential
+    with sqlite3.connect(database_path) as connection:
+        stored_key = connection.execute(
+            "SELECT approval_public_key_spki_der FROM paired_credentials"
+        ).fetchone()[0]
+    assert stored_key == APPROVAL_PUBLIC_KEY
 
 
 def test_revoke_fails_authentication_and_persists_revoked_metadata(tmp_path: Path) -> None:

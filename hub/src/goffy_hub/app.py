@@ -61,10 +61,9 @@ from goffy_protocol import (
 LOGGER = logging.getLogger(__name__)
 SendEvent = Callable[[MessageType, BaseModel, UUID | None], Awaitable[bool]]
 MAX_MESSAGES_PER_CONNECTION = 64
-# Keep false until Android can attach non-forgeable, device-bound proof that the
-# ApprovalResponse came from a visible user approval on the paired phone.
-WEBSOCKET_CONFIRM_APPROVAL_PROOF_ENABLED = False
-WEBSOCKET_TOOL_PERMISSIONS = frozenset({PermissionLevel.SAFE})
+WEBSOCKET_CONFIRM_APPROVAL_PROOF_ENABLED = True
+WEBSOCKET_SAFE_TOOL_PERMISSIONS = frozenset({PermissionLevel.SAFE})
+WEBSOCKET_CONFIRM_TOOL_PERMISSIONS = frozenset({PermissionLevel.SAFE, PermissionLevel.CONFIRM})
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +72,8 @@ class PendingConfirmInvocation:
     invocation: ToolInvocationPayload
     prepared: PreparedToolInvocation
     principal_key: str
+    credential_id: UUID
+    approval_public_key_spki_der: bytes
 
 
 class HealthResponse(BaseModel):
@@ -310,6 +311,7 @@ def create_app(
         seen_message_ids: set[UUID] = set()
         pending_confirm_invocations: dict[UUID, PendingConfirmInvocation] = {}
         principal_key = _principal_key(principal)
+        tool_permissions = _tool_permissions_for_principal(principal)
         outbound_closed = False
 
         async def send_event(
@@ -347,6 +349,8 @@ def create_app(
                     approval_store,
                     pending_confirm_invocations,
                     principal_key,
+                    principal,
+                    tool_permissions,
                     discovered_tools,
                     seen_message_ids,
                     send_event,
@@ -356,6 +360,7 @@ def create_app(
         except WebSocketDisconnect:
             return
         finally:
+            _discard_pending_confirm_invocations(approval_store, pending_confirm_invocations)
             if credential_id is not None:
                 await websocket_connections.unregister(credential_id, websocket)
 
@@ -370,12 +375,26 @@ def _principal_key(principal: AuthenticatedPrincipal) -> str:
     return f"{principal.kind.value}:{principal.client_id}"
 
 
+def _tool_permissions_for_principal(
+    principal: AuthenticatedPrincipal,
+) -> frozenset[PermissionLevel]:
+    if (
+        WEBSOCKET_CONFIRM_APPROVAL_PROOF_ENABLED
+        and principal.credential_id is not None
+        and principal.approval_public_key_spki_der is not None
+    ):
+        return WEBSOCKET_CONFIRM_TOOL_PERMISSIONS
+    return WEBSOCKET_SAFE_TOOL_PERMISSIONS
+
+
 async def _handle_message(
     raw_message: str,
     registry: ToolRegistry,
     approval_store: ApprovalArtifactStore,
     pending_confirm_invocations: dict[UUID, PendingConfirmInvocation],
     principal_key: str,
+    principal: AuthenticatedPrincipal,
+    tool_permissions: frozenset[PermissionLevel],
     discovered_tools: set[str],
     seen_message_ids: set[UUID],
     send_event: SendEvent,
@@ -414,7 +433,11 @@ async def _handle_message(
 
     if envelope.message_type is MessageType.APPROVAL_RESPONSE:
         discovered_tools.clear()
-        if not WEBSOCKET_CONFIRM_APPROVAL_PROOF_ENABLED:
+        if (
+            not WEBSOCKET_CONFIRM_APPROVAL_PROOF_ENABLED
+            or principal.credential_id is None
+            or principal.approval_public_key_spki_der is None
+        ):
             await _send_error(
                 send_event,
                 code="approval_unavailable",
@@ -460,7 +483,7 @@ async def _handle_message(
 
         tools = registry.discover(
             discovery_request.tool_name,
-            permissions=WEBSOCKET_TOOL_PERMISSIONS,
+            permissions=tool_permissions,
         )
         if tools:
             discovered_tools.add(tools[0].name)
@@ -528,7 +551,7 @@ async def _handle_message(
             correlation_id=envelope.message_id,
         )
         return
-    if prepared.definition.permission not in WEBSOCKET_TOOL_PERMISSIONS:
+    if prepared.definition.permission not in tool_permissions:
         await _send_error(
             send_event,
             code="tool_not_found",
@@ -537,7 +560,11 @@ async def _handle_message(
         )
         return
     if prepared.definition.permission is PermissionLevel.CONFIRM:
-        if not WEBSOCKET_CONFIRM_APPROVAL_PROOF_ENABLED:
+        if (
+            not WEBSOCKET_CONFIRM_APPROVAL_PROOF_ENABLED
+            or principal.credential_id is None
+            or principal.approval_public_key_spki_der is None
+        ):
             await _send_error(
                 send_event,
                 code="tool_not_found",
@@ -563,6 +590,8 @@ async def _handle_message(
             invocation=invocation,
             prepared=prepared,
             principal_key=principal_key,
+            credential_id=principal.credential_id,
+            approval_public_key_spki_der=principal.approval_public_key_spki_der,
         )
         if not await send_event(
             MessageType.APPROVAL_REQUEST,
@@ -600,7 +629,7 @@ async def _handle_approval_response(
     *,
     fallback_correlation_id: UUID,
 ) -> None:
-    pending = pending_confirm_invocations.pop(approval_response.approval_id, None)
+    pending = pending_confirm_invocations.get(approval_response.approval_id)
     correlation_id = pending.original_message_id if pending is not None else fallback_correlation_id
     if pending is None:
         await _send_error(
@@ -618,20 +647,29 @@ async def _handle_approval_response(
             correlation_id=correlation_id,
         )
         return
+    consumed = False
     try:
         approval_store.consume(
             principal_key=principal_key,
             response=approval_response,
             invocation=pending.invocation,
+            credential_id=pending.credential_id,
+            approval_public_key_spki_der=pending.approval_public_key_spki_der,
         )
+        consumed = True
     except ApprovalValidationError as error:
+        if error.code == "approval_denied":
+            consumed = True
         await _send_error(
             send_event,
             code=error.code,
             message=error.message,
             correlation_id=correlation_id,
         )
+        if consumed:
+            pending_confirm_invocations.pop(approval_response.approval_id, None)
         return
+    pending_confirm_invocations.pop(approval_response.approval_id, None)
 
     await _execute_prepared_invocation(
         registry,
@@ -640,6 +678,15 @@ async def _handle_approval_response(
         send_event,
         correlation_id=correlation_id,
     )
+
+
+def _discard_pending_confirm_invocations(
+    approval_store: ApprovalArtifactStore,
+    pending_confirm_invocations: dict[UUID, PendingConfirmInvocation],
+) -> None:
+    for approval_id in tuple(pending_confirm_invocations):
+        approval_store.discard(approval_id)
+        pending_confirm_invocations.pop(approval_id, None)
 
 
 async def _execute_prepared_invocation(

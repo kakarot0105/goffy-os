@@ -21,6 +21,9 @@ import dev.goffy.os.hub.HubOperatorAuditGateway
 import dev.goffy.os.hub.HubOperatorAuditSnapshot
 import dev.goffy.os.hub.HubPairingException
 import dev.goffy.os.hub.HubPairingGateway
+import dev.goffy.os.hub.ApprovalProof
+import dev.goffy.os.hub.ApprovalProofSigner
+import dev.goffy.os.hub.ApprovalSigningPublicKey
 import dev.goffy.os.hub.IssuedHubCredential
 import dev.goffy.os.hub.RotatedHubCredential
 import dev.goffy.os.hub.SelfRevocationResult
@@ -111,6 +114,12 @@ class GoffyViewModelTest {
     private val token = "test-token-that-is-long-enough"
     private val hubFingerprint =
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    private val approvalPublicKeyBase64 =
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEOOfgXUBRzlGKAHgBQ47lu/jpynJF7oKXNWncrevNNyaERKuUWG3Vy3VM1ddPI9SjbGe3y41q1hQLFqlkw5KoQA=="
+    private val approvalPublicKeySha256 =
+        "c9b99ef51fd73a4e77e4a5b6dd97636c156d7dde79e9daf5a6d1a9363fb52ac7"
+    private val approvalSignatureBase64 =
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
     @Before
     fun setUp() {
@@ -218,9 +227,13 @@ class GoffyViewModelTest {
     @Test
     fun macAppOpenRequiresApprovalBeforeSendingHubInvocation() = runTest(dispatcher) {
         val gateway = FakeHubGateway { flowOf(*successfulMacAppOpenEvents().toTypedArray()) }
-        val viewModel = createViewModel(gateway)
+        val credential = storedCredential()
+        val viewModel = createViewModel(
+            gateway,
+            credentialStore = RecordingCredentialStore(HubCredentialLoadResult.Loaded(credential)),
+        )
 
-        assertTrue(viewModel.configureHub(endpoint, token))
+        advanceUntilIdle()
         viewModel.submitCommand("Open Safari on my Mac")
         runCurrent()
 
@@ -241,6 +254,7 @@ class GoffyViewModelTest {
         assertTrue(gateway.requests.single().encodedMessage.contains("\"taskId\":\"${pending.taskId}\""))
         assertFalse(gateway.requests.single().encodedMessage.contains("\"approval\""))
         assertEquals(pending.taskId, gateway.requests.single().approvedTaskId)
+        assertEquals(credential.credentialId, gateway.requests.single().approvedCredentialId)
         assertEquals(
             "48bcd955f3fdbcaddfc3844e3a9bdc8a9a3791bab296bec333e8e7231244793e",
             gateway.requests.single().approvedArgumentsSha256,
@@ -481,6 +495,7 @@ class GoffyViewModelTest {
         assertEquals(endpoint, viewModel.uiState.value.hubEndpoint)
         assertEquals(hubFingerprint, viewModel.uiState.value.hubIdentityFingerprint)
         assertEquals(1, pairingGateway.calls)
+        assertEquals(approvalPublicKeySha256, pairingGateway.approvalPublicKeys.single().spkiSha256)
         assertEquals(1, credentialStore.saves)
         assertFalse(viewModel.uiState.value.toString().contains(token))
         assertFalse(viewModel.uiState.value.toString().contains("secret challenge payload"))
@@ -489,10 +504,12 @@ class GoffyViewModelTest {
     @Test
     fun persistenceFailureLeavesPairingDisabledAndVisible() = runTest(dispatcher) {
         val credentialStore = RecordingCredentialStore(failSaves = true)
+        val approvalProofSigner = FakeApprovalProofSigner()
         val viewModel = createViewModel(
             FakeHubGateway { flowOf() },
             pairingGateway = RecordingPairingGateway(),
             credentialStore = credentialStore,
+            approvalProofSigner = approvalProofSigner,
         )
         advanceUntilIdle()
 
@@ -500,6 +517,8 @@ class GoffyViewModelTest {
         advanceUntilIdle()
 
         assertEquals(HubLinkState.DEGRADED, viewModel.uiState.value.hubLinkState)
+        assertEquals(1, approvalProofSigner.publicKeyCalls)
+        assertEquals(1, approvalProofSigner.deleteKeyCalls)
         assertFalse(viewModel.uiState.value.hubConfigured)
         assertTrue(viewModel.uiState.value.linkError.orEmpty().contains("not activated"))
         assertFalse(viewModel.uiState.value.toString().contains(token))
@@ -508,10 +527,12 @@ class GoffyViewModelTest {
     @Test
     fun leavingForegroundCancelsPairingAndClearsAnyPartialLocalAuthority() = runTest(dispatcher) {
         val credentialStore = RecordingCredentialStore()
+        val approvalProofSigner = FakeApprovalProofSigner()
         val viewModel = createViewModel(
             FakeHubGateway { flowOf() },
             pairingGateway = BlockingPairingGateway(),
             credentialStore = credentialStore,
+            approvalProofSigner = approvalProofSigner,
         )
         advanceUntilIdle()
         viewModel.pairHub(endpoint, "secret challenge payload")
@@ -523,6 +544,8 @@ class GoffyViewModelTest {
         assertEquals(HubLinkState.UNPAIRED, viewModel.uiState.value.hubLinkState)
         assertFalse(viewModel.uiState.value.hubConfigured)
         assertEquals(1, credentialStore.clears)
+        assertEquals(1, approvalProofSigner.publicKeyCalls)
+        assertEquals(1, approvalProofSigner.deleteKeyCalls)
         assertTrue(viewModel.uiState.value.linkError.orEmpty().contains("left the foreground"))
     }
 
@@ -532,6 +555,7 @@ class GoffyViewModelTest {
             HubCredentialLoadResult.Loaded(storedCredential()),
         )
         val pairingGateway = RecordingPairingGateway()
+        val approvalProofSigner = FakeApprovalProofSigner()
         val gateway = FakeHubGateway {
             flow {
                 emit(ExecutionEvent.Starting(1))
@@ -542,6 +566,7 @@ class GoffyViewModelTest {
             gateway,
             pairingGateway = pairingGateway,
             credentialStore = credentialStore,
+            approvalProofSigner = approvalProofSigner,
         )
         advanceUntilIdle()
         viewModel.submitCommand("Show my Mac status")
@@ -551,6 +576,7 @@ class GoffyViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, credentialStore.clears)
+        assertEquals(1, approvalProofSigner.deleteKeyCalls)
         assertEquals(1, pairingGateway.revocationCalls)
         assertEquals(storedCredential().credentialId, pairingGateway.revokedCredentialIds.single())
         assertEquals(HubLinkState.UNPAIRED, viewModel.uiState.value.hubLinkState)
@@ -566,10 +592,12 @@ class GoffyViewModelTest {
             HubCredentialLoadResult.Loaded(storedCredential()),
         )
         val pairingGateway = RecordingPairingGateway(failRevocation = true)
+        val approvalProofSigner = FakeApprovalProofSigner()
         val viewModel = createViewModel(
             FakeHubGateway { flowOf() },
             pairingGateway = pairingGateway,
             credentialStore = credentialStore,
+            approvalProofSigner = approvalProofSigner,
         )
         advanceUntilIdle()
 
@@ -577,6 +605,7 @@ class GoffyViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, credentialStore.clears)
+        assertEquals(1, approvalProofSigner.deleteKeyCalls)
         assertEquals(1, pairingGateway.revocationCalls)
         assertEquals(HubLinkState.UNPAIRED, viewModel.uiState.value.hubLinkState)
         assertFalse(viewModel.uiState.value.hubConfigured)
@@ -591,10 +620,12 @@ class GoffyViewModelTest {
             failClears = true,
         )
         val pairingGateway = RecordingPairingGateway()
+        val approvalProofSigner = FakeApprovalProofSigner()
         val viewModel = createViewModel(
             FakeHubGateway { flowOf() },
             pairingGateway = pairingGateway,
             credentialStore = credentialStore,
+            approvalProofSigner = approvalProofSigner,
         )
         advanceUntilIdle()
 
@@ -602,6 +633,7 @@ class GoffyViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, credentialStore.clears)
+        assertEquals(1, approvalProofSigner.deleteKeyCalls)
         assertEquals(1, pairingGateway.revocationCalls)
         assertEquals(HubLinkState.DEGRADED, viewModel.uiState.value.hubLinkState)
         assertFalse(viewModel.uiState.value.hubConfigured)
@@ -613,10 +645,12 @@ class GoffyViewModelTest {
     fun forgetDevelopmentLinkDoesNotAttemptPairedSelfRevocation() = runTest(dispatcher) {
         val credentialStore = RecordingCredentialStore()
         val pairingGateway = RecordingPairingGateway()
+        val approvalProofSigner = FakeApprovalProofSigner()
         val viewModel = createViewModel(
             FakeHubGateway { flowOf() },
             pairingGateway = pairingGateway,
             credentialStore = credentialStore,
+            approvalProofSigner = approvalProofSigner,
         )
         advanceUntilIdle()
 
@@ -625,6 +659,7 @@ class GoffyViewModelTest {
         advanceUntilIdle()
 
         assertEquals(1, credentialStore.clears)
+        assertEquals(1, approvalProofSigner.deleteKeyCalls)
         assertEquals(0, pairingGateway.revocationCalls)
         assertEquals(HubLinkState.UNPAIRED, viewModel.uiState.value.hubLinkState)
         assertEquals(false, viewModel.uiState.value.linkNotice?.warning)
@@ -693,10 +728,12 @@ class GoffyViewModelTest {
             HubCredentialLoadResult.Loaded(storedCredential()),
         )
         val pairingGateway = RecordingPairingGateway(failRotation = true)
+        val approvalProofSigner = FakeApprovalProofSigner()
         val viewModel = createViewModel(
             FakeHubGateway { flowOf() },
             pairingGateway = pairingGateway,
             credentialStore = credentialStore,
+            approvalProofSigner = approvalProofSigner,
         )
         advanceUntilIdle()
 
@@ -706,6 +743,7 @@ class GoffyViewModelTest {
         assertEquals(1, pairingGateway.rotationCalls)
         assertEquals(0, credentialStore.saves)
         assertEquals(1, credentialStore.clears)
+        assertEquals(1, approvalProofSigner.deleteKeyCalls)
         assertEquals(HubLinkState.DEGRADED, viewModel.uiState.value.hubLinkState)
         assertFalse(viewModel.uiState.value.hubConfigured)
         assertTrue(viewModel.uiState.value.linkError.orEmpty().contains("disabled"))
@@ -718,10 +756,12 @@ class GoffyViewModelTest {
             failSaves = true,
         )
         val pairingGateway = RecordingPairingGateway()
+        val approvalProofSigner = FakeApprovalProofSigner()
         val viewModel = createViewModel(
             FakeHubGateway { flowOf() },
             pairingGateway = pairingGateway,
             credentialStore = credentialStore,
+            approvalProofSigner = approvalProofSigner,
         )
         advanceUntilIdle()
 
@@ -731,6 +771,7 @@ class GoffyViewModelTest {
         assertEquals(1, pairingGateway.rotationCalls)
         assertEquals(1, credentialStore.saves)
         assertEquals(1, credentialStore.clears)
+        assertEquals(1, approvalProofSigner.deleteKeyCalls)
         assertEquals(HubLinkState.DEGRADED, viewModel.uiState.value.hubLinkState)
         assertFalse(viewModel.uiState.value.hubConfigured)
         assertTrue(viewModel.uiState.value.linkError.orEmpty().contains("pair again"))
@@ -1664,6 +1705,7 @@ class GoffyViewModelTest {
         pairingGateway: HubPairingGateway = RecordingPairingGateway(),
         operatorAuditGateway: HubOperatorAuditGateway = RecordingHubOperatorAuditGateway(),
         credentialStore: HubCredentialStore = RecordingCredentialStore(),
+        approvalProofSigner: ApprovalProofSigner = FakeApprovalProofSigner(),
         approvalTtlMillis: Long = 60_000,
         allowDevelopmentTokenConfiguration: Boolean = true,
         nowMillis: () -> Long = System::currentTimeMillis,
@@ -1695,6 +1737,7 @@ class GoffyViewModelTest {
             pairingGateway = pairingGateway,
             operatorAuditGateway = operatorAuditGateway,
             credentialStore = credentialStore,
+            approvalProofSigner = approvalProofSigner,
             phoneGateway = phoneGateway,
             codec = GoffyProtocolCodec(
                 now = { Instant.parse("2026-07-13T16:00:00Z") },
@@ -2219,6 +2262,34 @@ class GoffyViewModelTest {
         override fun close() = Unit
     }
 
+    private inner class FakeApprovalProofSigner : ApprovalProofSigner {
+        var publicKeyCalls = 0
+        var deleteKeyCalls = 0
+        val signedPayloads = mutableListOf<String>()
+
+        override fun publicKey(): ApprovalSigningPublicKey {
+            publicKeyCalls += 1
+            return ApprovalSigningPublicKey(
+                algorithm = "ECDSA_P256_SHA256",
+                spkiDerBase64 = approvalPublicKeyBase64,
+                spkiSha256 = approvalPublicKeySha256,
+            )
+        }
+
+        override fun sign(payload: ByteArray): ApprovalProof {
+            signedPayloads += payload.decodeToString()
+            return ApprovalProof(
+                algorithm = "ECDSA_P256_SHA256",
+                publicKeySha256 = approvalPublicKeySha256,
+                signatureBase64 = approvalSignatureBase64,
+            )
+        }
+
+        override fun deleteKey() {
+            deleteKeyCalls += 1
+        }
+    }
+
     private inner class RecordingPairingGateway(
         private val failRevocation: Boolean = false,
         private val failRotation: Boolean = false,
@@ -2229,14 +2300,17 @@ class GoffyViewModelTest {
         var rotationCalls = 0
         val revokedCredentialIds = mutableListOf<UUID>()
         val rotatedCredentialIds = mutableListOf<UUID>()
+        val approvalPublicKeys = mutableListOf<ApprovalSigningPublicKey>()
 
         override suspend fun redeem(
             endpoint: HubEndpoint,
             challengeJson: String,
             deviceId: String,
             displayName: String,
+            approvalPublicKey: ApprovalSigningPublicKey,
         ): IssuedHubCredential {
             calls += 1
+            approvalPublicKeys += approvalPublicKey
             return IssuedHubCredential(
                 UUID.fromString("55555555-5555-4555-8555-555555555555"),
                 "test-token-that-is-long-enough-xx",
@@ -2288,6 +2362,7 @@ class GoffyViewModelTest {
             challengeJson: String,
             deviceId: String,
             displayName: String,
+            approvalPublicKey: ApprovalSigningPublicKey,
         ): IssuedHubCredential = awaitCancellation()
 
         override suspend fun revokeSelf(

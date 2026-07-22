@@ -145,6 +145,12 @@ def test_approval_request_rejects_non_expiring_or_unhashed_input() -> None:
 def test_approval_response_payload_is_strict() -> None:
     task_id = uuid4()
     approval_id = uuid4()
+    valid_proof = {
+        "schemaVersion": "goffy.approval.proof.v1",
+        "algorithm": "ECDSA_P256_SHA256",
+        "publicKeySha256": "0" * 64,
+        "signatureBase64": "A" * 96,
+    }
 
     parsed = ApprovalResponsePayload.model_validate(
         {
@@ -152,11 +158,14 @@ def test_approval_response_payload_is_strict() -> None:
             "approvalId": str(approval_id),
             "taskId": str(task_id),
             "approved": True,
+            "proof": valid_proof,
         }
     )
 
     assert parsed.approval_id == approval_id
     assert parsed.task_id == task_id
+    assert parsed.proof is not None
+    assert parsed.proof.algorithm == "ECDSA_P256_SHA256"
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         ApprovalResponsePayload.model_validate(
             {
@@ -165,6 +174,19 @@ def test_approval_response_payload_is_strict() -> None:
                 "taskId": str(task_id),
                 "approved": True,
                 "toolName": "mac.apps.open",
+            }
+        )
+    with pytest.raises(ValidationError):
+        ApprovalResponsePayload.model_validate(
+            {
+                "schemaVersion": "goffy.approval.v1",
+                "approvalId": str(approval_id),
+                "taskId": str(task_id),
+                "approved": True,
+                "proof": {
+                    **valid_proof,
+                    "signatureBase64": "not base64",
+                },
             }
         )
 
