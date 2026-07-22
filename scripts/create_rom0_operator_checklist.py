@@ -18,7 +18,9 @@ from scripts.create_rom_bootloader_visibility_guide import redact_message  # noq
 from scripts.create_rom_stock_restore_evidence import write_output  # noqa: E402
 
 JSON_SCHEMA_VERSION = "goffy.rom0-operator-checklist.v1"
-SUPPORTED_REFRESH_SCHEMA = "goffy.rom0-refresh-report.v2"
+SUPPORTED_REFRESH_SCHEMAS = frozenset(
+    ("goffy.rom0-refresh-report.v2", "goffy.rom0-refresh-report.v3")
+)
 VALIDATION_DIR = Path(".goffy-validation")
 DEFAULT_REFRESH_REPORT = VALIDATION_DIR / "rom-0-refresh-report.json"
 DEFAULT_JSON_OUTPUT = VALIDATION_DIR / "rom-0-operator-checklist.json"
@@ -156,9 +158,10 @@ def build_operator_checklist(
 
 def validate_refresh_report(refresh_report: Mapping[str, Any]) -> None:
     schema = refresh_report.get("schema_version")
-    if schema != SUPPORTED_REFRESH_SCHEMA:
+    if schema not in SUPPORTED_REFRESH_SCHEMAS:
         raise ValueError(
-            f"unsupported ROM-0 refresh schema {schema!r}; expected {SUPPORTED_REFRESH_SCHEMA}"
+            f"unsupported ROM-0 refresh schema {schema!r}; expected one of "
+            f"{sorted(SUPPORTED_REFRESH_SCHEMAS)!r}"
         )
     if refresh_report.get("destructive_actions") != "withheld":
         raise ValueError("ROM-0 refresh report must withhold destructive actions")

@@ -71,31 +71,47 @@ def test_refresh_writes_probe_packet_and_summary_without_mutation(
     packet_json = validation / "rom-0-manual-action-packet.json"
     guide_md = validation / "rom-bootloader-visibility-guide.md"
     guide_json = validation / "rom-bootloader-visibility-guide.json"
+    operator_md = validation / "rom-0-operator-checklist.md"
+    operator_json = validation / "rom-0-operator-checklist.json"
     summary_json = validation / "rom-0-refresh-report.json"
     packet_payload = json.loads(packet_json.read_text(encoding="utf-8"))
     evidence = {item.name: item for item in report.evidence_inputs}
     combined = "\n".join(
         path.read_text(encoding="utf-8")
-        for path in (probe_json, packet_md, packet_json, guide_md, guide_json, summary_json)
+        for path in (
+            probe_json,
+            packet_md,
+            packet_json,
+            guide_md,
+            guide_json,
+            operator_md,
+            operator_json,
+            summary_json,
+        )
     ).lower()
 
+    assert report.schema_version == "goffy.rom0-refresh-report.v3"
     assert not report.ok
     assert report.status is RefreshStatus.BLOCKED
     assert report.refresh_succeeded
     assert not report.rom_ready
     assert report.packet_status == PacketStatus.BLOCKED_MANUAL_EVIDENCE
     assert report.bootloader_visibility_status == "HOST_EVIDENCE_MISSING"
+    assert report.operator_checklist_status == "BLOCKED_EVIDENCE"
     assert "ROM probe does not show an unlocked bootloader" in report.blocked_by
     assert evidence["unlock_eligibility"].status is EvidenceStatus.MISSING
     assert evidence["stock_restore"].status is EvidenceStatus.MISSING
     assert evidence["gsi_candidate"].status is EvidenceStatus.MISSING
     assert evidence["fastboot_evidence"].status is EvidenceStatus.MISSING
     assert evidence["bootloader_visibility_guide"].status is EvidenceStatus.LOADED
+    assert evidence["operator_checklist"].status is EvidenceStatus.LOADED
     assert probe_json.is_file()
     assert packet_md.is_file()
     assert packet_json.is_file()
     assert guide_md.is_file()
     assert guide_json.is_file()
+    assert operator_md.is_file()
+    assert operator_json.is_file()
     assert summary_json.is_file()
     assert packet_payload["destructive_actions"] == "withheld"
     assert SERIAL.lower() not in combined
@@ -124,11 +140,13 @@ def test_refresh_consumes_valid_existing_evidence(
     assert not report.rom_ready
     assert report.packet_status == PacketStatus.READY_FOR_MANUAL_GATE_TEMPLATE
     assert report.bootloader_visibility_status == "MANUAL_BOOTLOADER_VISIBLE"
+    assert report.operator_checklist_status == "BLOCKED_EVIDENCE"
     assert evidence["unlock_eligibility"].status is EvidenceStatus.LOADED
     assert evidence["stock_restore"].status is EvidenceStatus.LOADED
     assert evidence["gsi_candidate"].status is EvidenceStatus.LOADED
     assert evidence["fastboot_evidence"].status is EvidenceStatus.LOADED
     assert evidence["bootloader_visibility_guide"].status is EvidenceStatus.LOADED
+    assert evidence["operator_checklist"].status is EvidenceStatus.LOADED
     assert "ROM probe does not show an unlocked bootloader" in report.blocked_by
 
 
@@ -154,8 +172,10 @@ def test_refresh_blocks_host_only_fastboot_even_with_other_ready_evidence(
     assert not report.rom_ready
     assert report.packet_status == PacketStatus.READY_FOR_MANUAL_GATE_TEMPLATE
     assert report.bootloader_visibility_status == "READY_FOR_MANUAL_BOOTLOADER_CHECK"
+    assert report.operator_checklist_status == "BLOCKED_EVIDENCE"
     assert evidence["fastboot_evidence"].status is EvidenceStatus.LOADED
     assert evidence["bootloader_visibility_guide"].status is EvidenceStatus.LOADED
+    assert evidence["operator_checklist"].status is EvidenceStatus.LOADED
     assert "manual bootloader-mode fastboot visibility evidence is missing" in report.blocked_by
 
 
@@ -179,6 +199,7 @@ def test_refresh_reports_ready_only_when_probe_and_evidence_are_ready(
     assert report.refresh_succeeded
     assert report.rom_ready
     assert report.bootloader_visibility_status == "MANUAL_BOOTLOADER_VISIBLE"
+    assert report.operator_checklist_status == "READY_FOR_ROM0_READINESS_REVIEW"
     assert report.blocked_by == ()
 
 
@@ -213,9 +234,136 @@ def test_refresh_fails_closed_and_redacts_when_guide_generation_fails(
     assert not report.rom_ready
     assert report.packet_status == PacketStatus.READY_FOR_ROM0_READINESS_REVIEW
     assert report.bootloader_visibility_status == "INVALID"
+    assert report.operator_checklist_status == "BLOCKED_EVIDENCE"
     assert evidence["bootloader_visibility_guide"].status is EvidenceStatus.INVALID
+    assert evidence["operator_checklist"].status is EvidenceStatus.LOADED
     assert "<path>" in evidence["bootloader_visibility_guide"].detail
     assert str(tmp_path) not in payload
+
+
+def test_refresh_fails_closed_and_redacts_when_operator_checklist_generation_fails(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(probe, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+    props = dict(LOCKED_PROPS)
+    props["ro.boot.flash.locked"] = "0"
+    props["ro.boot.vbmeta.device_state"] = "unlocked"
+    write_unlock_evidence(tmp_path)
+    write_stock_evidence(tmp_path)
+    write_gsi_evidence(tmp_path)
+    write_fastboot_evidence(tmp_path, manual_visible=True)
+    original_write = refresh.write_validation_file
+
+    def failing_write(path: Path, text: str, *, root: Path) -> None:
+        if path.name == "rom-0-operator-checklist.json":
+            raise OSError(f"cannot write {path.resolve()}")
+        original_write(path, text, root=root)
+
+    monkeypatch.setattr(refresh, "write_validation_file", failing_write)
+
+    report = refresh_rom0_action_packet(root=tmp_path, runner=runner_for(props))
+    evidence = {item.name: item for item in report.evidence_inputs}
+    payload = refresh.render_json(report)
+
+    assert not report.ok
+    assert report.status is RefreshStatus.ERROR
+    assert not report.refresh_succeeded
+    assert not report.rom_ready
+    assert report.packet_status == PacketStatus.READY_FOR_ROM0_READINESS_REVIEW
+    assert report.operator_checklist_status == "INVALID"
+    assert evidence["operator_checklist"].status is EvidenceStatus.INVALID
+    assert "<path>" in evidence["operator_checklist"].detail
+    assert str(tmp_path) not in payload
+
+
+def test_refresh_removes_partial_operator_checklist_when_markdown_write_fails(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(probe, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+    props = dict(LOCKED_PROPS)
+    props["ro.boot.flash.locked"] = "0"
+    props["ro.boot.vbmeta.device_state"] = "unlocked"
+    write_unlock_evidence(tmp_path)
+    write_stock_evidence(tmp_path)
+    write_gsi_evidence(tmp_path)
+    write_fastboot_evidence(tmp_path, manual_visible=True)
+    original_write = refresh.write_validation_file
+
+    def failing_write(path: Path, text: str, *, root: Path) -> None:
+        if path.name == "rom-0-operator-checklist.md":
+            raise OSError(f"cannot write {path.resolve()}")
+        original_write(path, text, root=root)
+
+    monkeypatch.setattr(refresh, "write_validation_file", failing_write)
+
+    report = refresh_rom0_action_packet(root=tmp_path, runner=runner_for(props))
+    validation = tmp_path / ".goffy-validation"
+    evidence = {item.name: item for item in report.evidence_inputs}
+    payload = refresh.render_json(report)
+
+    assert not report.ok
+    assert report.status is RefreshStatus.ERROR
+    assert not report.refresh_succeeded
+    assert not report.rom_ready
+    assert report.operator_checklist_status == "INVALID"
+    assert evidence["operator_checklist"].status is EvidenceStatus.INVALID
+    assert not (validation / "rom-0-operator-checklist.json").exists()
+    assert not (validation / "rom-0-operator-checklist.md").exists()
+    assert "<path>" in evidence["operator_checklist"].detail
+    assert str(tmp_path) not in payload
+
+
+def test_refresh_report_write_failure_does_not_leave_operator_outputs(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(probe, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+    props = dict(LOCKED_PROPS)
+    props["ro.boot.flash.locked"] = "0"
+    props["ro.boot.vbmeta.device_state"] = "unlocked"
+    write_unlock_evidence(tmp_path)
+    write_stock_evidence(tmp_path)
+    write_gsi_evidence(tmp_path)
+    write_fastboot_evidence(tmp_path, manual_visible=True)
+    validation = tmp_path / ".goffy-validation"
+    stale_json = validation / "rom-0-operator-checklist.json"
+    stale_md = validation / "rom-0-operator-checklist.md"
+    stale_json.write_text('{"ok": true}', encoding="utf-8")
+    stale_md.write_text("# stale ready checklist\n", encoding="utf-8")
+    original_write = refresh.write_validation_file
+
+    def failing_write(path: Path, text: str, *, root: Path) -> None:
+        if path.name == "rom-0-refresh-report.json":
+            raise OSError(f"cannot write {path.resolve()}")
+        original_write(path, text, root=root)
+
+    monkeypatch.setattr(refresh, "write_validation_file", failing_write)
+
+    with pytest.raises(OSError, match="cannot write"):
+        refresh_rom0_action_packet(root=tmp_path, runner=runner_for(props))
+
+    assert not stale_json.exists()
+    assert not stale_md.exists()
+
+
+def test_refresh_main_redacts_top_level_errors(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def failing_refresh(**_kwargs: object) -> object:
+        raise OSError(
+            f"cannot write {tmp_path / '.goffy-validation' / 'rom-0-refresh-report.json'}"
+        )
+
+    monkeypatch.setattr(refresh, "refresh_rom0_action_packet", failing_refresh)
+
+    assert refresh.main([]) == 1
+    captured = capsys.readouterr()
+    assert "<path>" in captured.err
+    assert str(tmp_path) not in captured.err
 
 
 def test_refresh_fails_closed_for_invalid_existing_evidence(
@@ -261,7 +409,9 @@ def test_refresh_fails_closed_for_invalid_fastboot_evidence(
     assert not report.refresh_succeeded
     assert evidence["fastboot_evidence"].status is EvidenceStatus.INVALID
     assert evidence["bootloader_visibility_guide"].status is EvidenceStatus.LOADED
+    assert evidence["operator_checklist"].status is EvidenceStatus.LOADED
     assert report.bootloader_visibility_status == "FASTBOOT_EVIDENCE_INVALID"
+    assert report.operator_checklist_status == "BLOCKED_EVIDENCE"
     assert any(error.startswith("fastboot_evidence:") for error in report.errors)
     assert "manual bootloader-mode fastboot visibility evidence is missing" in report.blocked_by
 

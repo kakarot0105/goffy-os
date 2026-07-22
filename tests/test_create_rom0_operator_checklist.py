@@ -91,6 +91,15 @@ def test_operator_checklist_ready_for_readiness_review_without_destructive_autho
     assert "fastboot boot" not in markdown
 
 
+def test_operator_checklist_accepts_refresh_report_v3() -> None:
+    report = refresh_report()
+    report["schema_version"] = "goffy.rom0-refresh-report.v3"
+
+    checklist = build_operator_checklist(report)
+
+    assert checklist.status is ChecklistStatus.BLOCKED_EVIDENCE
+
+
 def test_operator_checklist_rejects_unsupported_refresh_schema() -> None:
     report = refresh_report()
     report["schema_version"] = "goffy.rom0-refresh-report.v1"

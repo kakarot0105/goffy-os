@@ -17,6 +17,7 @@ if __package__ in {None, ""} and str(ROOT) not in sys.path:
 import scripts.rom_feasibility_probe as rom_probe  # noqa: E402
 from scripts.create_rom0_manual_action_packet import (  # noqa: E402
     PacketStatus,
+    Rom0ManualActionPacket,
     build_packet,
     load_fastboot_evidence,
     load_gsi_candidate_evidence,
@@ -24,6 +25,15 @@ from scripts.create_rom0_manual_action_packet import (  # noqa: E402
 from scripts.create_rom0_manual_action_packet import render_json as render_packet_json  # noqa: E402
 from scripts.create_rom0_manual_action_packet import (  # noqa: E402
     render_markdown as render_packet_markdown,
+)
+from scripts.create_rom0_operator_checklist import (  # noqa: E402
+    build_operator_checklist,
+)
+from scripts.create_rom0_operator_checklist import (  # noqa: E402
+    render_json as render_operator_checklist_json,
+)
+from scripts.create_rom0_operator_checklist import (  # noqa: E402
+    render_markdown as render_operator_checklist_markdown,
 )
 from scripts.create_rom_bootloader_visibility_guide import (  # noqa: E402
     build_visibility_guide,
@@ -45,7 +55,7 @@ from scripts.run_moto_g_device_smoke import (  # noqa: E402
     default_command_runner,
 )
 
-JSON_SCHEMA_VERSION = "goffy.rom0-refresh-report.v2"
+JSON_SCHEMA_VERSION = "goffy.rom0-refresh-report.v3"
 VALIDATION_DIR = Path(".goffy-validation")
 PROBE_FILENAME = "rom-feasibility-current.json"
 PACKET_MARKDOWN_FILENAME = "rom-0-manual-action-packet.md"
@@ -53,6 +63,8 @@ PACKET_JSON_FILENAME = "rom-0-manual-action-packet.json"
 REFRESH_REPORT_FILENAME = "rom-0-refresh-report.json"
 BOOTLOADER_GUIDE_MARKDOWN_FILENAME = "rom-bootloader-visibility-guide.md"
 BOOTLOADER_GUIDE_JSON_FILENAME = "rom-bootloader-visibility-guide.json"
+OPERATOR_CHECKLIST_MARKDOWN_FILENAME = "rom-0-operator-checklist.md"
+OPERATOR_CHECKLIST_JSON_FILENAME = "rom-0-operator-checklist.json"
 UNLOCK_EVIDENCE_FILENAME = "rom-unlock-eligibility-evidence.json"
 STOCK_EVIDENCE_FILENAME = "rom-stock-restore-evidence.json"
 GSI_EVIDENCE_FILENAME = "rom-gsi-candidate-evidence.json"
@@ -80,6 +92,13 @@ class EvidenceInput:
 
 
 @dataclass(frozen=True)
+class RenderedOperatorChecklist:
+    input: EvidenceInput
+    json_text: str
+    markdown_text: str
+
+
+@dataclass(frozen=True)
 class Rom0RefreshReport:
     schema_version: str
     generated_at: str
@@ -93,9 +112,12 @@ class Rom0RefreshReport:
     packet_json: str
     bootloader_guide_markdown: str
     bootloader_guide_json: str
+    operator_checklist_markdown: str
+    operator_checklist_json: str
     refresh_report_json: str
     packet_status: str
     bootloader_visibility_status: str
+    operator_checklist_status: str
     blocked_by: tuple[str, ...]
     evidence_inputs: tuple[EvidenceInput, ...]
     errors: tuple[str, ...]
@@ -169,7 +191,7 @@ def refresh_rom0_action_packet(
         root=root,
     )
 
-    evidence_inputs = (
+    evidence_inputs: tuple[EvidenceInput, ...] = (
         unlock_input,
         stock_input,
         gsi_input,
@@ -183,10 +205,60 @@ def refresh_rom0_action_packet(
     )
     if not probe_report.device:
         errors = (*errors, "ROM feasibility probe did not capture a connected device")
+    report = build_refresh_report(
+        paths=paths,
+        packet=packet,
+        evidence_inputs=evidence_inputs,
+        errors=errors,
+        operator_checklist_status="PENDING",
+    )
+    operator_artifact = render_operator_checklist(paths, report)
+    evidence_inputs = (*evidence_inputs, operator_artifact.input)
+    errors = (
+        *errors,
+        *(
+            f"{item.name}: {item.detail}"
+            for item in (operator_artifact.input,)
+            if item.status is EvidenceStatus.INVALID
+        ),
+    )
+    report = build_refresh_report(
+        paths=paths,
+        packet=packet,
+        evidence_inputs=evidence_inputs,
+        errors=errors,
+        operator_checklist_status=operator_checklist_status_from_input(operator_artifact.input),
+    )
+    remove_operator_checklist_outputs(paths=paths, root=root)
+    write_validation_file(
+        paths["refresh_report"],
+        render_json(report),
+        root=root,
+    )
+    if operator_artifact.input.status is EvidenceStatus.LOADED:
+        report = write_operator_checklist_outputs(
+            paths=paths,
+            packet=packet,
+            base_evidence_inputs=evidence_inputs[:-1],
+            base_errors=errors,
+            artifact=operator_artifact,
+            root=root,
+        )
+    return report
+
+
+def build_refresh_report(
+    *,
+    paths: Mapping[str, Path],
+    packet: Rom0ManualActionPacket,
+    evidence_inputs: tuple[EvidenceInput, ...],
+    errors: tuple[str, ...],
+    operator_checklist_status: str,
+) -> Rom0RefreshReport:
     refresh_succeeded = not errors
     packet_ready = packet.status is PacketStatus.READY_FOR_ROM0_READINESS_REVIEW
     rom_ready = refresh_succeeded and packet_ready
-    report = Rom0RefreshReport(
+    return Rom0RefreshReport(
         schema_version=JSON_SCHEMA_VERSION,
         generated_at=datetime.now(UTC).isoformat(),
         ok=refresh_succeeded and rom_ready,
@@ -199,19 +271,16 @@ def refresh_rom0_action_packet(
         packet_json=display_path(paths["packet_json"]),
         bootloader_guide_markdown=display_path(paths["bootloader_guide_markdown"]),
         bootloader_guide_json=display_path(paths["bootloader_guide_json"]),
+        operator_checklist_markdown=display_path(paths["operator_checklist_markdown"]),
+        operator_checklist_json=display_path(paths["operator_checklist_json"]),
         refresh_report_json=display_path(paths["refresh_report"]),
         packet_status=str(packet.status),
-        bootloader_visibility_status=bootloader_status_from_input(bootloader_guide_input),
+        bootloader_visibility_status=bootloader_status_from_inputs(evidence_inputs),
+        operator_checklist_status=operator_checklist_status,
         blocked_by=packet.blocked_by,
         evidence_inputs=evidence_inputs,
         errors=errors,
     )
-    write_validation_file(
-        paths["refresh_report"],
-        render_json(report),
-        root=root,
-    )
-    return report
 
 
 def output_paths(validation_dir: Path) -> dict[str, Path]:
@@ -222,6 +291,8 @@ def output_paths(validation_dir: Path) -> dict[str, Path]:
         "refresh_report": validation_dir / REFRESH_REPORT_FILENAME,
         "bootloader_guide_markdown": validation_dir / BOOTLOADER_GUIDE_MARKDOWN_FILENAME,
         "bootloader_guide_json": validation_dir / BOOTLOADER_GUIDE_JSON_FILENAME,
+        "operator_checklist_markdown": validation_dir / OPERATOR_CHECKLIST_MARKDOWN_FILENAME,
+        "operator_checklist_json": validation_dir / OPERATOR_CHECKLIST_JSON_FILENAME,
         "unlock_evidence": validation_dir / UNLOCK_EVIDENCE_FILENAME,
         "stock_evidence": validation_dir / STOCK_EVIDENCE_FILENAME,
         "gsi_evidence": validation_dir / GSI_EVIDENCE_FILENAME,
@@ -299,7 +370,110 @@ def generate_bootloader_visibility_guide(
     )
 
 
+def render_operator_checklist(
+    paths: Mapping[str, Path],
+    report: Rom0RefreshReport,
+) -> RenderedOperatorChecklist:
+    json_output = paths["operator_checklist_json"]
+    try:
+        checklist = build_operator_checklist(
+            asdict(report),
+            source_refresh_report=paths["refresh_report"],
+        )
+    except (ValueError, json.JSONDecodeError) as exc:
+        return RenderedOperatorChecklist(
+            input=EvidenceInput(
+                name="operator_checklist",
+                path=display_path(json_output),
+                status=EvidenceStatus.INVALID,
+                detail=redact_message(str(exc)),
+            ),
+            json_text="",
+            markdown_text="",
+        )
+    return RenderedOperatorChecklist(
+        input=EvidenceInput(
+            name="operator_checklist",
+            path=display_path(json_output),
+            status=EvidenceStatus.LOADED,
+            detail=f"generated: {checklist.status.value}",
+        ),
+        json_text=render_operator_checklist_json(checklist),
+        markdown_text=render_operator_checklist_markdown(checklist),
+    )
+
+
+def write_operator_checklist_outputs(
+    *,
+    paths: Mapping[str, Path],
+    packet: Rom0ManualActionPacket,
+    base_evidence_inputs: tuple[EvidenceInput, ...],
+    base_errors: tuple[str, ...],
+    artifact: RenderedOperatorChecklist,
+    root: Path,
+) -> Rom0RefreshReport:
+    try:
+        write_validation_file(paths["operator_checklist_json"], artifact.json_text, root=root)
+        write_validation_file(
+            paths["operator_checklist_markdown"],
+            artifact.markdown_text,
+            root=root,
+        )
+    except OSError as exc:
+        remove_operator_checklist_outputs(paths=paths, root=root)
+        operator_input = EvidenceInput(
+            name="operator_checklist",
+            path=display_path(paths["operator_checklist_json"]),
+            status=EvidenceStatus.INVALID,
+            detail=redact_message(str(exc)),
+        )
+        evidence_inputs = (*base_evidence_inputs, operator_input)
+        errors = (*base_errors, f"{operator_input.name}: {operator_input.detail}")
+        report = build_refresh_report(
+            paths=paths,
+            packet=packet,
+            evidence_inputs=evidence_inputs,
+            errors=errors,
+            operator_checklist_status=operator_checklist_status_from_input(operator_input),
+        )
+        write_validation_file(paths["refresh_report"], render_json(report), root=root)
+        return report
+    return build_refresh_report(
+        paths=paths,
+        packet=packet,
+        evidence_inputs=(*base_evidence_inputs, artifact.input),
+        errors=base_errors,
+        operator_checklist_status=operator_checklist_status_from_input(artifact.input),
+    )
+
+
+def remove_operator_checklist_outputs(*, paths: Mapping[str, Path], root: Path) -> None:
+    for key in ("operator_checklist_json", "operator_checklist_markdown"):
+        path = paths[key]
+        try:
+            resolved, _relative = validation_relative_path(path, root=root)
+            resolved.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def bootloader_status_from_input(evidence_input: EvidenceInput) -> str:
+    if evidence_input.status is not EvidenceStatus.LOADED:
+        return evidence_input.status.value
+    prefix = "generated: "
+    if evidence_input.detail.startswith(prefix):
+        return evidence_input.detail.removeprefix(prefix)
+    return evidence_input.detail
+
+
+def bootloader_status_from_inputs(evidence_inputs: Sequence[EvidenceInput]) -> str:
+    for evidence_input in evidence_inputs:
+        if evidence_input.name == "bootloader_visibility_guide":
+            return bootloader_status_from_input(evidence_input)
+    return EvidenceStatus.MISSING.value
+
+
+def operator_checklist_status_from_input(evidence_input: EvidenceInput) -> str:
     if evidence_input.status is not EvidenceStatus.LOADED:
         return evidence_input.status.value
     prefix = "generated: "
@@ -380,8 +554,11 @@ def render_text(report: Rom0RefreshReport) -> str:
         f"- packet json: {report.packet_json}",
         f"- bootloader guide markdown: {report.bootloader_guide_markdown}",
         f"- bootloader guide json: {report.bootloader_guide_json}",
+        f"- operator checklist markdown: {report.operator_checklist_markdown}",
+        f"- operator checklist json: {report.operator_checklist_json}",
         f"- refresh report: {report.refresh_report_json}",
         f"bootloader visibility: {report.bootloader_visibility_status}",
+        f"operator checklist: {report.operator_checklist_status}",
         "evidence inputs:",
     ]
     lines.extend(f"- {item.name}: {item.status} ({item.detail})" for item in report.evidence_inputs)
@@ -430,7 +607,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(render_json(report) if args.json else render_text(report))
     except (OSError, ValueError, json.JSONDecodeError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        print(f"error: {redact_message(str(exc))}", file=sys.stderr)
         return 1
     return 0 if report.ok else 1
 

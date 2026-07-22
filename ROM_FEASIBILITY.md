@@ -136,14 +136,15 @@ next?" packet for the human checks, run:
 The packet is read-only/template-only. It summarizes missing OEM/Motorola
 unlock eligibility, stock-restore evidence, read-only fastboot evidence, and
 official GSI candidate evidence, links those actions to the typed GOFFY evidence
-helpers, regenerates the manual bootloader visibility guide, redacts the device
-serial placeholder, and rejects any unlock, flash, erase, or bootloader-reboot
-command authority. The refresh command reports `BLOCKED` while ROM gates are
-missing, the bootloader probe is still locked, or manual bootloader-mode
-fastboot visibility has not been recorded; that is expected and safer than
-claiming success before ROM-0 is ready.
+helpers, regenerates the manual bootloader visibility guide and ordered operator
+checklist, redacts the device serial placeholder, and rejects any unlock, flash,
+erase, or bootloader-reboot command authority. The refresh command reports
+`BLOCKED` while ROM gates are missing, the bootloader probe is still locked, or
+manual bootloader-mode fastboot visibility has not been recorded; that is
+expected and safer than claiming success before ROM-0 is ready.
 
-To create an ordered operator checklist from the latest refresh report, run:
+To regenerate only the ordered operator checklist from the latest refresh report,
+run:
 
 ```bash
 .venv/bin/python scripts/create_rom0_operator_checklist.py
