@@ -25,13 +25,17 @@ import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_ALL_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_UPDATE_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
+import dev.goffy.os.protocol.PhoneMemoryForgetArguments
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneMemoryRememberArguments
+import dev.goffy.os.protocol.PhoneMemoryUpdateArguments
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import dev.goffy.os.protocol.PermissionLevel
@@ -123,6 +127,14 @@ object GoffyIntentRouter {
         "clear all memories",
         "delete all memories",
     )
+    private val memoryForgetCommand = Regex(
+        pattern = "^(?:forget|delete) (?:local )?memory #?([0-9]+)[.!?]?$",
+        option = RegexOption.IGNORE_CASE,
+    )
+    private val memoryUpdateCommand = Regex(
+        pattern = "^(?:update|edit) (?:local )?memory #?([0-9]+) to\\s+(.+)[.!?]?$",
+        option = RegexOption.IGNORE_CASE,
+    )
     private val timerCreateCommand = Regex(
         pattern = "^(?:set|start|create)(?: me)? a timer for ([0-9]+) " +
             "(second|seconds|minute|minutes|hour|hours)[.!?]?$",
@@ -140,12 +152,19 @@ object GoffyIntentRouter {
     ): RoutingDecision {
         memoryRememberPlan(command)?.let { return RoutingDecision.Routed(it) }
         noteCreatePlan(command)?.let { return RoutingDecision.Routed(it) }
+        memoryForgetPlan(command)?.let { return RoutingDecision.Routed(it) }
+        memoryUpdatePlan(command)?.let { return RoutingDecision.Routed(it) }
+        val rawCommandRejectedForLocalModel = command.hasUnsafeControlOrFormatCharacters()
         val normalized = command.trim().replace(whitespace, " ")
         val plan = when {
             macStatusCommand.matches(normalized) -> macStatusPlan(normalized)
             macProcessesListCommand.matches(normalized) -> macProcessesListPlan(normalized)
             macAppOpenCommand.matches(normalized) ->
-                macAppOpenPlan(normalized) ?: return unsupported(normalized, localModelFallback)
+                macAppOpenPlan(normalized) ?: return unsupported(
+                    normalized,
+                    localModelFallback,
+                    rawCommandRejectedForLocalModel,
+                )
             macAppsListCommand.matches(normalized) -> macAppsListPlan(normalized)
             macFilesLargestCommand.matches(normalized) -> macFilesLargestPlan(normalized)
             macFilesListCommand.matches(normalized) -> macFilesListPlan(normalized)
@@ -157,8 +176,12 @@ object GoffyIntentRouter {
             normalized.lowercase(Locale.US) in memoryForgetAllCommands -> memoryForgetAllPlan(normalized)
             flashlightSetCommand.matches(normalized) -> flashlightSetPlan(normalized)
             timerCreateCommand.matches(normalized) -> timerCreatePlan(normalized)
-                ?: return unsupported(normalized, localModelFallback)
-            else -> return unsupported(normalized, localModelFallback)
+                ?: return unsupported(
+                    normalized,
+                    localModelFallback,
+                    rawCommandRejectedForLocalModel,
+                )
+            else -> return unsupported(normalized, localModelFallback, rawCommandRejectedForLocalModel)
         }
 
         return RoutingDecision.Routed(plan)
@@ -167,8 +190,9 @@ object GoffyIntentRouter {
     private fun unsupported(
         normalizedCommand: String,
         localModelFallback: LocalModelIntentFallback,
+        rawCommandRejectedForLocalModel: Boolean = false,
     ): RoutingDecision.Unsupported {
-        val observation = if (!isSafeLocalModelPrompt(normalizedCommand)) {
+        val observation = if (rawCommandRejectedForLocalModel || !isSafeLocalModelPrompt(normalizedCommand)) {
             LocalModelIntentObservation.Rejected(
                 "Command is outside local model prompt safety bounds.",
             )
@@ -238,6 +262,46 @@ object GoffyIntentRouter {
             "The remaining memory count is verified as zero",
         ),
     )
+
+    private fun memoryForgetPlan(command: String): GoffyExecutionPlan? {
+        if (command.hasUnsafeControlOrFormatCharacters()) return null
+        val normalized = command.trim().replace(whitespace, " ")
+        val match = memoryForgetCommand.matchEntire(normalized) ?: return null
+        val memoryId = match.groupValues[1].toLongOrNull()?.takeIf { it > 0 } ?: return null
+        return GoffyExecutionPlan(
+            command = normalized,
+            executionTarget = ExecutionTarget.PHONE,
+            toolName = PHONE_MEMORY_FORGET_TOOL,
+            permission = phonePermission(PHONE_MEMORY_FORGET_TOOL),
+            successCriteria = listOf(
+                "GOFFY deletes only the exact approved app-private memory ID",
+                "The selected memory is re-read and verified absent",
+                "The remaining memory count is reported",
+            ),
+            arguments = PhoneMemoryForgetArguments(memoryId),
+        )
+    }
+
+    private fun memoryUpdatePlan(command: String): GoffyExecutionPlan? {
+        if (command.hasUnsafeControlOrFormatCharacters()) return null
+        val normalized = command.trim().replace(whitespace, " ")
+        val match = memoryUpdateCommand.matchEntire(normalized) ?: return null
+        val memoryId = match.groupValues[1].toLongOrNull()?.takeIf { it > 0 } ?: return null
+        val text = match.groupValues[2].trim()
+        if (!text.matchesMemoryTextContract()) return null
+        return GoffyExecutionPlan(
+            command = normalized,
+            executionTarget = ExecutionTarget.PHONE,
+            toolName = PHONE_MEMORY_UPDATE_TOOL,
+            permission = phonePermission(PHONE_MEMORY_UPDATE_TOOL),
+            successCriteria = listOf(
+                "GOFFY updates only the exact approved app-private memory ID",
+                "The stored row is re-read and matches the approved replacement text",
+                "The memory remains inspectable and deletable from local phone tools",
+            ),
+            arguments = PhoneMemoryUpdateArguments(memoryId, text),
+        )
+    }
 
     private fun timerCreatePlan(command: String): GoffyExecutionPlan? {
         val match = timerCreateCommand.matchEntire(command) ?: return null
@@ -419,3 +483,9 @@ object GoffyIntentRouter {
             "Missing compiled PHONE capability: $toolName"
         }.metadata.permission
 }
+
+private fun String.hasUnsafeControlOrFormatCharacters(): Boolean =
+    any { character ->
+        character.isISOControl() ||
+            Character.getType(character) == Character.FORMAT.toInt()
+    }

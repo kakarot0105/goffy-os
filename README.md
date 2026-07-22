@@ -11,8 +11,8 @@ the capability boundary.
 > Status: ROM feasibility plus Milestone 3 MCP core in progress. The current
 > repo now treats ROM/GSI feasibility for the exact Moto G 2025 `kansas`
 > / `XT2513V` target as the primary product track, with the launcher/app layer
-> kept for safe validation and fallback. The current repo implements five
-> offline PHONE actions, user-approved local PHONE memory, discovery-gated SAFE Mac status/process/file-list actions, an
+> kept for safe validation and fallback. The current repo implements offline
+> PHONE actions, exact-ID user-approved local PHONE memory controls, discovery-gated SAFE Mac status/process/file-list actions, an
 > approved-repo SAFE Git status MCP tool, an opt-in SAFE Mac clipboard-read MCP
 > tool, an official MCP
 > Streamable HTTP boundary, stable Hub paired-device credentials, Keystore-backed
@@ -81,9 +81,10 @@ the capability boundary.
 - Permission-free, allowlisted `SAFE phone.battery.status` execution
 - Privacy-minimized, offline `SAFE phone.device.info` execution
 - Approval-gated `CONFIRM phone.note.create` with app-private SQLite persistence
-- Approval-gated `CONFIRM phone.memory.remember`, bounded `SAFE phone.memory.list`,
-  and approval-gated destructive `CONFIRM phone.memory.forget_all` in app-private
-  SQLite with inspectable provenance
+- Approval-gated `CONFIRM phone.memory.remember`, `phone.memory.update`,
+  `phone.memory.forget`, bounded `SAFE phone.memory.list`, and approval-gated
+  destructive `CONFIRM phone.memory.forget_all` in app-private SQLite with
+  inspectable provenance
 - Opt-in physical Moto G smoke coverage for approved local-memory write/list
   without deleting existing phone memories
 - Approval-gated `CONFIRM phone.timer.create` through an allowlisted system Clock
@@ -601,6 +602,12 @@ unique per-run `remember that goffy memory smoke ...` command, tap the matching
 unique `goffy memory smoke ...` text is listed in the fresh memory-list result.
 The memory smoke does not run `forget all memories`, so it will not delete
 existing local GOFFY memories.
+
+Per-memory command controls are also available from the phone timeline:
+`update memory #1 to updated local memory` updates one exact app-private memory
+after approval, and `delete memory #1` deletes one exact app-private memory
+after approval. GOFFY verifies each mutation before reporting success and keeps
+memory text out of persistent terminal audit records.
 
 Add `--include-mac` only when the Hub is already running and the phone's saved
 Hub link is valid, or pass a short-lived local debug token file under

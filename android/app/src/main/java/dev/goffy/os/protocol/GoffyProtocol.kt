@@ -168,6 +168,15 @@ data class PhoneMemoryRememberArguments(
     val text: String,
 ) : ToolArguments
 
+data class PhoneMemoryForgetArguments(
+    val memoryId: Long,
+) : ToolArguments
+
+data class PhoneMemoryUpdateArguments(
+    val memoryId: Long,
+    val text: String,
+) : ToolArguments
+
 data class PhoneTimerCreateArguments(
     val durationSeconds: Int,
     val skipClockUi: Boolean,
@@ -372,6 +381,19 @@ data class PhoneMemoryList(
 data class PhoneMemoryForgotten(
     val deletedCount: Int,
     val remainingCount: Int,
+) : ToolResultContent
+
+data class PhoneMemoryDeleted(
+    val memoryId: Long,
+    val deletedCount: Int,
+    val remainingCount: Int,
+) : ToolResultContent
+
+data class PhoneMemoryUpdated(
+    val memoryId: Long,
+    val text: String,
+    val createdAtEpochMillis: Long,
+    val provenance: String,
 ) : ToolResultContent
 
 data class PhoneTimerDispatched(

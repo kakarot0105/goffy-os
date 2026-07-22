@@ -197,7 +197,7 @@
    - [x] Memory text excluded from persistent terminal audit records
    - [x] Physical Moto G smoke for approved memory remember/list without
      destructive forget-all
-   - [ ] Per-memory edit and delete controls
+   - [x] Command/timeline per-memory edit and delete controls
    - [ ] User-facing retention policy controls
    - [ ] Hub-visible memory export/import policy
 7. Polished, accessible, battery-aware GOFFY UI

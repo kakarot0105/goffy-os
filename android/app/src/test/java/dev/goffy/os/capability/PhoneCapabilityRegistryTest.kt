@@ -5,15 +5,19 @@ import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_ALL_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_UPDATE_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
 import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.PhoneMemoryRememberArguments
+import dev.goffy.os.protocol.PhoneMemoryForgetArguments
+import dev.goffy.os.protocol.PhoneMemoryUpdateArguments
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import kotlinx.serialization.json.Json
@@ -37,9 +41,11 @@ class PhoneCapabilityRegistryTest {
                 PHONE_BATTERY_STATUS_TOOL,
                 PHONE_DEVICE_INFO_TOOL,
                 PHONE_FLASHLIGHT_SET_TOOL,
+                PHONE_MEMORY_FORGET_TOOL,
                 PHONE_MEMORY_FORGET_ALL_TOOL,
                 PHONE_MEMORY_LIST_TOOL,
                 PHONE_MEMORY_REMEMBER_TOOL,
+                PHONE_MEMORY_UPDATE_TOOL,
                 PHONE_NOTE_CREATE_TOOL,
                 PHONE_OCR_READ_TOOL,
                 PHONE_QR_READ_TOOL,
@@ -54,7 +60,8 @@ class PhoneCapabilityRegistryTest {
             assertEquals("1.0.0", capability.metadata.toolVersion)
             assertTrue(capability.metadata.timeoutMillis in 1..30_000)
             assertEquals(
-                capability.name == PHONE_MEMORY_FORGET_ALL_TOOL,
+                capability.name == PHONE_MEMORY_FORGET_TOOL ||
+                    capability.name == PHONE_MEMORY_FORGET_ALL_TOOL,
                 capability.annotations.destructiveHint,
             )
             assertFalse(capability.annotations.openWorldHint)
@@ -64,9 +71,11 @@ class PhoneCapabilityRegistryTest {
         assertEquals(PermissionLevel.SAFE, registry.find(PHONE_BATTERY_STATUS_TOOL)?.metadata?.permission)
         assertEquals(PermissionLevel.SAFE, registry.find(PHONE_DEVICE_INFO_TOOL)?.metadata?.permission)
         assertEquals(PermissionLevel.CONFIRM, registry.find(PHONE_FLASHLIGHT_SET_TOOL)?.metadata?.permission)
+        assertEquals(PermissionLevel.CONFIRM, registry.find(PHONE_MEMORY_FORGET_TOOL)?.metadata?.permission)
         assertEquals(PermissionLevel.CONFIRM, registry.find(PHONE_MEMORY_FORGET_ALL_TOOL)?.metadata?.permission)
         assertEquals(PermissionLevel.SAFE, registry.find(PHONE_MEMORY_LIST_TOOL)?.metadata?.permission)
         assertEquals(PermissionLevel.CONFIRM, registry.find(PHONE_MEMORY_REMEMBER_TOOL)?.metadata?.permission)
+        assertEquals(PermissionLevel.CONFIRM, registry.find(PHONE_MEMORY_UPDATE_TOOL)?.metadata?.permission)
         assertEquals(PermissionLevel.CONFIRM, registry.find(PHONE_NOTE_CREATE_TOOL)?.metadata?.permission)
         assertEquals(PermissionLevel.SAFE, registry.find(PHONE_OCR_READ_TOOL)?.metadata?.permission)
         assertEquals(PermissionLevel.SAFE, registry.find(PHONE_QR_READ_TOOL)?.metadata?.permission)
@@ -106,6 +115,22 @@ class PhoneCapabilityRegistryTest {
                 ExecutionTarget.PHONE,
                 PermissionLevel.CONFIRM,
                 PhoneMemoryRememberArguments("\u0000"),
+            ),
+        )
+        assertNull(
+            registry.match(
+                PHONE_MEMORY_FORGET_TOOL,
+                ExecutionTarget.PHONE,
+                PermissionLevel.CONFIRM,
+                PhoneMemoryForgetArguments(0),
+            ),
+        )
+        assertNull(
+            registry.match(
+                PHONE_MEMORY_UPDATE_TOOL,
+                ExecutionTarget.PHONE,
+                PermissionLevel.CONFIRM,
+                PhoneMemoryUpdateArguments(1, "\u0000"),
             ),
         )
         assertTrue(

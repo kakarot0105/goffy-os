@@ -2,6 +2,7 @@ package dev.goffy.os
 
 import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskEventKind
+import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.audit.AuditApprovalOutcome
 import dev.goffy.os.audit.AuditPermission
 import dev.goffy.os.audit.AuditSourceSurface
@@ -73,10 +74,14 @@ import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PhoneFlashlightState
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_TOOL
+import dev.goffy.os.protocol.PhoneMemoryDeleted
 import dev.goffy.os.protocol.PhoneMemoryEntry
 import dev.goffy.os.protocol.PhoneMemoryForgotten
 import dev.goffy.os.protocol.PhoneMemoryList
 import dev.goffy.os.protocol.PhoneMemoryRemembered
+import dev.goffy.os.protocol.PHONE_MEMORY_UPDATE_TOOL
+import dev.goffy.os.protocol.PhoneMemoryUpdated
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_ALL_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
@@ -1558,6 +1563,7 @@ class GoffyViewModelTest {
         val viewModel = createViewModel(
             gateway = FakeHubGateway { flowOf() },
             phoneGateway = phoneGateway(memoryStore = memoryStore),
+            nextTaskId = sequentialTaskIds(),
         )
 
         viewModel.submitCommand("Remember that my favorite project is GOFFY")
@@ -1584,6 +1590,92 @@ class GoffyViewModelTest {
         assertEquals(1, listed.count)
         assertEquals("my favorite project is GOFFY", listed.entries.single().text)
         assertEquals(PHONE_MEMORY_PROVENANCE_USER_APPROVED, listed.entries.single().provenance)
+    }
+
+    @Test
+    fun memoryUpdateRequiresApprovalAndVerifiesExactMemory() = runTest(dispatcher) {
+        val memoryStore = RecordingMemoryStore()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            phoneGateway = phoneGateway(memoryStore = memoryStore),
+            nextTaskId = sequentialTaskIds(),
+        )
+
+        viewModel.submitCommand("Remember that original local memory")
+        runCurrent()
+        assertTrue(viewModel.approvePendingTask(viewModel.uiState.value.pendingApproval!!.taskId))
+        advanceUntilIdle()
+        viewModel.submitCommand("Update memory #1 to updated local memory")
+        runCurrent()
+
+        val pending = requireNotNull(viewModel.uiState.value.pendingApproval)
+        assertTrue(pending.description.contains("memory #1"))
+        assertTrue(pending.description.contains("updated local memory"))
+        assertEquals(0, memoryStore.updates)
+
+        assertTrue(viewModel.approvePendingTask(pending.taskId))
+        advanceUntilIdle()
+        viewModel.submitCommand("List my memories")
+        advanceUntilIdle()
+
+        val timeline = viewModel.uiState.value.timeline.entries
+        val updateEntry = timeline.lastOrNull {
+            it.toolName == PHONE_MEMORY_UPDATE_TOOL && it.phase == TaskPhase.VERIFIED
+        }
+        assertNotNull(timelineDebug(timeline), updateEntry)
+        assertEquals(1, memoryStore.updates)
+        assertEquals("updated local memory", (updateEntry!!.result as PhoneMemoryUpdated).text)
+        val listed = timeline.last().result as PhoneMemoryList
+        assertEquals("updated local memory", listed.entries.single().text)
+    }
+
+    @Test
+    fun memoryForgetOneRequiresApprovalAndVerifiesDeletion() = runTest(dispatcher) {
+        val memoryStore = RecordingMemoryStore()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            phoneGateway = phoneGateway(memoryStore = memoryStore),
+            nextTaskId = sequentialTaskIds(),
+        )
+
+        viewModel.submitCommand("Remember that first local memory")
+        runCurrent()
+        assertTrue(viewModel.approvePendingTask(viewModel.uiState.value.pendingApproval!!.taskId))
+        advanceUntilIdle()
+        viewModel.submitCommand("Remember that second local memory")
+        runCurrent()
+        assertTrue(viewModel.approvePendingTask(viewModel.uiState.value.pendingApproval!!.taskId))
+        advanceUntilIdle()
+        viewModel.submitCommand("Delete memory #1")
+        runCurrent()
+
+        val pending = requireNotNull(viewModel.uiState.value.pendingApproval)
+        assertTrue(pending.description.contains("memory #1"))
+        assertEquals(0, memoryStore.forgetOne)
+        assertTrue(viewModel.denyPendingTask(pending.taskId))
+        runCurrent()
+        assertEquals(0, memoryStore.forgetOne)
+
+        viewModel.submitCommand("Delete memory #1")
+        runCurrent()
+        assertTrue(viewModel.approvePendingTask(viewModel.uiState.value.pendingApproval!!.taskId))
+        advanceUntilIdle()
+        viewModel.submitCommand("What do you remember")
+        advanceUntilIdle()
+
+        val timeline = viewModel.uiState.value.timeline.entries
+        val deleteEntry = timeline.lastOrNull {
+            it.toolName == PHONE_MEMORY_FORGET_TOOL && it.phase == TaskPhase.VERIFIED
+        }
+        assertNotNull(timelineDebug(timeline), deleteEntry)
+        assertEquals(1, memoryStore.forgetOne)
+        val deleteResult = deleteEntry!!.result as PhoneMemoryDeleted
+        assertEquals(1, deleteResult.memoryId)
+        assertEquals(1, deleteResult.deletedCount)
+        assertEquals(1, deleteResult.remainingCount)
+        val listed = timeline.last().result as PhoneMemoryList
+        assertEquals(1, listed.count)
+        assertTrue(listed.entries.none { it.memoryId == 1L })
     }
 
     @Test
@@ -1638,6 +1730,37 @@ class GoffyViewModelTest {
         assertEquals(0, result.remainingCount)
         assertEquals(TaskPhase.VERIFIED, verifiedForgetEntry.phase)
         assertEquals(PHONE_MEMORY_FORGET_ALL_TOOL, verifiedForgetEntry.toolName)
+    }
+
+    @Test
+    fun persistedMemoryMutationAuditNeverContainsMemoryText() = runTest(dispatcher) {
+        val auditStore = RecordingAuditStore()
+        val memoryStore = RecordingMemoryStore()
+        val viewModel = createViewModel(
+            gateway = FakeHubGateway { flowOf() },
+            phoneGateway = phoneGateway(memoryStore = memoryStore),
+            auditStore = auditStore,
+            nextTaskId = sequentialTaskIds(),
+        )
+
+        viewModel.submitCommand("Remember that original private memory")
+        runCurrent()
+        assertTrue(viewModel.approvePendingTask(viewModel.uiState.value.pendingApproval!!.taskId))
+        advanceUntilIdle()
+        viewModel.submitCommand("Update memory #1 to updated private memory")
+        runCurrent()
+        assertTrue(viewModel.approvePendingTask(viewModel.uiState.value.pendingApproval!!.taskId))
+        advanceUntilIdle()
+        viewModel.submitCommand("Delete memory #1")
+        runCurrent()
+        assertTrue(viewModel.approvePendingTask(viewModel.uiState.value.pendingApproval!!.taskId))
+        advanceUntilIdle()
+
+        assertEquals(3, auditStore.upserts.size)
+        assertTrue(auditStore.upserts.any { it.toolName == PHONE_MEMORY_UPDATE_TOOL })
+        assertTrue(auditStore.upserts.any { it.toolName == PHONE_MEMORY_FORGET_TOOL })
+        assertFalse(auditStore.upserts.toString().contains("original private memory"))
+        assertFalse(auditStore.upserts.toString().contains("updated private memory"))
     }
 
     @Test
@@ -1932,6 +2055,19 @@ class GoffyViewModelTest {
         approvalOutcome = AuditApprovalOutcome.NOT_REQUIRED,
         eventKinds = emptyList(),
     )
+
+    private fun timelineDebug(entries: List<TaskTimelineEntry>): String =
+        entries.joinToString(prefix = "timeline=", separator = " | ") {
+            "${it.toolName}:${it.phase}:${it.summary}:${it.result}"
+        }
+
+    private fun sequentialTaskIds(): () -> UUID {
+        var index = 0
+        return {
+            index += 1
+            UUID.fromString("99999999-9999-4999-8999-${index.toString().padStart(12, '0')}")
+        }
+    }
 
     private fun phoneGateway(
         noteStore: NoteStore = fakeNoteStore(),
@@ -2267,6 +2403,8 @@ class GoffyViewModelTest {
     private class RecordingMemoryStore : MemoryStore {
         var remembers = 0
         var forgets = 0
+        var forgetOne = 0
+        var updates = 0
         var lists = 0
         private var nextId = 1L
         private val memories = mutableListOf<PhoneMemoryEntry>()
@@ -2296,6 +2434,33 @@ class GoffyViewModelTest {
                 count = memories.size,
                 truncated = memories.size > entries.size,
                 entries = entries,
+            )
+        }
+
+        override suspend fun forget(memoryId: Long): PhoneMemoryDeleted {
+            forgetOne += 1
+            val index = memories.indexOfFirst { it.memoryId == memoryId }
+            check(index >= 0) { "memory row does not exist" }
+            memories.removeAt(index)
+            return PhoneMemoryDeleted(memoryId = memoryId, deletedCount = 1, remainingCount = memories.size)
+        }
+
+        override suspend fun update(
+            memoryId: Long,
+            text: String,
+            provenance: String,
+        ): PhoneMemoryUpdated {
+            updates += 1
+            val index = memories.indexOfFirst { it.memoryId == memoryId }
+            check(index >= 0) { "memory row does not exist" }
+            val existing = memories[index]
+            val updated = existing.copy(text = text, provenance = provenance)
+            memories[index] = updated
+            return PhoneMemoryUpdated(
+                memoryId = updated.memoryId,
+                text = updated.text,
+                createdAtEpochMillis = updated.createdAtEpochMillis,
+                provenance = updated.provenance,
             )
         }
 

@@ -11,14 +11,20 @@ import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
 import dev.goffy.os.protocol.PhoneFlashlightState
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_ALL_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_PROVENANCE_USER_APPROVED
 import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_UPDATE_TOOL
+import dev.goffy.os.protocol.PhoneMemoryDeleted
+import dev.goffy.os.protocol.PhoneMemoryForgetArguments
 import dev.goffy.os.protocol.PhoneMemoryForgotten
 import dev.goffy.os.protocol.PhoneMemoryList
 import dev.goffy.os.protocol.PhoneMemoryRememberArguments
 import dev.goffy.os.protocol.PhoneMemoryRemembered
+import dev.goffy.os.protocol.PhoneMemoryUpdateArguments
+import dev.goffy.os.protocol.PhoneMemoryUpdated
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneNoteCreated
@@ -68,6 +74,10 @@ interface MemoryStore {
     suspend fun remember(text: String, provenance: String): PhoneMemoryRemembered
 
     suspend fun list(maxEntries: Int): PhoneMemoryList
+
+    suspend fun forget(memoryId: Long): PhoneMemoryDeleted
+
+    suspend fun update(memoryId: Long, text: String, provenance: String): PhoneMemoryUpdated
 
     suspend fun forgetAll(): PhoneMemoryForgotten
 
@@ -391,6 +401,66 @@ class DefaultPhoneToolGateway internal constructor(
                 dispatcher = readDispatcher,
                 timeoutMillis = capability.metadata.timeoutMillis,
             )
+            PHONE_MEMORY_FORGET_TOOL -> {
+                val memoryArguments = arguments as? PhoneMemoryForgetArguments ?: return null
+                PhoneToolOperation(
+                    toolName = PHONE_MEMORY_FORGET_TOOL,
+                    acceptedMessage = "Approved single-memory deletion accepted on this phone.",
+                    completedMessage = "The app-private memory row was deleted and verified absent.",
+                    failureMessage = "The selected memory could not be deleted and verified",
+                    execute = { memoryStore.forget(memoryArguments.memoryId) },
+                    validate = { content ->
+                        content is PhoneMemoryDeleted &&
+                            content.memoryId == memoryArguments.memoryId &&
+                            content.matchesToolContract()
+                    },
+                    verification = PhoneToolVerification.Verified(
+                        summary = "The approved memory was deleted after exact-ID verification.",
+                        checks = listOf(
+                            "single-use approval",
+                            "app-private database",
+                            "exact memory ID",
+                            "post-delete absence check",
+                        ),
+                    ),
+                    dispatcher = readDispatcher,
+                    timeoutMillis = capability.metadata.timeoutMillis,
+                )
+            }
+            PHONE_MEMORY_UPDATE_TOOL -> {
+                val memoryArguments = arguments as? PhoneMemoryUpdateArguments ?: return null
+                PhoneToolOperation(
+                    toolName = PHONE_MEMORY_UPDATE_TOOL,
+                    acceptedMessage = "Approved single-memory update accepted on this phone.",
+                    completedMessage = "The app-private memory row was updated and re-read.",
+                    failureMessage = "The selected memory could not be updated and verified",
+                    execute = {
+                        memoryStore.update(
+                            memoryArguments.memoryId,
+                            memoryArguments.text,
+                            PHONE_MEMORY_PROVENANCE_USER_APPROVED,
+                        )
+                    },
+                    validate = { content ->
+                        content is PhoneMemoryUpdated &&
+                            content.memoryId == memoryArguments.memoryId &&
+                            content.text == memoryArguments.text &&
+                            content.matchesToolContract()
+                    },
+                    verification = PhoneToolVerification.Verified(
+                        summary = "The approved memory update was re-read successfully.",
+                        checks = listOf(
+                            "single-use approval",
+                            "app-private database",
+                            "exact memory ID",
+                            "exact updated text match",
+                            "inspectable provenance",
+                        ),
+                    ),
+                    dispatcher = readDispatcher,
+                    timeoutMillis = capability.metadata.timeoutMillis,
+                )
+            }
             PHONE_MEMORY_FORGET_ALL_TOOL -> PhoneToolOperation(
                 toolName = PHONE_MEMORY_FORGET_ALL_TOOL,
                 acceptedMessage = "Approved memory deletion accepted on this phone.",
@@ -495,6 +565,12 @@ private object UnavailableMemoryStore : MemoryStore {
         error("memory store unavailable")
 
     override suspend fun list(maxEntries: Int): PhoneMemoryList =
+        error("memory store unavailable")
+
+    override suspend fun forget(memoryId: Long): PhoneMemoryDeleted =
+        error("memory store unavailable")
+
+    override suspend fun update(memoryId: Long, text: String, provenance: String): PhoneMemoryUpdated =
         error("memory store unavailable")
 
     override suspend fun forgetAll(): PhoneMemoryForgotten =

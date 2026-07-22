@@ -25,11 +25,15 @@ import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
 import dev.goffy.os.protocol.PhoneFlashlightState
 import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_ALL_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_UPDATE_TOOL
+import dev.goffy.os.protocol.PhoneMemoryDeleted
 import dev.goffy.os.protocol.PhoneMemoryForgotten
 import dev.goffy.os.protocol.PhoneMemoryList
 import dev.goffy.os.protocol.PhoneMemoryRemembered
+import dev.goffy.os.protocol.PhoneMemoryUpdated
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneOcrRead
@@ -559,10 +563,20 @@ data class TaskTimelineState(
             permission == PermissionLevel.SAFE &&
             content is PhoneMemoryList &&
             content.matchesToolContract()
+        PHONE_MEMORY_FORGET_TOOL -> executionTarget == ExecutionTarget.PHONE &&
+            permission == PermissionLevel.CONFIRM &&
+            approvalGranted &&
+            content is PhoneMemoryDeleted &&
+            content.matchesToolContract()
         PHONE_MEMORY_FORGET_ALL_TOOL -> executionTarget == ExecutionTarget.PHONE &&
             permission == PermissionLevel.CONFIRM &&
             approvalGranted &&
             content is PhoneMemoryForgotten &&
+            content.matchesToolContract()
+        PHONE_MEMORY_UPDATE_TOOL -> executionTarget == ExecutionTarget.PHONE &&
+            permission == PermissionLevel.CONFIRM &&
+            approvalGranted &&
+            content is PhoneMemoryUpdated &&
             content.matchesToolContract()
         PHONE_OCR_READ_TOOL -> executionTarget == ExecutionTarget.PHONE &&
             permission == PermissionLevel.SAFE &&
@@ -675,9 +689,11 @@ private fun ToolResultContent.summaryText(): String = when (this) {
     is PhoneFlashlightState ->
         "Flashlight ${if (enabled) "on" else "off"}; state observed" +
             if (stateChanged) " after state change" else " (already requested state)"
+    is PhoneMemoryDeleted -> "Deleted local memory #$memoryId; $remainingCount remain"
     is PhoneMemoryForgotten -> "Deleted $deletedCount local memories; $remainingCount remain"
     is PhoneMemoryList -> memoryListSummary()
     is PhoneMemoryRemembered -> "Memory #$memoryId stored with approved provenance"
+    is PhoneMemoryUpdated -> "Memory #$memoryId updated with approved provenance"
     is PhoneNoteCreated -> "Note #$noteId stored: $text"
     is PhoneOcrRead -> ocrReadSummary()
     is PhoneQrRead -> qrReadSummary()

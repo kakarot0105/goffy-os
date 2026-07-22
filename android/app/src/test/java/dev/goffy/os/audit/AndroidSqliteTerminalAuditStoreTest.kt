@@ -12,8 +12,10 @@ import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
 import dev.goffy.os.protocol.MAC_PROCESSES_LIST_TOOL
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_UPDATE_TOOL
 import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PHONE_QR_READ_TOOL
 import java.util.UUID
@@ -326,7 +328,7 @@ class AndroidSqliteTerminalAuditStoreTest {
         SQLiteDatabase.openDatabase(databasePath, null, SQLiteDatabase.OPEN_READWRITE).use { database ->
             database.rawQuery("PRAGMA user_version", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(7, cursor.getInt(0))
+                assertEquals(8, cursor.getInt(0))
             }
             database.insertOrThrow(
                 "terminal_audit",
@@ -371,7 +373,7 @@ class AndroidSqliteTerminalAuditStoreTest {
         SQLiteDatabase.openDatabase(databasePath, null, SQLiteDatabase.OPEN_READONLY).use { database ->
             database.rawQuery("PRAGMA user_version", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(7, cursor.getInt(0))
+                assertEquals(8, cursor.getInt(0))
             }
         }
     }
@@ -409,7 +411,46 @@ class AndroidSqliteTerminalAuditStoreTest {
         SQLiteDatabase.openDatabase(databasePath, null, SQLiteDatabase.OPEN_READONLY).use { database ->
             database.rawQuery("PRAGMA user_version", null).use { cursor ->
                 assertTrue(cursor.moveToFirst())
-                assertEquals(7, cursor.getInt(0))
+                assertEquals(8, cursor.getInt(0))
+            }
+        }
+    }
+
+    @Test
+    fun migratesVersionSevenToolConstraintBeforeWritingPerMemoryRows() = runTest {
+        val application = RuntimeEnvironment.getApplication()
+        val databaseName = uniqueDatabaseName()
+        application.deleteDatabase(databaseName)
+        val databasePath = application.getDatabasePath(databaseName).absolutePath
+        val first = record(index = 1, recordedAtEpochMillis = 100)
+        val memoryForgetRecord = record(index = 2, recordedAtEpochMillis = 200).copy(
+            toolName = PHONE_MEMORY_FORGET_TOOL,
+            permission = AuditPermission.CONFIRM,
+            approvalOutcome = AuditApprovalOutcome.APPROVED,
+        )
+        val memoryUpdateRecord = record(index = 3, recordedAtEpochMillis = 300).copy(
+            toolName = PHONE_MEMORY_UPDATE_TOOL,
+            permission = AuditPermission.CONFIRM,
+            approvalOutcome = AuditApprovalOutcome.APPROVED,
+        )
+
+        SQLiteDatabase.openOrCreateDatabase(databasePath, null).use { database ->
+            createLegacyVersionSevenAuditTable(database)
+            database.insertOrThrow("terminal_audit", null, first.toContentValues())
+            database.execSQL("PRAGMA user_version = 7")
+        }
+
+        AndroidSqliteTerminalAuditStore(application, databaseName).useStore { store ->
+            assertEquals(listOf(first), store.load().records)
+            assertEquals(memoryForgetRecord, store.upsert(memoryForgetRecord))
+            assertEquals(memoryUpdateRecord, store.upsert(memoryUpdateRecord))
+            assertEquals(listOf(first, memoryForgetRecord, memoryUpdateRecord), store.load().records)
+        }
+
+        SQLiteDatabase.openDatabase(databasePath, null, SQLiteDatabase.OPEN_READONLY).use { database ->
+            database.rawQuery("PRAGMA user_version", null).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(8, cursor.getInt(0))
             }
         }
     }
@@ -515,6 +556,38 @@ class AndroidSqliteTerminalAuditStoreTest {
                 "execution_target = 'PHONE' AND permission = 'SAFE') OR " +
                 "(tool_name IN " +
                 "('phone.flashlight.set', 'phone.note.create', 'phone.timer.create') AND " +
+                "execution_target = 'PHONE' AND permission = 'CONFIRM')), " +
+                "CHECK (permission = 'CONFIRM' OR approval_outcome = 'NOT_REQUIRED'))",
+        )
+    }
+
+    private fun createLegacyVersionSevenAuditTable(database: SQLiteDatabase) {
+        database.execSQL(
+            "CREATE TABLE terminal_audit (" +
+                "task_id TEXT PRIMARY KEY NOT NULL CHECK (length(task_id) = 36), " +
+                "schema_version INTEGER NOT NULL CHECK (schema_version = $SCHEMA_VERSION), " +
+                "recorded_at_epoch_millis INTEGER NOT NULL CHECK (recorded_at_epoch_millis > 0), " +
+                "protocol_version TEXT NOT NULL CHECK (length(protocol_version) BETWEEN 1 AND 32), " +
+                "source_surface TEXT NOT NULL CHECK (source_surface = 'TERMINAL_TIMELINE'), " +
+                "execution_target TEXT NOT NULL CHECK (execution_target IN ('PHONE', 'MAC')), " +
+                "tool_name TEXT, " +
+                "permission TEXT CHECK (permission IN ('SAFE', 'CONFIRM')), " +
+                "terminal_phase TEXT NOT NULL CHECK (terminal_phase IN " +
+                "('VERIFIED', 'UNVERIFIED', 'FAILED', 'CANCELLED')), " +
+                "approval_outcome TEXT NOT NULL CHECK (approval_outcome IN " +
+                "('NOT_REQUIRED', 'APPROVED', 'DENIED', 'EXPIRED', 'CANCELLED')), " +
+                "event_kinds TEXT NOT NULL CHECK (length(event_kinds) <= 255), " +
+                "CHECK ((tool_name IS NULL AND permission IS NULL) OR " +
+                "(tool_name IN " +
+                "('mac.apps.list', 'mac.clipboard.read', 'mac.files.largest', 'mac.files.list', " +
+                "'mac.processes.list', 'mac.system_info', 'git.status') AND " +
+                "execution_target = 'MAC' AND permission = 'SAFE') OR " +
+                "(tool_name IN ('phone.battery.status', 'phone.device.info', " +
+                "'phone.memory.list', 'phone.ocr.read', 'phone.qr.read') AND " +
+                "execution_target = 'PHONE' AND permission = 'SAFE') OR " +
+                "(tool_name IN " +
+                "('phone.flashlight.set', 'phone.memory.forget_all', " +
+                "'phone.memory.remember', 'phone.note.create', 'phone.timer.create') AND " +
                 "execution_target = 'PHONE' AND permission = 'CONFIRM')), " +
                 "CHECK (permission = 'CONFIRM' OR approval_outcome = 'NOT_REQUIRED'))",
         )

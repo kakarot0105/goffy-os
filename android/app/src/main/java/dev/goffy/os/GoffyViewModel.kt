@@ -62,7 +62,9 @@ import dev.goffy.os.protocol.GoffyProtocolCodec
 import dev.goffy.os.protocol.MacAppsOpenArguments
 import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_ALL_TOOL
+import dev.goffy.os.protocol.PhoneMemoryForgetArguments
 import dev.goffy.os.protocol.PhoneMemoryRememberArguments
+import dev.goffy.os.protocol.PhoneMemoryUpdateArguments
 import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
@@ -1162,8 +1164,13 @@ class GoffyViewModel internal constructor(
             return "Approve deleting all local GOFFY memories from this phone."
         }
         return when (val value = arguments) {
+            is PhoneMemoryForgetArguments ->
+                "Approve deleting local GOFFY memory #${value.memoryId} from this phone."
             is PhoneMemoryRememberArguments ->
                 "Approve remembering this locally: ${value.text.take(APPROVAL_PREVIEW_LENGTH)}"
+            is PhoneMemoryUpdateArguments ->
+                "Approve updating local GOFFY memory #${value.memoryId} to: " +
+                    value.text.take(APPROVAL_PREVIEW_LENGTH)
             is PhoneNoteCreateArguments ->
                 "Approve creating this private note: ${value.text.take(APPROVAL_PREVIEW_LENGTH)}"
             is PhoneTimerCreateArguments ->

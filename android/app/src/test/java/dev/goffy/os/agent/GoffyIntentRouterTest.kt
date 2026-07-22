@@ -22,9 +22,13 @@ import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_TOOL
+import dev.goffy.os.protocol.PhoneMemoryForgetArguments
 import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
 import dev.goffy.os.protocol.PhoneMemoryRememberArguments
+import dev.goffy.os.protocol.PHONE_MEMORY_UPDATE_TOOL
+import dev.goffy.os.protocol.PhoneMemoryUpdateArguments
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
@@ -221,6 +225,7 @@ class GoffyIntentRouterTest {
             "open settings\u2066",
             "open\u200Bsettings",
             "explain ${"x".repeat(600)}",
+            "update memory #7 to first\nsecond",
         )
 
         rejected.forEach { command ->
@@ -312,6 +317,49 @@ class GoffyIntentRouterTest {
         assertEquals(PermissionLevel.CONFIRM, plan.permission)
         assertEquals(PHONE_MEMORY_REMEMBER_TOOL, plan.toolName)
         assertEquals(PhoneMemoryRememberArguments("goffy memory smoke test"), plan.arguments)
+    }
+
+    @Test
+    fun routesExactMemoryDeleteToOneConfirmPhoneTool() {
+        val cases = listOf("delete memory #7", "Forget local memory 7.")
+
+        cases.forEach { command ->
+            val decision = GoffyIntentRouter.route(command)
+            assertTrue(decision is RoutingDecision.Routed)
+            val plan = (decision as RoutingDecision.Routed).plan
+            assertEquals(ExecutionTarget.PHONE, plan.executionTarget)
+            assertEquals(PermissionLevel.CONFIRM, plan.permission)
+            assertEquals(PHONE_MEMORY_FORGET_TOOL, plan.toolName)
+            assertEquals(PhoneMemoryForgetArguments(7), plan.arguments)
+        }
+    }
+
+    @Test
+    fun routesExactMemoryUpdateToOneConfirmPhoneTool() {
+        val decision = GoffyIntentRouter.route("update memory #7 to favorite project is GOFFY")
+
+        assertTrue(decision is RoutingDecision.Routed)
+        val plan = (decision as RoutingDecision.Routed).plan
+        assertEquals(ExecutionTarget.PHONE, plan.executionTarget)
+        assertEquals(PermissionLevel.CONFIRM, plan.permission)
+        assertEquals(PHONE_MEMORY_UPDATE_TOOL, plan.toolName)
+        assertEquals(PhoneMemoryUpdateArguments(7, "favorite project is GOFFY"), plan.arguments)
+    }
+
+    @Test
+    fun rejectsInvalidMemoryMutationAuthority() {
+        val rejected = listOf(
+            "delete memory #0",
+            "delete memory #7 and clear all memories",
+            "update memory #0 to safe text",
+            "update memory #7 to ",
+            "update memory #7 to safe\u202Eevil",
+            "update memory #7 to first\nsecond",
+        )
+
+        rejected.forEach { command ->
+            assertTrue(GoffyIntentRouter.route(command) is RoutingDecision.Unsupported)
+        }
     }
 
     @Test

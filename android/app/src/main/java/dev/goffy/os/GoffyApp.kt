@@ -86,9 +86,11 @@ import dev.goffy.os.protocol.MacSystemInfo
 import dev.goffy.os.protocol.PhoneBatteryStatus
 import dev.goffy.os.protocol.PhoneDeviceInfo
 import dev.goffy.os.protocol.PhoneFlashlightState
+import dev.goffy.os.protocol.PhoneMemoryDeleted
 import dev.goffy.os.protocol.PhoneMemoryForgotten
 import dev.goffy.os.protocol.PhoneMemoryList
 import dev.goffy.os.protocol.PhoneMemoryRemembered
+import dev.goffy.os.protocol.PhoneMemoryUpdated
 import dev.goffy.os.protocol.PhoneNoteCreated
 import dev.goffy.os.protocol.PhoneOcrRead
 import dev.goffy.os.protocol.PhoneQrRead
@@ -2345,6 +2347,27 @@ private fun TaskResult(result: ToolResultContent) {
                 fontSize = 10.sp,
             )
         }
+        is PhoneMemoryUpdated -> {
+            Text(
+                text = "MEMORY UPDATED / #${result.memoryId}",
+                color = Signal,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+            )
+            Text(
+                text = result.text.take(MAX_MEMORY_PREVIEW_LENGTH),
+                color = Bone,
+                fontSize = 14.sp,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = result.provenance,
+                color = Mist,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+            )
+        }
         is PhoneMemoryList -> {
             Text(
                 text = "MEMORIES / ${result.count}" + if (result.truncated) " / truncated" else "",
@@ -2366,6 +2389,19 @@ private fun TaskResult(result: ToolResultContent) {
                     )
                 }
             }
+        }
+        is PhoneMemoryDeleted -> {
+            Text(
+                text = "MEMORY DELETED / #${result.memoryId}",
+                color = Warning,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = "remaining=${result.remainingCount}",
+                color = Signal,
+                fontSize = 11.sp,
+            )
         }
         is PhoneMemoryForgotten -> {
             Text(

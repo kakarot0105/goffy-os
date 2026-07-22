@@ -228,6 +228,12 @@ fun PhoneNoteCreated.matchesToolContract(): Boolean =
 fun PhoneMemoryRememberArguments.matchesToolContract(): Boolean =
     text.matchesMemoryTextContract()
 
+fun PhoneMemoryForgetArguments.matchesToolContract(): Boolean =
+    memoryId > 0
+
+fun PhoneMemoryUpdateArguments.matchesToolContract(): Boolean =
+    memoryId > 0 && text.matchesMemoryTextContract()
+
 fun PhoneMemoryRemembered.matchesToolContract(): Boolean =
     memoryId > 0 &&
         text.matchesMemoryTextContract() &&
@@ -251,6 +257,17 @@ fun PhoneMemoryList.matchesToolContract(): Boolean =
 fun PhoneMemoryForgotten.matchesToolContract(): Boolean =
     deletedCount in 0..MAX_PHONE_MEMORY_ROWS &&
         remainingCount == 0
+
+fun PhoneMemoryDeleted.matchesToolContract(): Boolean =
+    memoryId > 0 &&
+        deletedCount == 1 &&
+        remainingCount in 0 until MAX_PHONE_MEMORY_ROWS
+
+fun PhoneMemoryUpdated.matchesToolContract(): Boolean =
+    memoryId > 0 &&
+        text.matchesMemoryTextContract() &&
+        createdAtEpochMillis > 0 &&
+        provenance.matchesMemoryProvenanceContract()
 
 fun String.matchesNoteTextContract(): Boolean =
     isNotBlank() &&

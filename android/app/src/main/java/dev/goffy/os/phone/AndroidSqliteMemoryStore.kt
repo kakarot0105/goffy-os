@@ -8,9 +8,11 @@ import dev.goffy.os.protocol.MAX_PHONE_MEMORY_LIST_ENTRIES
 import dev.goffy.os.protocol.MAX_PHONE_MEMORY_ROWS
 import dev.goffy.os.protocol.PHONE_MEMORY_STATUS_AVAILABLE
 import dev.goffy.os.protocol.PhoneMemoryEntry
+import dev.goffy.os.protocol.PhoneMemoryDeleted
 import dev.goffy.os.protocol.PhoneMemoryForgotten
 import dev.goffy.os.protocol.PhoneMemoryList
 import dev.goffy.os.protocol.PhoneMemoryRemembered
+import dev.goffy.os.protocol.PhoneMemoryUpdated
 import dev.goffy.os.protocol.matchesMemoryProvenanceContract
 import dev.goffy.os.protocol.matchesMemoryTextContract
 
@@ -88,6 +90,61 @@ class AndroidSqliteMemoryStore(
             truncated = total > entries.size,
             entries = entries,
         )
+    }
+
+    override suspend fun forget(memoryId: Long): PhoneMemoryDeleted {
+        require(memoryId > 0) { "memory ID must be positive" }
+        val database = helper.writableDatabase
+        database.beginTransaction()
+        return try {
+            check(database.readMemory(memoryId) != null) { "memory row does not exist" }
+            val deleted = database.delete(TABLE_MEMORIES, "$COLUMN_ID = ?", arrayOf(memoryId.toString()))
+            check(deleted == 1) { "memory deletion affected $deleted rows" }
+            check(database.readMemory(memoryId) == null) { "memory deletion failed post-delete verification" }
+            val remaining = database.memoryCount()
+            database.setTransactionSuccessful()
+            PhoneMemoryDeleted(memoryId = memoryId, deletedCount = deleted, remainingCount = remaining)
+        } finally {
+            database.endTransaction()
+        }
+    }
+
+    override suspend fun update(memoryId: Long, text: String, provenance: String): PhoneMemoryUpdated {
+        require(memoryId > 0) { "memory ID must be positive" }
+        require(text.matchesMemoryTextContract()) { "memory text does not match the local contract" }
+        require(provenance.matchesMemoryProvenanceContract()) {
+            "memory provenance does not match the local contract"
+        }
+        val database = helper.writableDatabase
+        database.beginTransaction()
+        return try {
+            val existing = database.readMemory(memoryId)
+                ?: throw IllegalStateException("memory row does not exist")
+            val values = ContentValues().apply {
+                put(COLUMN_TEXT, text)
+                put(COLUMN_PROVENANCE, provenance)
+            }
+            val updated = database.update(TABLE_MEMORIES, values, "$COLUMN_ID = ?", arrayOf(memoryId.toString()))
+            check(updated == 1) { "memory update affected $updated rows" }
+            val stored = database.readMemory(memoryId)
+                ?: throw IllegalStateException("updated memory could not be re-read")
+            check(
+                stored.text == text &&
+                    stored.provenance == provenance &&
+                    stored.createdAtEpochMillis == existing.createdAtEpochMillis,
+            ) {
+                "updated memory failed post-write verification"
+            }
+            database.setTransactionSuccessful()
+            PhoneMemoryUpdated(
+                memoryId = stored.memoryId,
+                text = stored.text,
+                createdAtEpochMillis = stored.createdAtEpochMillis,
+                provenance = stored.provenance,
+            )
+        } finally {
+            database.endTransaction()
+        }
     }
 
     override suspend fun forgetAll(): PhoneMemoryForgotten {

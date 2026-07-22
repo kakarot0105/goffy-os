@@ -17,11 +17,13 @@ import dev.goffy.os.protocol.NoToolArguments
 import dev.goffy.os.protocol.PHONE_BATTERY_STATUS_TOOL
 import dev.goffy.os.protocol.PHONE_DEVICE_INFO_TOOL
 import dev.goffy.os.protocol.PHONE_FLASHLIGHT_SET_TOOL
+import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_FORGET_ALL_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_LIST_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_PROVENANCE_USER_APPROVED
 import dev.goffy.os.protocol.PHONE_MEMORY_REMEMBER_TOOL
 import dev.goffy.os.protocol.PHONE_MEMORY_STATUS_AVAILABLE
+import dev.goffy.os.protocol.PHONE_MEMORY_UPDATE_TOOL
 import dev.goffy.os.protocol.PHONE_NOTE_CREATE_TOOL
 import dev.goffy.os.protocol.PHONE_OCR_READ_TOOL
 import dev.goffy.os.protocol.PHONE_OCR_SCRIPTS
@@ -32,7 +34,9 @@ import dev.goffy.os.protocol.PHONE_QR_STATUS_AVAILABLE
 import dev.goffy.os.protocol.PHONE_TIMER_CREATE_TOOL
 import dev.goffy.os.protocol.PermissionLevel
 import dev.goffy.os.protocol.PhoneFlashlightSetArguments
+import dev.goffy.os.protocol.PhoneMemoryForgetArguments
 import dev.goffy.os.protocol.PhoneMemoryRememberArguments
+import dev.goffy.os.protocol.PhoneMemoryUpdateArguments
 import dev.goffy.os.protocol.PhoneNoteCreateArguments
 import dev.goffy.os.protocol.PhoneTimerCreateArguments
 import dev.goffy.os.protocol.ToolArguments
@@ -164,9 +168,11 @@ class PhoneCapabilityRegistry internal constructor(
                     batteryCapability(defaultTimeoutMillis),
                     deviceCapability(defaultTimeoutMillis),
                     flashlightCapability(flashlightTimeoutMillis),
+                    memoryForgetCapability(defaultTimeoutMillis),
                     memoryForgetAllCapability(defaultTimeoutMillis),
                     memoryListCapability(defaultTimeoutMillis),
                     memoryRememberCapability(defaultTimeoutMillis),
+                    memoryUpdateCapability(defaultTimeoutMillis),
                     noteCapability(defaultTimeoutMillis),
                     ocrReadCapability(defaultTimeoutMillis),
                     qrReadCapability(defaultTimeoutMillis),
@@ -189,7 +195,7 @@ private fun validateDefinition(definition: PhoneCapabilityDefinition) {
     require(!capability.annotations.openWorldHint)
     if (capability.annotations.destructiveHint) {
         require(
-            capability.name == PHONE_MEMORY_FORGET_ALL_TOOL &&
+            capability.name in setOf(PHONE_MEMORY_FORGET_TOOL, PHONE_MEMORY_FORGET_ALL_TOOL) &&
                 capability.metadata.permission == PermissionLevel.CONFIRM,
         )
     }
@@ -373,6 +379,36 @@ private fun memoryListCapability(timeoutMillis: Long): PhoneCapabilityDefinition
         acceptsArguments = { it == NoToolArguments },
     )
 
+private fun memoryForgetCapability(timeoutMillis: Long): PhoneCapabilityDefinition =
+    definition(
+        name = PHONE_MEMORY_FORGET_TOOL,
+        title = "Forget one phone memory",
+        description = "Delete one GOFFY user-approved phone memory by exact ID after explicit approval.",
+        permission = PermissionLevel.CONFIRM,
+        timeoutMillis = timeoutMillis,
+        readOnly = false,
+        idempotent = false,
+        destructive = true,
+        inputSchema = objectSchema(
+            properties = mapOf("memoryId" to integerSchema(minimum = 1)),
+            required = listOf("memoryId"),
+        ),
+        outputSchema = objectSchema(
+            properties = mapOf(
+                "memoryId" to integerSchema(minimum = 1),
+                "deletedCount" to integerSchema(minimum = 1, maximum = 1),
+                "remainingCount" to integerSchema(
+                    minimum = 0,
+                    maximum = (MAX_PHONE_MEMORY_ROWS - 1).toLong(),
+                ),
+            ),
+            required = listOf("memoryId", "deletedCount", "remainingCount"),
+        ),
+        acceptsArguments = { arguments ->
+            arguments is PhoneMemoryForgetArguments && arguments.memoryId > 0
+        },
+    )
+
 private fun memoryForgetAllCapability(timeoutMillis: Long): PhoneCapabilityDefinition =
     definition(
         name = PHONE_MEMORY_FORGET_ALL_TOOL,
@@ -395,6 +431,32 @@ private fun memoryForgetAllCapability(timeoutMillis: Long): PhoneCapabilityDefin
             required = listOf("deletedCount", "remainingCount"),
         ),
         acceptsArguments = { it == NoToolArguments },
+    )
+
+private fun memoryUpdateCapability(timeoutMillis: Long): PhoneCapabilityDefinition =
+    definition(
+        name = PHONE_MEMORY_UPDATE_TOOL,
+        title = "Update one phone memory",
+        description = "Update one GOFFY user-approved phone memory by exact ID after explicit approval.",
+        permission = PermissionLevel.CONFIRM,
+        timeoutMillis = timeoutMillis,
+        readOnly = false,
+        idempotent = false,
+        inputSchema = objectSchema(
+            properties = mapOf(
+                "memoryId" to integerSchema(minimum = 1),
+                "text" to stringSchema(maxLength = MAX_MEMORY_TEXT_LENGTH),
+            ),
+            required = listOf("memoryId", "text"),
+        ),
+        outputSchema = memoryEntrySchema(
+            required = listOf("memoryId", "text", "createdAtEpochMillis", "provenance"),
+        ),
+        acceptsArguments = { arguments ->
+            arguments is PhoneMemoryUpdateArguments &&
+                arguments.memoryId > 0 &&
+                arguments.text.matchesMemoryTextContract()
+        },
     )
 
 private fun ocrReadCapability(timeoutMillis: Long): PhoneCapabilityDefinition =

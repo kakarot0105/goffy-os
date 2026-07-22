@@ -48,6 +48,30 @@ class GoffyToolContractsTest {
     }
 
     @Test
+    fun memoryMutationContractsRequireExactIdAndSafeText() {
+        assertTrue(PhoneMemoryForgetArguments(1).matchesToolContract())
+        assertFalse(PhoneMemoryForgetArguments(0).matchesToolContract())
+
+        assertTrue(PhoneMemoryUpdateArguments(1, "favorite project is GOFFY").matchesToolContract())
+        assertFalse(PhoneMemoryUpdateArguments(0, "favorite project is GOFFY").matchesToolContract())
+        assertFalse(PhoneMemoryUpdateArguments(1, "safe\u202Eevil").matchesToolContract())
+
+        assertTrue(PhoneMemoryDeleted(memoryId = 1, deletedCount = 1, remainingCount = 0).matchesToolContract())
+        assertFalse(PhoneMemoryDeleted(memoryId = 0, deletedCount = 1, remainingCount = 0).matchesToolContract())
+        assertFalse(PhoneMemoryDeleted(memoryId = 1, deletedCount = 0, remainingCount = 0).matchesToolContract())
+
+        val updated = PhoneMemoryUpdated(
+            memoryId = 1,
+            text = "favorite project is GOFFY",
+            createdAtEpochMillis = 1_720_000_000_000,
+            provenance = PHONE_MEMORY_PROVENANCE_USER_APPROVED,
+        )
+        assertTrue(updated.matchesToolContract())
+        assertFalse(updated.copy(text = "first\nsecond").matchesToolContract())
+        assertFalse(updated.copy(provenance = "system_inferred").matchesToolContract())
+    }
+
+    @Test
     fun timerContractRequiresAndroidBoundsActionAndSafeClockPackage() {
         val valid = PhoneTimerDispatched(
             300,

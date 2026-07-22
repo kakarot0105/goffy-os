@@ -12,9 +12,11 @@ EXPECTED_PERMISSIONS = {
     "phone.battery.status": PermissionLevel.SAFE,
     "phone.device.info": PermissionLevel.SAFE,
     "phone.flashlight.set": PermissionLevel.CONFIRM,
+    "phone.memory.forget": PermissionLevel.CONFIRM,
     "phone.memory.forget_all": PermissionLevel.CONFIRM,
     "phone.memory.list": PermissionLevel.SAFE,
     "phone.memory.remember": PermissionLevel.CONFIRM,
+    "phone.memory.update": PermissionLevel.CONFIRM,
     "phone.note.create": PermissionLevel.CONFIRM,
     "phone.ocr.read": PermissionLevel.SAFE,
     "phone.qr.read": PermissionLevel.SAFE,
@@ -32,7 +34,7 @@ def test_phone_capability_fixture_is_typed_sorted_and_permission_preserving() ->
         assert capability.meta.execution_target is ExecutionTarget.PHONE
         assert capability.meta.permission is EXPECTED_PERMISSIONS[capability.name]
         assert capability.annotations.destructive_hint is (
-            capability.name == "phone.memory.forget_all"
+            capability.name in {"phone.memory.forget", "phone.memory.forget_all"}
         )
         assert capability.annotations.open_world_hint is False
         if capability.meta.permission is PermissionLevel.SAFE:
@@ -76,6 +78,10 @@ def test_phone_capability_schemas_accept_canonical_examples() -> None:
             {},
             {"deletedCount": 1, "remainingCount": 0},
         ),
+        "phone.memory.forget": (
+            {"memoryId": 1},
+            {"memoryId": 1, "deletedCount": 1, "remainingCount": 0},
+        ),
         "phone.memory.list": (
             {},
             {
@@ -90,6 +96,15 @@ def test_phone_capability_schemas_accept_canonical_examples() -> None:
                         "provenance": "user_approved_phone_command",
                     }
                 ],
+            },
+        ),
+        "phone.memory.update": (
+            {"memoryId": 1, "text": "favorite project is GOFFY"},
+            {
+                "memoryId": 1,
+                "text": "favorite project is GOFFY",
+                "createdAtEpochMillis": 1,
+                "provenance": "user_approved_phone_command",
             },
         ),
         "phone.memory.remember": (
@@ -153,6 +168,8 @@ def test_phone_capability_schemas_reject_extra_and_policy_mismatched_arguments()
     battery_arguments = {"unexpected": True}
     timer_arguments = {"durationSeconds": 30, "skipClockUi": False}
     flashlight_arguments = {"enabled": "yes"}
+    memory_forget_arguments = {"memoryId": 0}
+    memory_update_arguments = {"memoryId": 1}
 
     with pytest.raises(ValidationError):
         Draft202012Validator(capabilities["phone.battery.status"].input_schema).validate(
@@ -165,4 +182,12 @@ def test_phone_capability_schemas_reject_extra_and_policy_mismatched_arguments()
     with pytest.raises(ValidationError):
         Draft202012Validator(capabilities["phone.flashlight.set"].input_schema).validate(
             flashlight_arguments
+        )
+    with pytest.raises(ValidationError):
+        Draft202012Validator(capabilities["phone.memory.forget"].input_schema).validate(
+            memory_forget_arguments
+        )
+    with pytest.raises(ValidationError):
+        Draft202012Validator(capabilities["phone.memory.update"].input_schema).validate(
+            memory_update_arguments
         )

@@ -12,10 +12,14 @@ slice must therefore be local, inspectable, bounded, and explicitly approved.
 
 ## Decision
 
-Android now exposes three phone tools:
+Android now exposes five phone tools:
 
 - `phone.memory.remember` stores one user-approved memory in app-private SQLite.
 - `phone.memory.list` reads a bounded newest-first view of app-private memories.
+- `phone.memory.update` updates one app-private memory by exact ID after
+  explicit approval and re-reads the row.
+- `phone.memory.forget` deletes one app-private memory by exact ID after
+  explicit approval and verifies the row is absent.
 - `phone.memory.forget_all` deletes all app-private memories after explicit
   approval and verifies the remaining count is zero.
 
@@ -29,7 +33,7 @@ memory text or typed memory arguments.
 
 - GOFFY gains a real local continuity primitive without adding cloud AI,
   background collection, or a broad database surface.
-- Memory listing is currently command/timeline based. Per-memory edit/delete UI
-  and retention controls remain future work.
-- `forget_all` is intentionally the only destructive memory path in this slice;
-  narrower per-row deletion needs its own approval wording and tests.
+- Memory listing and mutation are currently command/timeline based. Dedicated
+  memory-screen edit/delete controls and retention controls remain future work.
+- `phone.memory.forget` and `phone.memory.forget_all` are the only destructive
+  memory paths. Both require visible, single-use approval.
