@@ -37,8 +37,9 @@ automation service, and no broad command input surface.
   fixed `ws://127.0.0.1:8787/ws/v1` endpoint becomes configured before
   submitting the MAC command.
 - Use `adb shell uiautomator dump` only to locate the command field, tap the
-  fixed UI elements, and verify markers that appear after the matching command
-  text.
+  fixed UI elements, verify the launch-visible HOME shell and HOME setup card
+  markers, reveal the device-map viewport with one bounded scroll, and verify
+  markers that appear after the matching command text.
 - Treat prior timeline entries as stale. Verification requires a new matching
   task card below `TASK TIMELINE`, then checks the newest matching card markers.
 - Save bounded artifacts under `.goffy-validation/device-smoke/`: UI XML,
@@ -48,10 +49,11 @@ automation service, and no broad command input surface.
 
 ## Consequences
 
-The script can verify the first Moto G PHONE smoke path and, when the Hub link is
-already ready or a redacted local debug token file is provided, the MAC smoke
-path without importing or installing an automation framework. The command
-surface remains narrow and reviewable.
+The script can verify the first Moto G HOME surface, HOME setup card, read-only
+device-map viewport, and PHONE smoke path and, when the Hub link is already ready
+or a redacted local debug token file is provided, the MAC smoke path without
+importing or installing an automation framework. The command surface remains
+narrow and reviewable.
 
 This is less expressive than Appium or a full UIAutomator instrumentation test.
 It may need app-specific maintenance if the GOFFY Compose hierarchy changes. A

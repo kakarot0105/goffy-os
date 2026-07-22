@@ -593,11 +593,12 @@ That flow first requires exactly one authorized Moto G target, or an explicit
 `--device-serial` when multiple devices are connected, and then pins every ADB
 call with `-s <device-serial>`. It configures `adb reverse tcp:8787 tcp:8787`,
 installs the debug APK, force-stops and launches GOFFY, collapses the Hub setup
-card if needed, verifies the launch-visible HOME shell, connection, target, and
-device-map markers from `after-launch.xml` into `home-surface.xml`, types only
-the fixed `check my battery level` smoke command, verifies that a fresh PHONE
-task card appeared with expected markers, captures a screenshot, and saves
-bounded GOFFY process logcat under
+card if needed, verifies the launch-visible HOME shell, connection, target, HOME
+setup card, and device-map entry from `after-launch.xml` into `home-surface.xml`,
+uses one bounded scroll to capture and verify device-map node labels in
+`device-map.xml`, types only the fixed `check my battery level` smoke command,
+verifies that a fresh PHONE task card appeared with expected markers, captures a
+screenshot, and saves bounded GOFFY process logcat under
 `.goffy-validation/device-smoke/`. Add `--include-memory` to also submit a
 unique per-run `remember that goffy memory smoke ...` command, tap the matching
 `Approve once` control inside that fresh task card, verify

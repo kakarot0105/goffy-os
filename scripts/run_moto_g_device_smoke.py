@@ -105,6 +105,7 @@ HOME_TOP_RESTORE_SWIPES = (
     ("360", "650", "360", "1450", "450"),
     ("360", "650", "360", "1450", "450"),
 )
+DEVICE_MAP_REVEAL_SWIPES = (("360", "1450", "360", "900", "350"),)
 KEYEVENT_BY_INPUT_CHAR = {
     **{chr(code): f"KEYCODE_{chr(code).upper()}" for code in range(ord("a"), ord("z") + 1)},
     **{str(digit): f"KEYCODE_{digit}" for digit in range(10)},
@@ -119,11 +120,17 @@ HOME_SURFACE_MARKERS = (
     "MAC LINK",
     "EXECUTION TARGET",
     "DOCK MODE",
+    "HOME SHELL",
+    "HOME status",
+    "HOME CHECK",
     "DEVICE MAP",
+)
+DEVICE_MAP_SURFACE_MARKERS = (
     "PHONE ENGINE",
     "MAC HUB",
     "MCP REGISTRY",
     "LOCAL MODEL",
+    "CLOUD",
 )
 
 
@@ -302,9 +309,16 @@ def planned_steps(
             name="HOME surface smoke",
             status=StepStatus.PLANNED,
             detail=(
-                "would verify the idle GOFFY HOME shell, orb, device map, "
-                "Settings escape hatch, and visible connection/target indicators"
+                "would verify the idle GOFFY HOME shell, orb, device-map entry, "
+                "HOME setup card, Settings escape hatch, and visible "
+                "connection/target indicators"
             ),
+        ),
+        DeviceSmokeStep(
+            name="Device map viewport smoke",
+            status=StepStatus.PLANNED,
+            mutates_device=True,
+            detail="would reveal and verify the read-only device-map node labels",
         ),
         DeviceSmokeStep(
             name="PHONE command smoke",
@@ -594,6 +608,24 @@ def build_report(
     )
     steps.append(home_surface)
     if home_surface.status is not StepStatus.OK:
+        return executed_report(
+            root=resolved_root,
+            output_directory=artifacts,
+            phone_command=phone_command,
+            mac_command=mac_command if include_mac else None,
+            steps=steps,
+        )
+
+    device_map_steps = reveal_and_verify_device_map_surface(
+        adb=adb,
+        target=target,
+        root=resolved_root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+        output_directory=artifacts,
+    )
+    steps.extend(device_map_steps)
+    if not device_map_steps or device_map_steps[-1].status is not StepStatus.OK:
         return executed_report(
             root=resolved_root,
             output_directory=artifacts,
@@ -2239,15 +2271,109 @@ def verify_home_surface(*, ui_xml: str, output_directory: Path) -> DeviceSmokeSt
             detail="missing HOME viewport markers: " + ", ".join(missing[:6]),
             remediation=(
                 "Inspect home-surface.xml and confirm the GOFFY HOME shell, orb, "
-                "device map, Settings escape hatch, and connection/target indicators "
-                "intersect the Moto G portrait viewport."
+                "HOME setup card, device map, Settings escape hatch, and "
+                "connection/target indicators intersect the Moto G portrait viewport."
             ),
             artifact=artifact,
         )
     return DeviceSmokeStep(
         name="HOME surface smoke",
         status=StepStatus.OK,
-        detail="verified idle GOFFY HOME viewport markers",
+        detail="verified idle GOFFY HOME and setup-card viewport markers",
+        artifact=artifact,
+    )
+
+
+def reveal_and_verify_device_map_surface(
+    *,
+    adb: Path,
+    target: DeviceTarget,
+    root: Path,
+    runner: CommandRunner,
+    timeout_seconds: int,
+    output_directory: Path,
+) -> tuple[DeviceSmokeStep, ...]:
+    steps: list[DeviceSmokeStep] = []
+    for start_x, start_y, end_x, end_y, duration_ms in DEVICE_MAP_REVEAL_SWIPES:
+        step = execute_step(
+            name="Reveal device map viewport",
+            command=adb_command(
+                adb,
+                target,
+                "shell",
+                "input",
+                "swipe",
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                duration_ms,
+            ),
+            root=root,
+            runner=runner,
+            timeout_seconds=timeout_seconds,
+            mutates_device=True,
+            display_command=display_adb_command(
+                adb,
+                "shell",
+                "input",
+                "swipe",
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                duration_ms,
+            ),
+        )
+        steps.append(step)
+        if step.status is not StepStatus.OK:
+            return tuple(steps)
+        time.sleep(0.4)
+
+    dump = dump_ui(
+        adb=adb,
+        target=target,
+        root=root,
+        runner=runner,
+        timeout_seconds=timeout_seconds,
+        artifact_path=output_directory / "device-map.xml",
+    )
+    steps.append(dump)
+    if dump.status is not StepStatus.OK:
+        return tuple(steps)
+
+    steps.append(
+        verify_device_map_surface(
+            ui_xml=(output_directory / "device-map.xml").read_text(encoding="utf-8"),
+            output_directory=output_directory,
+        )
+    )
+    return tuple(steps)
+
+
+def verify_device_map_surface(*, ui_xml: str, output_directory: Path) -> DeviceSmokeStep:
+    visible_nodes = visible_nodes_from_xml(
+        ui_xml,
+        viewport_bounds=MOTO_G_PORTRAIT_VIEWPORT_BOUNDS,
+    )
+    missing = missing_device_map_surface_markers(visible_nodes)
+    artifact = "device-map.xml"
+    (output_directory / artifact).write_text(ui_xml, encoding="utf-8")
+    if missing:
+        return DeviceSmokeStep(
+            name="Device map viewport smoke",
+            status=StepStatus.FAIL,
+            detail="missing device-map viewport markers: " + ", ".join(missing[:6]),
+            remediation=(
+                "Inspect device-map.xml and confirm the read-only device map node "
+                "labels are reachable after the bounded HOME viewport reveal."
+            ),
+            artifact=artifact,
+        )
+    return DeviceSmokeStep(
+        name="Device map viewport smoke",
+        status=StepStatus.OK,
+        detail="verified read-only device-map node labels",
         artifact=artifact,
     )
 
@@ -2262,13 +2388,23 @@ def missing_home_surface_markers(nodes: tuple[UiNode, ...]) -> list[str]:
         "MAC LINK": has_exact_text(nodes, "MAC LINK"),
         "EXECUTION TARGET": has_exact_text(nodes, "EXECUTION TARGET"),
         "DOCK MODE": has_exact_text(nodes, "DOCK MODE"),
+        "HOME SHELL": has_exact_text(nodes, "HOME SHELL"),
+        "HOME status": has_home_setup_status(nodes),
+        "HOME CHECK": has_exact_text(nodes, "CHECK"),
         "DEVICE MAP": has_exact_text(nodes, "DEVICE MAP"),
+    }
+    return [label for label in HOME_SURFACE_MARKERS if not checks[label]]
+
+
+def missing_device_map_surface_markers(nodes: tuple[UiNode, ...]) -> list[str]:
+    checks: dict[str, bool] = {
         "PHONE ENGINE": has_exact_text(nodes, "PHONE ENGINE"),
         "MAC HUB": has_exact_text(nodes, "MAC HUB"),
         "MCP REGISTRY": has_exact_text(nodes, "MCP REGISTRY"),
         "LOCAL MODEL": has_exact_text(nodes, "LOCAL MODEL"),
+        "CLOUD": has_exact_text(nodes, "CLOUD"),
     }
-    return [label for label in HOME_SURFACE_MARKERS if not checks[label]]
+    return [label for label in DEVICE_MAP_SURFACE_MARKERS if not checks[label]]
 
 
 def has_exact_text(nodes: tuple[UiNode, ...], text: str) -> bool:
@@ -2277,6 +2413,20 @@ def has_exact_text(nodes: tuple[UiNode, ...], text: str) -> bool:
 
 def has_text_prefix(nodes: tuple[UiNode, ...], prefix: str) -> bool:
     return any(node.text.startswith(prefix) for node in nodes)
+
+
+def has_home_setup_status(nodes: tuple[UiNode, ...]) -> bool:
+    return any(
+        node.text.startswith(
+            (
+                "STATUS UNKNOWN",
+                "DEFAULT HOME",
+                "AVAILABLE",
+                "NOT AVAILABLE",
+            )
+        )
+        for node in nodes
+    )
 
 
 def has_content_desc_prefix(nodes: tuple[UiNode, ...], prefix: str) -> bool:

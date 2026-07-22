@@ -16,6 +16,7 @@ from scripts.run_moto_g_device_smoke import (
     render_json,
     render_text,
     timeline_command_occurrences,
+    verify_device_map_surface,
     verify_home_surface,
 )
 from scripts.verify_moto_g_readiness import DEBUG_APK_RELATIVE_PATH
@@ -50,32 +51,59 @@ BASE_UI_XML = "\n".join(
         'bounds="[220,430][360,470]" />',
         '  <node text="DOCK MODE" class="android.widget.TextView" enabled="true" '
         'bounds="[520,430][660,470]" />',
+        '  <node text="HOME SHELL" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,500][220,540]" />',
+        '  <node text="STATUS UNKNOWN / CHECK PHONE INFO" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,550][460,590]" />',
+        '  <node text="CHECK" class="android.widget.TextView" enabled="true" '
+        'bounds="[520,525][650,590]" />',
         '  <node text="DEVICE MAP" class="android.widget.TextView" enabled="true" '
-        'bounds="[60,530][220,570]" />',
+        'bounds="[60,630][220,670]" />',
         '  <node text="PHONE ENGINE" class="android.widget.TextView" enabled="true" '
-        'bounds="[60,592][240,632]" />',
+        'bounds="[60,692][240,732]" />',
         '  <node text="MAC HUB" class="android.widget.TextView" enabled="true" '
-        'bounds="[60,648][180,688]" />',
+        'bounds="[60,748][180,788]" />',
         '  <node text="MCP REGISTRY" class="android.widget.TextView" enabled="true" '
-        'bounds="[60,704][240,744]" />',
+        'bounds="[60,804][240,844]" />',
         '  <node text="LOCAL MODEL" class="android.widget.TextView" enabled="true" '
-        'bounds="[60,760][240,800]" />',
+        'bounds="[60,860][240,900]" />',
         '  <node text="Ask GOFFY to do something" class="android.widget.TextView" '
-        'enabled="true" bounds="[60,810][420,850]" />',
+        'enabled="true" bounds="[60,910][420,950]" />',
         '  <node text="" class="android.widget.EditText" enabled="true" '
-        'bounds="[60,900][660,1040]" />',
+        'bounds="[60,1000][660,1140]" />',
         '  <node text="MIC" class="android.widget.TextView" enabled="true" '
-        'bounds="[60,1070][130,1110]" />',
+        'bounds="[60,1170][130,1210]" />',
         '  <node text="CAM" class="android.widget.TextView" enabled="true" '
-        'bounds="[150,1070][220,1110]" />',
+        'bounds="[150,1170][220,1210]" />',
         '  <node text="OCR" class="android.widget.TextView" enabled="true" '
-        'bounds="[240,1070][310,1110]" />',
+        'bounds="[240,1170][310,1210]" />',
         '  <node text="Send" class="android.widget.TextView" enabled="true" '
-        'bounds="[520,1100][660,1180]" />',
+        'bounds="[520,1200][660,1280]" />',
         '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
-        'bounds="[60,1200][260,1240]" />',
+        'bounds="[60,1300][260,1340]" />',
         '  <node text="No actions yet. Every GOFFY step will appear here." '
-        'class="android.widget.TextView" enabled="true" bounds="[60,1250][660,1290]" />',
+        'class="android.widget.TextView" enabled="true" bounds="[60,1350][660,1390]" />',
+        "</hierarchy>",
+    ]
+)
+
+
+DEVICE_MAP_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="DEVICE MAP" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,200][220,240]" />',
+        '  <node text="PHONE ENGINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,330][260,370]" />',
+        '  <node text="MAC HUB" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,440][220,480]" />',
+        '  <node text="MCP REGISTRY" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,550][260,590]" />',
+        '  <node text="LOCAL MODEL" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,660][260,700]" />',
+        '  <node text="CLOUD" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,770][180,810]" />',
         "</hierarchy>",
     ]
 )
@@ -619,6 +647,26 @@ def test_home_surface_smoke_accepts_required_os_shell_markers(tmp_path: Path) ->
     assert (tmp_path / "home-surface.xml").read_text(encoding="utf-8") == BASE_UI_XML
 
 
+@pytest.mark.parametrize(
+    "status",
+    [
+        "STATUS UNKNOWN / CHECK PHONE INFO",
+        "DEFAULT HOME / GOFFY CONTROLS HOME",
+        "AVAILABLE / CHOOSE GOFFY AS HOME",
+        "NOT AVAILABLE / HOME INTENT MISSING",
+    ],
+)
+def test_home_surface_smoke_accepts_each_home_setup_status(
+    status: str,
+    tmp_path: Path,
+) -> None:
+    ui_xml = BASE_UI_XML.replace("STATUS UNKNOWN / CHECK PHONE INFO", status)
+
+    result = verify_home_surface(ui_xml=ui_xml, output_directory=tmp_path)
+
+    assert result.status is StepStatus.OK
+
+
 def test_home_surface_smoke_reports_missing_markers(tmp_path: Path) -> None:
     sparse_xml = "\n".join(
         [
@@ -635,6 +683,33 @@ def test_home_surface_smoke_reports_missing_markers(tmp_path: Path) -> None:
     assert result.status is StepStatus.FAIL
     assert result.artifact == "home-surface.xml"
     assert "GOFFY LITE" in result.detail
+
+
+def test_home_surface_smoke_requires_home_setup_card(tmp_path: Path) -> None:
+    missing_home_setup_xml = (
+        BASE_UI_XML.replace(
+            '  <node text="HOME SHELL" class="android.widget.TextView" enabled="true" '
+            'bounds="[60,500][220,540]" />\n',
+            "",
+        )
+        .replace(
+            '  <node text="STATUS UNKNOWN / CHECK PHONE INFO" class="android.widget.TextView" '
+            'enabled="true" bounds="[60,550][460,590]" />\n',
+            "",
+        )
+        .replace(
+            '  <node text="CHECK" class="android.widget.TextView" enabled="true" '
+            'bounds="[520,525][650,590]" />\n',
+            "",
+        )
+    )
+
+    result = verify_home_surface(ui_xml=missing_home_setup_xml, output_directory=tmp_path)
+
+    assert result.status is StepStatus.FAIL
+    assert "HOME SHELL" in result.detail
+    assert "HOME status" in result.detail
+    assert "HOME CHECK" in result.detail
 
 
 def test_home_surface_smoke_requires_exact_goffy_title(tmp_path: Path) -> None:
@@ -688,6 +763,28 @@ def test_home_surface_smoke_allows_command_surface_below_launch_viewport(
     result = verify_home_surface(ui_xml=scrolled_below_viewport_xml, output_directory=tmp_path)
 
     assert result.status is StepStatus.OK
+
+
+def test_device_map_viewport_smoke_accepts_required_node_labels(tmp_path: Path) -> None:
+    result = verify_device_map_surface(ui_xml=DEVICE_MAP_UI_XML, output_directory=tmp_path)
+
+    assert result.status is StepStatus.OK
+    assert result.name == "Device map viewport smoke"
+    assert result.artifact == "device-map.xml"
+    assert (tmp_path / "device-map.xml").read_text(encoding="utf-8") == DEVICE_MAP_UI_XML
+
+
+def test_device_map_viewport_smoke_reports_missing_node_labels(tmp_path: Path) -> None:
+    missing_mac_xml = DEVICE_MAP_UI_XML.replace(
+        '  <node text="MAC HUB" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,440][220,480]" />\n',
+        "",
+    )
+
+    result = verify_device_map_surface(ui_xml=missing_mac_xml, output_directory=tmp_path)
+
+    assert result.status is StepStatus.FAIL
+    assert "MAC HUB" in result.detail
 
 
 def test_plan_mode_never_executes_device_commands(
@@ -921,9 +1018,13 @@ def test_execute_runs_fixed_setup_launch_and_phone_command(
             return target
         if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
             cat_calls += 1
+            if cat_calls == 4:
+                return CommandResult(0, DEVICE_MAP_UI_XML, "")
             if cat_calls == 5:
+                return CommandResult(0, BASE_UI_XML, "")
+            if cat_calls == 6:
                 return CommandResult(0, COMMAND_TYPED_UI_XML, "")
-            if cat_calls >= 6:
+            if cat_calls >= 7:
                 return CommandResult(0, PHONE_UI_XML, "")
             return CommandResult(0, BASE_UI_XML, "")
         if adb_args(command) == ("shell", "pidof", smoke.PACKAGE_NAME):
@@ -993,20 +1094,22 @@ def test_execute_runs_opt_in_memory_smoke_without_forget_all(
             return target
         if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
             cat_calls += 1
-            if cat_calls < 5:
+            if cat_calls < 4:
                 return CommandResult(0, BASE_UI_XML, "")
             outputs = {
-                5: COMMAND_TYPED_UI_XML,
-                6: PHONE_UI_XML,
-                7: BASE_UI_XML,
-                8: MEMORY_REMEMBER_COMMAND_TYPED_UI_XML,
-                9: MEMORY_APPROVAL_UI_XML,
+                4: DEVICE_MAP_UI_XML,
+                5: BASE_UI_XML,
+                6: COMMAND_TYPED_UI_XML,
+                7: PHONE_UI_XML,
+                8: BASE_UI_XML,
+                9: MEMORY_REMEMBER_COMMAND_TYPED_UI_XML,
                 10: MEMORY_APPROVAL_UI_XML,
-                11: MEMORY_REMEMBER_VERIFIED_UI_XML,
-                12: BASE_UI_XML,
+                11: MEMORY_APPROVAL_UI_XML,
+                12: MEMORY_REMEMBER_VERIFIED_UI_XML,
                 13: BASE_UI_XML,
-                14: MEMORY_LIST_COMMAND_TYPED_UI_XML,
-                15: MEMORY_LIST_VERIFIED_UI_XML,
+                14: BASE_UI_XML,
+                15: MEMORY_LIST_COMMAND_TYPED_UI_XML,
+                16: MEMORY_LIST_VERIFIED_UI_XML,
             }
             return CommandResult(0, outputs.get(cat_calls, MEMORY_LIST_VERIFIED_UI_XML), "")
         if adb_args(command) == ("shell", "pidof", smoke.PACKAGE_NAME):
@@ -1072,8 +1175,10 @@ def test_stale_ui_does_not_pass_without_fresh_command_card(
             if cat_calls <= 3:
                 return CommandResult(0, BASE_UI_XML, "")
             if cat_calls == 4:
-                return CommandResult(0, PHONE_UI_XML, "")
+                return CommandResult(0, DEVICE_MAP_UI_XML, "")
             if cat_calls == 5:
+                return CommandResult(0, PHONE_UI_XML, "")
+            if cat_calls == 6:
                 return CommandResult(0, COMMAND_TYPED_UI_XML, "")
             return CommandResult(0, PHONE_UI_XML, "")
         if adb_args(command) == ("shell", "pidof", smoke.PACKAGE_NAME):
@@ -1747,12 +1852,19 @@ def test_include_mac_requires_mac_visible_markers(
     )
     submitted_command: str | None = None
     result_ready: str | None = None
+    device_map_revealed = False
 
     def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
-        nonlocal result_ready, submitted_command
+        nonlocal device_map_revealed, result_ready, submitted_command
         target = target_runner(command)
         if target is not None:
             return target
+        if (
+            adb_args(command) == ("shell", "input", "swipe", "360", "1450", "360", "900", "350")
+            and submitted_command is None
+        ):
+            device_map_revealed = True
+            return CommandResult(0, "ok", "")
         if adb_args(command) == ("shell", "input", "text", "check%smy%sbattery%slevel"):
             submitted_command = "phone"
             result_ready = None
@@ -1769,6 +1881,9 @@ def test_include_mac_requires_mac_visible_markers(
             result_ready = submitted_command
             return CommandResult(0, "ok", "")
         if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            if device_map_revealed:
+                device_map_revealed = False
+                return CommandResult(0, DEVICE_MAP_UI_XML, "")
             if result_ready == "mac":
                 return CommandResult(0, MAC_UI_XML, "")
             if result_ready == "phone":
@@ -1818,12 +1933,19 @@ def test_include_mac_can_smoke_process_list_command(
     )
     submitted_command: str | None = None
     result_ready: str | None = None
+    device_map_revealed = False
 
     def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
-        nonlocal result_ready, submitted_command
+        nonlocal device_map_revealed, result_ready, submitted_command
         target = target_runner(command)
         if target is not None:
             return target
+        if (
+            adb_args(command) == ("shell", "input", "swipe", "360", "1450", "360", "900", "350")
+            and submitted_command is None
+        ):
+            device_map_revealed = True
+            return CommandResult(0, "ok", "")
         if adb_args(command) == ("shell", "input", "text", "check%smy%sbattery%slevel"):
             submitted_command = "phone"
             result_ready = None
@@ -1845,6 +1967,9 @@ def test_include_mac_can_smoke_process_list_command(
             result_ready = submitted_command
             return CommandResult(0, "ok", "")
         if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            if device_map_revealed:
+                device_map_revealed = False
+                return CommandResult(0, DEVICE_MAP_UI_XML, "")
             if result_ready == "mac-process":
                 return CommandResult(0, MAC_PROCESS_UI_XML, "")
             if result_ready == "phone":
@@ -1995,13 +2120,20 @@ def test_include_mac_can_configure_debug_hub_link_from_local_token_file(
     seen: list[tuple[str, ...]] = []
     submitted_command: str | None = None
     result_ready: str | None = None
+    device_map_revealed = False
 
     def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
-        nonlocal result_ready, submitted_command
+        nonlocal device_map_revealed, result_ready, submitted_command
         seen.append(tuple(command))
         target = target_runner(command)
         if target is not None:
             return target
+        if (
+            adb_args(command) == ("shell", "input", "swipe", "360", "1450", "360", "900", "350")
+            and submitted_command is None
+        ):
+            device_map_revealed = True
+            return CommandResult(0, "ok", "")
         if adb_args(command) == ("shell", "input", "text", "check%smy%sbattery%slevel"):
             submitted_command = "phone"
             result_ready = None
@@ -2018,6 +2150,9 @@ def test_include_mac_can_configure_debug_hub_link_from_local_token_file(
             result_ready = submitted_command
             return CommandResult(0, "ok", "")
         if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            if device_map_revealed:
+                device_map_revealed = False
+                return CommandResult(0, DEVICE_MAP_UI_XML, "")
             if result_ready == "mac":
                 return CommandResult(0, MAC_UI_XML, "")
             if result_ready == "phone":
