@@ -56,9 +56,10 @@ the capability boundary.
 > elapsed/PSS/battery/model evidence as structured JSON while keeping the
 > production budgets unchanged. The next local-model path is now a
 > verifier-backed reuse-first lightweight intent-classifier registry, with
-> TensorFlow Lite Task Text selected only as a modelDebug prototype candidate
-> until physical Moto latency, idle-memory, APK-budget, and routing-quality gates
-> pass.
+> TensorFlow Lite Task Text selected only as a modelDebug prototype candidate.
+> Its pinned dependency now resolves and builds in an isolated Android probe, but
+> classifier runtime wiring remains blocked until physical Moto latency,
+> idle-memory, APK-budget, and routing-quality gates pass.
 > Default GOFFY LITE still does not ship or load the LiteRT-LM runtime. Automatic
 > rotation scheduling, Android retrieval for Hub audit, certificate-backed Hub
 > identity proof, trusted LAN operation, bootloader unlock eligibility, stock
@@ -98,6 +99,8 @@ the capability boundary.
 - Reuse-first local intent-classifier candidate registry and verifier for the
   next smaller on-phone model path; no classifier dependency or model asset is
   included in default GOFFY LITE builds
+- Optional TensorFlow Lite Task Text dependency probe for the classifier path;
+  the pinned dependency builds in isolation but is not wired into GOFFY runtime
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`

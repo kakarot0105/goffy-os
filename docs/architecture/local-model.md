@@ -254,6 +254,33 @@ future dependency or model candidate from being documented as "selected" while
 silently bypassing license, dependency pinning, APK budget, latency, memory,
 audit, or non-authoritative-execution requirements.
 
+TensorFlow Lite Task Text now has an optional dependency compatibility probe:
+
+```bash
+.venv/bin/python scripts/verify_tflite_task_text_android_dependency.py --mode metadata
+.venv/bin/python scripts/verify_tflite_task_text_android_dependency.py --mode resolve
+.venv/bin/python scripts/verify_tflite_task_text_android_dependency.py --mode build
+```
+
+Latest dependency evidence, checked on 2026-07-22:
+
+- Coordinate: `org.tensorflow:tensorflow-lite-task-text:0.4.4`
+- Maven Central latest/release: `0.4.4`
+- Local toolchain: Java 17 and Gradle 9.4.1
+- `--mode metadata`: passed
+- `--mode resolve`: passed in an isolated Android project
+- `--mode build`: passed in an isolated Android debug APK project
+- Repo scan: no dynamic TensorFlow Lite Task Text versions and no Gradle usage
+  outside the allowed `androidTestImplementation` and `modelDebugImplementation`
+  probe scopes
+
+The isolated build packages native `libtask_text_jni.so`, so any future GOFFY
+runtime code must remain in `modelDebug` or `androidTest` until APK delta,
+startup behavior, idle PSS, and physical Moto inference latency are measured.
+The next accepted gate is not dependency compatibility; it is a modelDebug-only
+tiny classifier benchmark whose output still enters GOFFY only as an
+observe-only routing hint.
+
 ## Reuse-First Scan
 
 Checked on 2026-07-20 and refreshed on 2026-07-21:
@@ -303,6 +330,7 @@ Sources:
 - https://github.com/google-ai-edge/LiteRT-LM
 - https://github.com/tensorflow/examples/blob/master/lite/examples/text_classification/android/README.md
 - https://github.com/tensorflow/tflite-support
+- https://central.sonatype.com/artifact/org.tensorflow/tensorflow-lite-task-text
 - https://github.com/facebookresearch/fastText
 - https://fasttext.cc/
 - https://github.com/google/sentencepiece
