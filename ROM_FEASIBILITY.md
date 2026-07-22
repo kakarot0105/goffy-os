@@ -219,6 +219,30 @@ Even when an archive name contains the installed build ID, it remains blocked
 until variant/source verification, local SHA-256, and rollback documentation are
 recorded.
 
+## Current GSI Candidate Evidence
+
+GOFFY now has an offline verifier for the first official Google GSI candidate.
+It does not download a GSI, invoke DSU, push files to the phone, reboot, unlock,
+flash, or mutate an AOSP checkout. It only hashes an already-downloaded local
+archive outside the repo and writes redacted evidence under `.goffy-validation`
+after the computed SHA-256 matches Google's release-page checksum.
+
+```bash
+.venv/bin/python scripts/create_rom_gsi_candidate_evidence.py \
+  --artifact /absolute/path/outside/repo/aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip \
+  --source-url https://developer.android.com/topic/generic-system-image/releases \
+  --download-url https://dl.google.com/developers/android/baklava/images/gsi/aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip \
+  --expected-sha256 2171cf0ea849f8eaa399f4bad2165fab80b0fd9e98d37723a705dca6c41e49ea \
+  --candidate-name "Official Google Android 16 ARM64 GSI" \
+  --android-release 16 \
+  --architecture arm64 \
+  --output .goffy-validation/rom-gsi-candidate-evidence.json
+```
+
+The resulting JSON is candidate integrity evidence only. ROM-0 still requires
+manual OEM-unlock eligibility, exact stock restore evidence, and a live
+user-approved destructive decision before any bootloader or DSU action.
+
 ## Current Reuse Prior Art Decisions
 
 Current reuse scan date: 2026-07-22.

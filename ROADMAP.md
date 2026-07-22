@@ -34,8 +34,10 @@
 - [x] ROM-0 manual gates bind unlock/restore evidence to the exact public Moto target identity
 - [x] ROM-0 manual action packet emits probe-bound gate and validation commands
 - [x] ROM-0 stock restore evidence requires the official Motorola Software Fix source
+- [x] Offline official Google GSI candidate evidence verifier with SHA-256 matching
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist
+- [ ] Local official Google GSI archive evidence captured from a real downloaded artifact
 - [ ] User-approved destructive unlock/flash decision point
 
 ## Milestone 0: Foundation - in progress

@@ -455,6 +455,25 @@ Then generate a local manual-gates template before editing evidence by hand:
 Both files stay under `.goffy-validation`, default to blocked values, and do not
 authorize unlock, flash, erase, root, or boot-image changes.
 
+To record candidate integrity for the first official Google ARM64 GSI, download
+the archive manually outside this repo, copy the SHA-256 from Google's GSI
+release page, then run the offline verifier:
+
+```bash
+.venv/bin/python scripts/create_rom_gsi_candidate_evidence.py \
+  --artifact /absolute/path/outside/repo/aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip \
+  --source-url https://developer.android.com/topic/generic-system-image/releases \
+  --download-url https://dl.google.com/developers/android/baklava/images/gsi/aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip \
+  --expected-sha256 2171cf0ea849f8eaa399f4bad2165fab80b0fd9e98d37723a705dca6c41e49ea \
+  --candidate-name "Official Google Android 16 ARM64 GSI" \
+  --android-release 16 \
+  --architecture arm64 \
+  --output .goffy-validation/rom-gsi-candidate-evidence.json
+```
+
+This creates redacted evidence only; it does not download, install, unlock,
+flash, reboot, or authorize DSU use.
+
 For ROM APK packaging, keep release keys outside the repo, generate a dry-run
 signing plan before producing any `GoffyOS-signed.apk`, then verify the signed
 artifact after the human-run signing command succeeds:
