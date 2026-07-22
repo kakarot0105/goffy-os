@@ -27,10 +27,13 @@ from scripts.validate_rom_manual_gates import (  # noqa: E402
 from scripts.validate_rom_manual_gates import (  # noqa: E402
     JSON_SCHEMA_VERSION as MANUAL_GATES_SCHEMA_VERSION,
 )
+from scripts.validate_rom_manual_gates import (  # noqa: E402
+    MOTOROLA_SOFTWARE_FIX_URL as _MOTOROLA_SOFTWARE_FIX_URL,
+)
 
 VALIDATION_DIR = ROOT / ".goffy-validation"
 DEFAULT_OUTPUT = VALIDATION_DIR / "rom-0-manual-gates.template.json"
-MOTOROLA_SOFTWARE_FIX_URL = "https://en-us.support.motorola.com/app/softwarefix"
+MOTOROLA_SOFTWARE_FIX_URL: str = _MOTOROLA_SOFTWARE_FIX_URL
 TARGET_DEVICE_KEYS = frozenset(
     ("model", "codename", "product", "hardware_sku", "build_fingerprint", "carrier")
 )

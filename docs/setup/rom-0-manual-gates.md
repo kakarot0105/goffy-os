@@ -108,7 +108,7 @@ The validator:
   `target_device` value to match that probe.
 - Requires codename `kansas`, product `kansas_g_sys`, and a build fingerprint
   containing `kansas_g_sys`.
-- Requires an HTTPS stock restore source.
+- Requires the official Motorola Software Fix stock restore source URL.
 - Requires a firmware archive filename, not a path.
 - Requires a 64-character SHA-256.
 - Requires an existing rollback Markdown file inside this repo.
@@ -162,10 +162,11 @@ evidence fragment without committing the archive or its local path:
   --output .goffy-validation/rom-stock-restore-evidence.json
 ```
 
-The helper hashes the local archive, records only the archive filename, rejects
-source URLs with credentials, query, or fragment components, writes only under a
-non-symlinked `.goffy-validation` path when `--output` is used, and performs no
-network, ADB, fastboot, unlock, flash, or root action.
+The helper hashes the local archive, records only the archive filename, accepts
+only the official Motorola Software Fix source URL, rejects source URLs with
+credentials, query, or fragment components, writes only under a non-symlinked
+`.goffy-validation` path when `--output` is used, and performs no network, ADB,
+fastboot, unlock, flash, or root action.
 
 Do not create stock-restore evidence from nearby firmware names. For the current
 Moto G 2025 `kansas` unit, public source checks on 2026-07-21 confirmed the
@@ -188,8 +189,8 @@ flashing anything, create a candidate report:
 The candidate report is not manual-gate evidence. It only records whether an
 archive filename appears to contain the connected phone's codename and installed
 build ID on filename token boundaries. A filename match is still not exact
-variant proof; manual gates still require a trusted source, local archive,
-SHA-256, and rollback document.
+variant proof; manual gates still require the official Motorola Software Fix
+URL, local archive, SHA-256, and rollback document.
 
 ## Rollback Doc Requirements
 

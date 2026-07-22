@@ -33,6 +33,7 @@
 - [x] Non-destructive ROM-0 manual action packet for restore/unlock evidence collection
 - [x] ROM-0 manual gates bind unlock/restore evidence to the exact public Moto target identity
 - [x] ROM-0 manual action packet emits probe-bound gate and validation commands
+- [x] ROM-0 stock restore evidence requires the official Motorola Software Fix source
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist
 - [ ] User-approved destructive unlock/flash decision point

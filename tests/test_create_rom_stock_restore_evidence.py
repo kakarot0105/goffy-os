@@ -98,6 +98,24 @@ def test_stock_restore_evidence_rejects_source_url_credentials(tmp_path: Path) -
         raise AssertionError("expected ValueError")
 
 
+def test_stock_restore_evidence_rejects_unofficial_https_source(tmp_path: Path) -> None:
+    rollback_doc = write_rollback_doc(tmp_path)
+    archive = tmp_path / "firmware.zip"
+    archive.write_bytes(b"firmware")
+
+    try:
+        create_stock_restore_evidence(
+            archive_path=archive,
+            source_url="https://example.invalid/firmware.zip",
+            rollback_doc=rollback_doc,
+            root=tmp_path,
+        )
+    except ValueError as exc:
+        assert "source URL must be the Motorola Software Fix URL" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
 def test_stock_restore_evidence_requires_existing_markdown_rollback_doc(tmp_path: Path) -> None:
     archive = tmp_path / "firmware.zip"
     archive.write_bytes(b"firmware")

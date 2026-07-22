@@ -228,6 +228,28 @@ def test_stock_restore_rejects_unknown_keys(tmp_path: Path) -> None:
     assert "stock_restore contains unsupported keys: ['local_archive_path']" in report.blockers
 
 
+def test_stock_restore_source_must_be_motorola_software_fix(tmp_path: Path) -> None:
+    rollback_doc = tmp_path / "docs" / "setup" / "kansas-rollback.md"
+    rollback_doc.parent.mkdir(parents=True)
+    rollback_doc.write_text(complete_rollback_doc(), encoding="utf-8")
+    payload = complete_payload("docs/setup/kansas-rollback.md")
+    stock_restore = payload["stock_restore"]
+    assert isinstance(stock_restore, Mapping)
+    payload["stock_restore"] = {
+        **stock_restore,
+        "source_url": "https://example.invalid/firmware.zip",
+    }
+
+    report = validate_manual_gates(
+        payload,
+        root=tmp_path,
+        expected_target_device=TARGET_DEVICE,
+    )
+
+    assert not report.ok
+    assert "stock_restore.source_url must be the Motorola Software Fix URL" in (report.blockers)
+
+
 def test_target_device_must_match_kansas_public_identity(tmp_path: Path) -> None:
     rollback_doc = tmp_path / "docs" / "setup" / "kansas-rollback.md"
     rollback_doc.parent.mkdir(parents=True)

@@ -14,7 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if __package__ in {None, ""} and str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.validate_rom_manual_gates import ARCHIVE_NAME_PATTERN, SHA256_PATTERN  # noqa: E402
+from scripts.validate_rom_manual_gates import (  # noqa: E402
+    ARCHIVE_NAME_PATTERN,
+    MOTOROLA_SOFTWARE_FIX_URL,
+    SHA256_PATTERN,
+)
 
 JSON_SCHEMA_VERSION = "goffy.rom-stock-restore-evidence.v1"
 VALIDATION_DIR = ROOT / ".goffy-validation"
@@ -79,6 +83,8 @@ def validate_inputs(
         findings.append("source URL must not include credentials")
     elif parsed_source.query or parsed_source.fragment:
         findings.append("source URL must not include query or fragment")
+    elif source_url != MOTOROLA_SOFTWARE_FIX_URL:
+        findings.append("source URL must be the Motorola Software Fix URL")
 
     rollback = Path(rollback_doc)
     if not rollback_doc:

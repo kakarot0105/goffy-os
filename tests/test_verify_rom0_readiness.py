@@ -203,6 +203,33 @@ def test_rom0_readiness_blocks_unsupported_stock_restore_keys(tmp_path: Path) ->
     )
 
 
+def test_rom0_readiness_blocks_unofficial_stock_restore_source(tmp_path: Path) -> None:
+    probe = write_probe(tmp_path)
+    rollback_doc = write_rollback_doc(tmp_path)
+    manual = write_manual_gates(tmp_path, rollback_doc)
+    payload = json.loads(manual.read_text(encoding="utf-8"))
+    payload["stock_restore"]["source_url"] = "https://example.invalid/firmware.zip"
+    manual.write_text(json.dumps(payload), encoding="utf-8")
+    apk = write_signed_apk(tmp_path)
+
+    report = build_readiness_report(
+        probe_json=probe,
+        manual_gates_json=manual,
+        signed_apk=apk,
+        aosp_root=tmp_path / "aosp",
+        evidence_root=tmp_path,
+    )
+
+    assert not report.ok
+    assert (
+        "stock_restore.source_url must be the Motorola Software Fix URL"
+        in section(
+            report,
+            "manual_gates",
+        ).blockers
+    )
+
+
 def test_rom0_readiness_surfaces_signing_plan_blockers(tmp_path: Path) -> None:
     probe = write_probe(tmp_path)
     rollback_doc = write_rollback_doc(tmp_path)

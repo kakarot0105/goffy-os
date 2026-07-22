@@ -14,6 +14,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 JSON_SCHEMA_VERSION = "goffy.rom-manual-gates.v1"
 PROBE_SCHEMA_VERSION = "goffy.rom-feasibility-probe.v1"
+MOTOROLA_SOFTWARE_FIX_URL = "https://en-us.support.motorola.com/app/softwarefix"
 SHA256_PATTERN = re.compile(r"^[a-fA-F0-9]{64}$")
 ARCHIVE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9._+@-]{1,180}$")
 SENSITIVE_KEYS = {
@@ -198,6 +199,8 @@ def validate_stock_restore(
 
     if not source_url.startswith("https://"):
         blockers.append("stock_restore.source_url must be an https URL")
+    elif source_url != MOTOROLA_SOFTWARE_FIX_URL:
+        blockers.append("stock_restore.source_url must be the Motorola Software Fix URL")
     if not ARCHIVE_NAME_PATTERN.fullmatch(archive_name):
         blockers.append("stock_restore.archive_name must be a filename, not a path")
     if not SHA256_PATTERN.fullmatch(sha256):
