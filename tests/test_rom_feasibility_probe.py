@@ -45,6 +45,7 @@ LOCKED_PROPS = {
     "ro.boot.verifiedbootstate": "green",
     "ro.boot.dynamic_partitions": "true",
     "ro.boot.product.hardware.sku": "dn",
+    "ro.boot.hardware.sku": "XT2513V",
     "ro.oem_unlock_supported": "",
     "sys.oem_unlock_allowed": "",
     "ro.treble.enabled": "true",
@@ -89,6 +90,7 @@ def test_probe_reports_locked_bootloader_without_serial(monkeypatch, tmp_path: P
     assert not report.ok
     assert report.rom_path is RomPath.BLOCKED_LOCKED_BOOTLOADER
     assert report.device["codename"] == "kansas"
+    assert report.device["hardware_sku"] == "XT2513V"
     assert report.platform["soc_model"] == "MT6835"
     assert report.treble["enabled"] == "true"
     assert report.dsu["package_present"] == "true"

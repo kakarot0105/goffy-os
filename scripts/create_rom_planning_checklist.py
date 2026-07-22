@@ -127,10 +127,14 @@ GSI_CANDIDATES = (
         name="TrebleDroid / ponces AOSP GSI",
         priority=2,
         source="https://github.com/ponces/treble_aosp",
-        license_note="Apache-2.0 repo license; verify release artifact licenses before reuse.",
+        license_note=(
+            "Apache-2.0 repo license; GitHub currently marks the repository archived. "
+            "Verify release artifact licenses and maintenance status before reuse."
+        ),
         use="Second candidate if the official Google GSI cannot exercise enough hardware.",
         risk=(
-            "Community GSI; releases document known device-specific issues such as networking gaps."
+            "Community GSI; archived upstream means security fixes, Android-version tracking, "
+            "and Moto/MediaTek issue handling may be stale."
         ),
     ),
     GsiCandidate(
@@ -331,6 +335,7 @@ def compact_device(probe: Mapping[str, Any]) -> dict[str, str]:
         "codename": device.get("codename", ""),
         "product": device.get("product", ""),
         "carrier": device.get("carrier", ""),
+        "hardware_sku": device.get("hardware_sku", ""),
         "soc": platform.get("soc_model", ""),
         "android_release": platform.get("android_release", ""),
         "sdk": platform.get("sdk", ""),

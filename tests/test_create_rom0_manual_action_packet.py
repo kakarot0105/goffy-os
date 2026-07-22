@@ -25,6 +25,7 @@ LOCKED_PROBE = {
         "codename": "kansas",
         "product": "kansas_g_sys",
         "carrier": "tracfone",
+        "hardware_sku": "XT2513V",
     },
     "boot": {
         "flash_locked": "1",
@@ -47,6 +48,8 @@ def test_locked_probe_packet_withholds_destructive_authority() -> None:
     assert packet.status is PacketStatus.BLOCKED_MANUAL_EVIDENCE
     assert packet.destructive_actions == "withheld"
     assert packet.device["codename"] == "kansas"
+    assert packet.device["hardware_sku"] == "XT2513V"
+    assert "hardware_sku: `XT2513V`" in markdown
     assert "Motorola Software Fix" in markdown
     assert "create_rom_unlock_eligibility_evidence.py" in markdown
     assert "create_rom_stock_restore_evidence.py" in markdown

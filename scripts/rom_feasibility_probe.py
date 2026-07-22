@@ -55,6 +55,7 @@ ROM_PROPERTIES = (
     "ro.boot.verifiedbootstate",
     "ro.boot.dynamic_partitions",
     "ro.boot.product.hardware.sku",
+    "ro.boot.hardware.sku",
     "ro.oem_unlock_supported",
     "sys.oem_unlock_allowed",
     "ro.treble.enabled",
@@ -159,6 +160,7 @@ def build_report(
         "manufacturer": properties.get("ro.product.manufacturer", ""),
         "brand": properties.get("ro.product.brand", ""),
         "carrier": properties.get("ro.carrier", ""),
+        "hardware_sku": properties.get("ro.boot.hardware.sku", ""),
     }
     platform = {
         "board": properties.get("ro.product.board", ""),

@@ -14,6 +14,7 @@ Read-only ADB evidence from the connected phone:
 - Model: `moto g - 2025`
 - Codename: `kansas`
 - Product: `kansas_g_sys`
+- Hardware SKU: `XT2513V`
 - SoC: MediaTek `MT6835`
 - Android: `16`, SDK `36`
 - Build: `W1VKS36H.9-12-9-8-2`, incremental `ebe4e3-2b6752`
@@ -163,7 +164,8 @@ Acceptance criteria:
 - First GSI candidate: official Google Android 16 ARM64 GSI through Android DSU,
   using Google's release page SHA-256 before any boot attempt.
 - Second GSI candidate: TrebleDroid / ponces AOSP GSI only if official GSI is
-  too limited.
+  too limited and a current release is verified, because the GitHub repo is now
+  archived.
 - Helper candidate: DSU Sideloader only if built-in DSU Loader is unavailable.
 - Generic bootloader-unlock scripts and ROM flashing guides: inspect only.
   Current scans surfaced guides that emit destructive fastboot commands or
@@ -176,7 +178,7 @@ hash-recorded a restore archive.
 
 ## Current Stock Firmware Candidate Evidence
 
-Current stock-candidate scan date: 2026-07-21.
+Current stock-candidate scan date: 2026-07-22.
 
 - Installed build from the phone: `W1VKS36H.9-12-9-8-2`,
   incremental `ebe4e3-2b6752`, security patch `2026-06-01`.
@@ -219,7 +221,16 @@ recorded.
 
 ## Current Reuse Prior Art Decisions
 
-Current reuse scan date: 2026-07-21.
+Current reuse scan date: 2026-07-22.
+
+Read-only source refresh on 2026-07-22:
+
+- Connected phone reports `ro.boot.hardware.sku=XT2513V`.
+- `git ls-remote` against `MotorolaMobilityLLC/kernel-mtk` found
+  `MMI-W1VKS36H.9-12-1`, but no `kansas` ref and no exact installed
+  `W1VKS36H.9-12-9-8-2` ref.
+- GitHub metadata reports `ponces/treble_aosp` as Apache-2.0 but archived, so
+  it stays a secondary GSI reference/candidate, not an actively maintained base.
 
 - Official kernel candidate: `MotorolaMobilityLLC/kernel-mtk`.
   Decision: `BLOCKED_UNTIL_EXACT_KANSAS_BUILD_MATCH`.

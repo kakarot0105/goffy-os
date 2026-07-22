@@ -9,9 +9,9 @@ controlled access to heavier local capabilities. MCP-compatible typed tools are
 the capability boundary.
 
 > Status: ROM feasibility plus Milestone 3 MCP core in progress. The current
-> repo now treats ROM/GSI feasibility for the exact Moto G 2025 `kansas` target
-> as the primary product track, with the launcher/app layer kept for safe
-> validation and fallback. The current repo implements five
+> repo now treats ROM/GSI feasibility for the exact Moto G 2025 `kansas`
+> / `XT2513V` target as the primary product track, with the launcher/app layer
+> kept for safe validation and fallback. The current repo implements five
 > offline PHONE actions, user-approved local PHONE memory, discovery-gated SAFE Mac status/process/file-list actions, an
 > approved-repo SAFE Git status MCP tool, an opt-in SAFE Mac clipboard-read MCP
 > tool, an official MCP

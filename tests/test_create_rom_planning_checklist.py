@@ -22,6 +22,7 @@ LOCKED_PROBE = {
         "codename": "kansas",
         "product": "kansas_g_sys",
         "carrier": "tracfone",
+        "hardware_sku": "XT2513V",
     },
     "boot": {
         "flash_locked": "1",
@@ -50,6 +51,8 @@ def test_locked_probe_blocks_destructive_rom_steps() -> None:
     assert "Google Android 16 GSI" in markdown
     assert "Reuse Prior Art" in markdown
     assert "INSPECT_ONLY_DO_NOT_IMPORT" in markdown
+    assert "hardware_sku: `XT2513V`" in markdown
+    assert json.loads(payload)["device"]["hardware_sku"] == "XT2513V"
 
 
 def test_unlocked_probe_still_blocks_until_stock_restore_evidence_exists() -> None:
@@ -111,6 +114,16 @@ def test_reuse_prior_art_records_concrete_lineage_repos() -> None:
     assert "LineageOS/android_device_motorola_fogo" in candidate_names
     assert "LineageOS/android_device_motorola_pnangn" in candidate_names
     assert "LineageOS Motorola device trees for related devices" not in candidate_names
+
+
+def test_trebledroid_candidate_records_archived_upstream_risk() -> None:
+    checklist = build_checklist(LOCKED_PROBE)
+    payload = json.loads(render_json(checklist))
+    candidates = {candidate["name"]: candidate for candidate in payload["gsi_candidates"]}
+    trebledroid = candidates["TrebleDroid / ponces AOSP GSI"]
+
+    assert "archived" in trebledroid["license_note"]
+    assert "archived upstream" in trebledroid["risk"]
 
 
 def test_load_probe_json_rejects_unknown_schema(tmp_path: Path) -> None:

@@ -337,6 +337,7 @@ def compact_device(probe: Mapping[str, Any]) -> dict[str, str]:
         "codename": device.get("codename", ""),
         "product": device.get("product", ""),
         "carrier": device.get("carrier", ""),
+        "hardware_sku": device.get("hardware_sku", ""),
         "soc_model": platform.get("soc_model", ""),
         "android_release": platform.get("android_release", ""),
         "flash_locked": boot.get("flash_locked", ""),
