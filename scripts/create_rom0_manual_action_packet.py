@@ -19,6 +19,7 @@ from scripts.create_rom_manual_gates_template import load_stock_restore_evidence
 from scripts.create_rom_stock_restore_evidence import write_output  # noqa: E402
 from scripts.create_rom_unlock_eligibility_evidence import (  # noqa: E402
     load_unlock_eligibility_evidence,
+    unlock_evidence_probe_blockers,
 )
 from scripts.rom_feasibility_probe import JSON_SCHEMA_VERSION as PROBE_SCHEMA_VERSION  # noqa: E402
 from scripts.verify_rom0_readiness import (  # noqa: E402
@@ -131,8 +132,13 @@ def build_packet(
     fastboot_evidence: Mapping[str, str] | None = None,
 ) -> Rom0ManualActionPacket:
     device = compact_device(probe)
+    probe_generated_at = str(probe.get("generated_at", ""))
     probe_blockers = probe_readiness_blockers(probe)
-    unlock_ready = unlock_evidence_ready(unlock_eligibility)
+    unlock_ready = unlock_evidence_ready(
+        unlock_eligibility,
+        target_device=device,
+        probe_generated_at=probe_generated_at,
+    )
     stock_ready = stock_restore is not None
     gsi_ready = gsi_evidence_ready(gsi_candidate)
     fastboot_ready = fastboot_evidence_ready(fastboot_evidence)
@@ -149,7 +155,11 @@ def build_packet(
         fastboot_evidence_action(fastboot_evidence),
         stock_restore_action(stock_restore),
         gsi_candidate_action(gsi_candidate),
-        unlock_eligibility_action(unlock_eligibility),
+        unlock_eligibility_action(
+            unlock_eligibility,
+            target_device=device,
+            probe_generated_at=probe_generated_at,
+        ),
         manual_gate_template_action(unlock_ready=unlock_ready, stock_ready=stock_ready),
         readiness_report_action(
             probe_blockers=probe_blockers,
@@ -344,8 +354,17 @@ def gsi_candidate_action(gsi_candidate: Mapping[str, str] | None) -> ManualActio
     )
 
 
-def unlock_eligibility_action(unlock_eligibility: Mapping[str, Any] | None) -> ManualAction:
-    if unlock_evidence_ready(unlock_eligibility):
+def unlock_eligibility_action(
+    unlock_eligibility: Mapping[str, Any] | None,
+    *,
+    target_device: Mapping[str, str],
+    probe_generated_at: str,
+) -> ManualAction:
+    if unlock_evidence_ready(
+        unlock_eligibility,
+        target_device=target_device,
+        probe_generated_at=probe_generated_at,
+    ):
         return ManualAction(
             action_id="record_unlock_eligibility",
             title="Record OEM/Motorola unlock eligibility",
@@ -374,6 +393,7 @@ def unlock_eligibility_action(unlock_eligibility: Mapping[str, Any] | None) -> M
             ".venv/bin/python scripts/create_rom_unlock_eligibility_evidence.py "
             "--oem-unlocking-visible yes "
             "--oem-unlocking-enabled yes "
+            "--probe-json .goffy-validation/rom-feasibility-current.json "
             "--motorola-eligibility eligible "
             "--operator-note-code checked_no_identifiers_stored "
             "--output .goffy-validation/rom-unlock-eligibility-evidence.json",
@@ -459,13 +479,27 @@ def readiness_report_action(
     )
 
 
-def unlock_evidence_ready(unlock_eligibility: Mapping[str, Any] | None) -> bool:
+def unlock_evidence_ready(
+    unlock_eligibility: Mapping[str, Any] | None,
+    *,
+    target_device: Mapping[str, str] | None = None,
+    probe_generated_at: str = "",
+) -> bool:
     if unlock_eligibility is None:
         return False
-    return (
+    base_ready = (
         unlock_eligibility.get("oem_unlocking_visible") is True
         and unlock_eligibility.get("oem_unlocking_enabled") is True
         and unlock_eligibility.get("motorola_unlock_eligibility") == "eligible"
+    )
+    if not base_ready:
+        return False
+    if target_device is None:
+        return True
+    return not unlock_evidence_probe_blockers(
+        unlock_eligibility,
+        target_device=target_device,
+        probe_generated_at=probe_generated_at,
     )
 
 

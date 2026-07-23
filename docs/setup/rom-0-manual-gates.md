@@ -140,6 +140,7 @@ tokens, screenshots, or account details:
 .venv/bin/python scripts/create_rom_unlock_eligibility_evidence.py \
   --oem-unlocking-visible yes \
   --oem-unlocking-enabled yes \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
   --motorola-eligibility eligible \
   --operator-note-code checked_no_identifiers_stored \
   --output .goffy-validation/rom-unlock-eligibility-evidence.json
@@ -147,7 +148,10 @@ tokens, screenshots, or account details:
 
 This helper only records manual observations. It does not run ADB, fastboot,
 unlock, flash, erase, root, shell, or network actions, and it does not authorize
-destructive work. It stores only a closed-set note code, not free-form text.
+destructive work. It stores only a closed-set note code, not free-form text, and
+binds the result to the public target identity from the canonical current ROM
+probe. Re-record this evidence if the current ROM probe is regenerated more than
+24 hours after the unlock check.
 
 ## Stock Restore Evidence Helper
 

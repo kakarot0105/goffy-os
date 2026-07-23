@@ -25,6 +25,9 @@ VALIDATION_DIR = Path(".goffy-validation")
 DEFAULT_REFRESH_REPORT = VALIDATION_DIR / "rom-0-refresh-report.json"
 DEFAULT_JSON_OUTPUT = VALIDATION_DIR / "rom-0-operator-checklist.json"
 DEFAULT_MARKDOWN_OUTPUT = VALIDATION_DIR / "rom-0-operator-checklist.md"
+UNLOCK_NOT_ACCEPTED_BLOCKER = (
+    "manual OEM/Motorola unlock eligibility evidence is missing or not eligible"
+)
 
 FORBIDDEN_COMMAND_TERMS = (
     "fastboot flashing unlock",
@@ -93,7 +96,9 @@ def build_operator_checklist(
     refresh_succeeded = refresh_report.get("refresh_succeeded") is True
     rom_ready = refresh_succeeded and refresh_report.get("rom_ready") is True
     stock_ready = evidence_loaded(evidence, "stock_restore")
-    unlock_ready = evidence_loaded(evidence, "unlock_eligibility")
+    unlock_ready = evidence_loaded(evidence, "unlock_eligibility") and unlock_semantically_ready(
+        refresh_report
+    )
     gsi_ready = evidence_loaded(evidence, "gsi_candidate")
     fastboot_ready = evidence_loaded(evidence, "fastboot_evidence")
     bootloader_status = string_value(refresh_report.get("bootloader_visibility_status"))
@@ -279,6 +284,7 @@ def unlock_eligibility_step(
             ".venv/bin/python scripts/create_rom_unlock_eligibility_evidence.py "
             "--oem-unlocking-visible yes "
             "--oem-unlocking-enabled yes "
+            "--probe-json .goffy-validation/rom-feasibility-current.json "
             "--motorola-eligibility eligible "
             "--operator-note-code checked_no_identifiers_stored "
             "--output .goffy-validation/rom-unlock-eligibility-evidence.json",
@@ -490,6 +496,11 @@ def evidence_inputs(refresh_report: Mapping[str, Any]) -> dict[str, dict[str, st
 
 def evidence_loaded(evidence: Mapping[str, Mapping[str, str]], name: str) -> bool:
     return evidence.get(name, {}).get("status") == "LOADED"
+
+
+def unlock_semantically_ready(refresh_report: Mapping[str, Any]) -> bool:
+    blocked_by = tuple(str(item) for item in refresh_report.get("blocked_by", ()))
+    return UNLOCK_NOT_ACCEPTED_BLOCKER not in blocked_by
 
 
 def load_refresh_report(path: Path, *, root: Path = ROOT) -> dict[str, Any]:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ import scripts.refresh_rom0_action_packet as refresh
 import scripts.rom_feasibility_probe as probe
 from pytest import MonkeyPatch
 from scripts.create_rom0_manual_action_packet import PacketStatus
+from scripts.create_rom_unlock_eligibility_evidence import public_target_sha256
 from scripts.refresh_rom0_action_packet import (
     EvidenceStatus,
     RefreshStatus,
@@ -458,11 +460,26 @@ def write_unlock_evidence(root: Path) -> None:
 
 
 def write_unlock_evidence_payload(path: Path) -> None:
+    target_device = {
+        "model": LOCKED_PROPS["ro.product.model"],
+        "codename": LOCKED_PROPS["ro.product.device"],
+        "product": LOCKED_PROPS["ro.product.name"],
+        "hardware_sku": LOCKED_PROPS["ro.boot.hardware.sku"],
+        "build_fingerprint": LOCKED_PROPS["ro.build.fingerprint"],
+        "carrier": LOCKED_PROPS["ro.carrier"],
+    }
+    generated_at = datetime.now(UTC).isoformat()
     path.write_text(
         json.dumps(
             {
-                "schema_version": "goffy.rom-unlock-eligibility-evidence.v1",
-                "generated_at": "2026-07-22T00:00:00+00:00",
+                "schema_version": "goffy.rom-unlock-eligibility-evidence.v2",
+                "generated_at": generated_at,
+                "target_device": target_device,
+                "probe_binding": {
+                    "source_path": ".goffy-validation/rom-feasibility-current.json",
+                    "probe_generated_at": generated_at,
+                    "public_target_sha256": public_target_sha256(target_device),
+                },
                 "unlock_eligibility": {
                     "source_url": "https://en-us.support.motorola.com/app/answers/detail/a_id/89973",
                     "oem_unlocking_visible": True,

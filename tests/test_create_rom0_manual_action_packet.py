@@ -17,6 +17,7 @@ from scripts.create_rom0_manual_action_packet import (
     render_json,
     render_markdown,
 )
+from scripts.create_rom_unlock_eligibility_evidence import public_target_sha256
 
 LOCKED_PROBE = {
     "schema_version": "goffy.rom-feasibility-probe.v1",
@@ -88,13 +89,7 @@ def test_packet_records_safe_evidence_without_approving_unlock() -> None:
     probe["ok"] = True
     probe["blockers"] = []
     probe["boot"] = {"flash_locked": "0", "vbmeta_device_state": "unlocked"}
-    unlock = {
-        "source_url": "https://en-us.support.motorola.com/app/answers/detail/a_id/89973",
-        "oem_unlocking_visible": True,
-        "oem_unlocking_enabled": True,
-        "motorola_unlock_eligibility": "eligible",
-        "operator_note_code": "checked_no_identifiers_stored",
-    }
+    unlock = unlock_summary()
     stock = {
         "source_url": "https://en-us.support.motorola.com/app/softwarefix",
         "archive_name": "kansas-stock.zip",
@@ -137,13 +132,7 @@ def test_packet_records_safe_evidence_without_approving_unlock() -> None:
 
 
 def test_locked_probe_with_evidence_is_ready_for_manual_template_only() -> None:
-    unlock = {
-        "source_url": "https://en-us.support.motorola.com/app/answers/detail/a_id/89973",
-        "oem_unlocking_visible": True,
-        "oem_unlocking_enabled": True,
-        "motorola_unlock_eligibility": "eligible",
-        "operator_note_code": "checked_no_identifiers_stored",
-    }
+    unlock = unlock_summary()
     stock = {
         "source_url": "https://en-us.support.motorola.com/app/softwarefix",
         "archive_name": "kansas-stock.zip",
@@ -167,13 +156,7 @@ def test_unlocked_packet_blocks_readiness_until_fastboot_evidence_exists() -> No
     probe["ok"] = True
     probe["blockers"] = []
     probe["boot"] = {"flash_locked": "0", "vbmeta_device_state": "unlocked"}
-    unlock = {
-        "source_url": "https://en-us.support.motorola.com/app/answers/detail/a_id/89973",
-        "oem_unlocking_visible": True,
-        "oem_unlocking_enabled": True,
-        "motorola_unlock_eligibility": "eligible",
-        "operator_note_code": "checked_no_identifiers_stored",
-    }
+    unlock = unlock_summary()
     stock = {
         "source_url": "https://en-us.support.motorola.com/app/softwarefix",
         "archive_name": "kansas-stock.zip",
@@ -200,13 +183,7 @@ def test_unlocked_packet_blocks_readiness_until_manual_fastboot_visibility() -> 
     probe["ok"] = True
     probe["blockers"] = []
     probe["boot"] = {"flash_locked": "0", "vbmeta_device_state": "unlocked"}
-    unlock = {
-        "source_url": "https://en-us.support.motorola.com/app/answers/detail/a_id/89973",
-        "oem_unlocking_visible": True,
-        "oem_unlocking_enabled": True,
-        "motorola_unlock_eligibility": "eligible",
-        "operator_note_code": "checked_no_identifiers_stored",
-    }
+    unlock = unlock_summary()
     stock = {
         "source_url": "https://en-us.support.motorola.com/app/softwarefix",
         "archive_name": "kansas-stock.zip",
@@ -230,13 +207,7 @@ def test_unlocked_packet_blocks_readiness_until_manual_fastboot_visibility() -> 
 
 
 def test_locked_probe_with_all_evidence_does_not_report_readiness_review() -> None:
-    unlock = {
-        "source_url": "https://en-us.support.motorola.com/app/answers/detail/a_id/89973",
-        "oem_unlocking_visible": True,
-        "oem_unlocking_enabled": True,
-        "motorola_unlock_eligibility": "eligible",
-        "operator_note_code": "checked_no_identifiers_stored",
-    }
+    unlock = unlock_summary()
     stock = {
         "source_url": "https://en-us.support.motorola.com/app/softwarefix",
         "archive_name": "kansas-stock.zip",
@@ -261,6 +232,66 @@ def test_locked_probe_with_all_evidence_does_not_report_readiness_review() -> No
         "ROM probe does not show an unlocked bootloader"
         in actions["summarize_rom0_readiness"].blockers
     )
+
+
+def test_unlock_evidence_target_must_match_probe() -> None:
+    probe = dict(LOCKED_PROBE)
+    probe["ok"] = True
+    probe["blockers"] = []
+    probe["boot"] = {"flash_locked": "0", "vbmeta_device_state": "unlocked"}
+    unlock = unlock_summary(
+        target_device={**target_device_summary(), "hardware_sku": "XT2513-OTHER"}
+    )
+    stock = {
+        "source_url": "https://en-us.support.motorola.com/app/softwarefix",
+        "archive_name": "kansas-stock.zip",
+        "sha256": "a" * 64,
+        "rollback_doc": "docs/setup/kansas-stock-rollback.md",
+    }
+
+    packet = build_packet(
+        probe,
+        unlock_eligibility=unlock,
+        stock_restore=stock,
+        gsi_candidate=gsi_candidate_summary(),
+        fastboot_evidence=fastboot_summary(manual_visible=True),
+    )
+    actions = {action.action_id: action for action in packet.actions}
+
+    assert packet.status is PacketStatus.BLOCKED_MANUAL_EVIDENCE
+    assert "manual OEM/Motorola unlock eligibility evidence is missing or not eligible" in (
+        packet.blocked_by
+    )
+    assert actions["record_unlock_eligibility"].status is ActionStatus.REQUIRED
+
+
+def test_stale_same_device_unlock_evidence_does_not_advance_readiness() -> None:
+    probe = dict(LOCKED_PROBE)
+    probe["ok"] = True
+    probe["blockers"] = []
+    probe["boot"] = {"flash_locked": "0", "vbmeta_device_state": "unlocked"}
+    probe["generated_at"] = "2026-07-22T00:00:00+00:00"
+    stock = {
+        "source_url": "https://en-us.support.motorola.com/app/softwarefix",
+        "archive_name": "kansas-stock.zip",
+        "sha256": "a" * 64,
+        "rollback_doc": "docs/setup/kansas-stock-rollback.md",
+    }
+
+    packet = build_packet(
+        probe,
+        unlock_eligibility=unlock_summary(generated_at="2026-01-01T00:00:00+00:00"),
+        stock_restore=stock,
+        gsi_candidate=gsi_candidate_summary(),
+        fastboot_evidence=fastboot_summary(manual_visible=True),
+    )
+    actions = {action.action_id: action for action in packet.actions}
+
+    assert packet.status is PacketStatus.BLOCKED_MANUAL_EVIDENCE
+    assert "manual OEM/Motorola unlock eligibility evidence is missing or not eligible" in (
+        packet.blocked_by
+    )
+    assert actions["record_unlock_eligibility"].status is ActionStatus.REQUIRED
 
 
 def test_load_probe_json_rejects_unknown_schema(tmp_path: Path) -> None:
@@ -488,6 +519,44 @@ def gsi_candidate_summary() -> dict[str, str]:
         "sha256": "2171cf0ea849f8eaa399f4bad2165fab80b0fd9e98d37723a705dca6c41e49ea",
         "source_url": "https://developer.android.com/topic/generic-system-image/releases",
         "authorization": "NON_AUTHORIZING_EVIDENCE",
+    }
+
+
+def target_device_summary() -> dict[str, str]:
+    device = LOCKED_PROBE["device"]
+    properties = LOCKED_PROBE["properties"]
+    assert isinstance(device, dict)
+    assert isinstance(properties, dict)
+    return {
+        "model": str(device["model"]),
+        "codename": str(device["codename"]),
+        "product": str(device["product"]),
+        "hardware_sku": str(device["hardware_sku"]),
+        "build_fingerprint": str(properties["ro.build.fingerprint"]),
+        "carrier": str(device["carrier"]),
+    }
+
+
+def unlock_summary(
+    *,
+    generated_at: str | None = None,
+    target_device: dict[str, str] | None = None,
+) -> dict[str, object]:
+    target = target_device or target_device_summary()
+    timestamp = generated_at or str(LOCKED_PROBE["generated_at"])
+    return {
+        "generated_at": timestamp,
+        "target_device": target,
+        "probe_binding": {
+            "source_path": ".goffy-validation/rom-feasibility-current.json",
+            "probe_generated_at": str(LOCKED_PROBE["generated_at"]),
+            "public_target_sha256": public_target_sha256(target_device_summary()),
+        },
+        "source_url": "https://en-us.support.motorola.com/app/answers/detail/a_id/89973",
+        "oem_unlocking_visible": True,
+        "oem_unlocking_enabled": True,
+        "motorola_unlock_eligibility": "eligible",
+        "operator_note_code": "checked_no_identifiers_stored",
     }
 
 

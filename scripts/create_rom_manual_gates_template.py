@@ -15,7 +15,9 @@ from scripts.create_rom_stock_restore_evidence import (  # noqa: E402
     JSON_SCHEMA_VERSION as STOCK_RESTORE_SCHEMA_VERSION,
 )
 from scripts.create_rom_unlock_eligibility_evidence import (  # noqa: E402
+    load_probe_generated_at,
     load_unlock_eligibility_evidence,
+    unlock_evidence_probe_blockers,
 )
 from scripts.validate_rom_manual_gates import (  # noqa: E402
     ARCHIVE_NAME_PATTERN,
@@ -59,7 +61,16 @@ def create_manual_gates_template(
     if stock_restore_evidence is not None:
         stock_restore = load_stock_restore_evidence(stock_restore_evidence)
     if unlock_eligibility_evidence is not None:
+        if probe_json is None:
+            raise ValueError("probe JSON is required with unlock eligibility evidence")
         unlock = load_unlock_eligibility_evidence(unlock_eligibility_evidence)
+        unlock_blockers = unlock_evidence_probe_blockers(
+            unlock,
+            target_device=target_device,
+            probe_generated_at=load_probe_generated_at(probe_json),
+        )
+        if unlock_blockers:
+            raise ValueError("; ".join(unlock_blockers))
         oem_unlocking_enabled = bool(unlock["oem_unlocking_enabled"])
         motorola_unlock_eligibility = str(unlock["motorola_unlock_eligibility"])
 

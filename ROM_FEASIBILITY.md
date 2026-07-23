@@ -33,8 +33,8 @@ Read-only ADB evidence from the connected phone:
 Current automated probe:
 
 ```bash
-.venv/bin/python scripts/rom_feasibility_probe.py --device-serial <device-serial> --json > .goffy-validation/rom-feasibility.json
-.venv/bin/python scripts/create_rom_planning_checklist.py .goffy-validation/rom-feasibility.json
+.venv/bin/python scripts/rom_feasibility_probe.py --device-serial <device-serial> --json > .goffy-validation/rom-feasibility-current.json
+.venv/bin/python scripts/create_rom_planning_checklist.py .goffy-validation/rom-feasibility-current.json
 ```
 
 The probe is read-only. It does not reboot, run fastboot, unlock, flash, erase,
@@ -86,12 +86,16 @@ Manual unlock checks can now be recorded as redacted local evidence:
 .venv/bin/python scripts/create_rom_unlock_eligibility_evidence.py \
   --oem-unlocking-visible yes \
   --oem-unlocking-enabled yes \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
   --motorola-eligibility eligible \
   --output .goffy-validation/rom-unlock-eligibility-evidence.json
 ```
 
 This evidence still does not authorize unlocking. It only lets the ROM-0 manual
-gate template consume the observed OEM-toggle and Motorola eligibility result.
+gate template consume the observed OEM-toggle and Motorola eligibility result
+after binding it to the current public Moto probe identity. Re-record unlock
+evidence if the current ROM probe is regenerated more than 24 hours after the
+manual unlock check.
 
 ## Reuse-First ROM Strategy
 
@@ -437,7 +441,7 @@ phone or an AOSP checkout:
 ```bash
 .venv/bin/python scripts/create_rom_manual_gates_template.py
 .venv/bin/python scripts/verify_rom0_readiness.py \
-  --probe-json .goffy-validation/rom-feasibility.json \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
   --manual-gates-json .goffy-validation/rom-0-manual-gates.json \
   --fastboot-evidence-json .goffy-validation/rom-fastboot-evidence.json \
   --gsi-candidate-evidence-json .goffy-validation/rom-gsi-candidate-evidence.json \

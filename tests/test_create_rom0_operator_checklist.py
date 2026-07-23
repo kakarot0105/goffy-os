@@ -91,6 +91,25 @@ def test_operator_checklist_ready_for_readiness_review_without_destructive_autho
     assert "fastboot boot" not in markdown
 
 
+def test_operator_checklist_keeps_semantically_rejected_unlock_required() -> None:
+    report = refresh_report(
+        stock=True,
+        unlock=True,
+        gsi=True,
+        fastboot=True,
+        bootloader_status="MANUAL_BOOTLOADER_VISIBLE",
+        blocked_by=("manual OEM/Motorola unlock eligibility evidence is missing or not eligible",),
+    )
+
+    checklist = build_operator_checklist(report)
+    steps = {step.step_id: step for step in checklist.steps}
+
+    assert not checklist.ok
+    assert checklist.status is ChecklistStatus.BLOCKED_EVIDENCE
+    assert steps["record_unlock_eligibility"].status is StepStatus.READY
+    assert steps["create_manual_gates"].status is StepStatus.BLOCKED
+
+
 def test_operator_checklist_accepts_refresh_report_v3() -> None:
     report = refresh_report()
     report["schema_version"] = "goffy.rom0-refresh-report.v3"

@@ -35,8 +35,8 @@ Manual evidence validation is documented in
 Run the read-only probe and generate a planning checklist:
 
 ```bash
-.venv/bin/python scripts/rom_feasibility_probe.py --device-serial <device-serial> --json > .goffy-validation/rom-feasibility.json
-.venv/bin/python scripts/create_rom_planning_checklist.py .goffy-validation/rom-feasibility.json > .goffy-validation/rom-0-checklist.md
+.venv/bin/python scripts/rom_feasibility_probe.py --device-serial <device-serial> --json > .goffy-validation/rom-feasibility-current.json
+.venv/bin/python scripts/create_rom_planning_checklist.py .goffy-validation/rom-feasibility-current.json > .goffy-validation/rom-0-checklist.md
 ```
 
 The probe command uses `adb` for allowlisted read-only property reads. The

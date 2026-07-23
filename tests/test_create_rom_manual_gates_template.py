@@ -18,6 +18,7 @@ from scripts.create_rom_unlock_eligibility_evidence import (
 )
 from scripts.create_rom_unlock_eligibility_evidence import (
     MOTOROLA_BOOTLOADER_SUPPORT_URL,
+    public_target_sha256,
 )
 from scripts.validate_rom_manual_gates import (
     JSON_SCHEMA_VERSION as MANUAL_GATES_SCHEMA_VERSION,
@@ -35,6 +36,7 @@ TARGET_DEVICE = {
     "build_fingerprint": BUILD_FINGERPRINT,
     "carrier": "tracfone",
 }
+PROBE_GENERATED_AT = "2026-07-22T00:00:00+00:00"
 
 
 def test_manual_gates_template_defaults_to_blocked_safe_values() -> None:
@@ -86,7 +88,7 @@ def test_manual_gates_template_merges_stock_restore_evidence(tmp_path: Path) -> 
         json.dumps(
             {
                 "schema_version": STOCK_RESTORE_SCHEMA_VERSION,
-                "generated_at": "2026-07-21T00:00:00+00:00",
+                "generated_at": PROBE_GENERATED_AT,
                 "stock_restore": stock_restore,
             }
         ),
@@ -102,12 +104,15 @@ def test_manual_gates_template_merges_stock_restore_evidence(tmp_path: Path) -> 
 
 
 def test_manual_gates_template_merges_unlock_eligibility_evidence(tmp_path: Path) -> None:
+    probe = write_probe(tmp_path)
     evidence_path = tmp_path / "rom-unlock-eligibility-evidence.json"
     evidence_path.write_text(
         json.dumps(
             {
                 "schema_version": UNLOCK_ELIGIBILITY_SCHEMA_VERSION,
-                "generated_at": "2026-07-21T00:00:00+00:00",
+                "generated_at": PROBE_GENERATED_AT,
+                "target_device": TARGET_DEVICE,
+                "probe_binding": probe_binding(),
                 "unlock_eligibility": {
                     "source_url": MOTOROLA_BOOTLOADER_SUPPORT_URL,
                     "oem_unlocking_visible": True,
@@ -120,7 +125,10 @@ def test_manual_gates_template_merges_unlock_eligibility_evidence(tmp_path: Path
         encoding="utf-8",
     )
 
-    template = create_manual_gates_template(unlock_eligibility_evidence=evidence_path)
+    template = create_manual_gates_template(
+        probe_json=probe,
+        unlock_eligibility_evidence=evidence_path,
+    )
     report = validate_manual_gates(template)
 
     assert template["oem_unlocking_enabled"] is True
@@ -256,6 +264,7 @@ def write_probe(tmp_path: Path, *, extra_device: dict[str, str] | None = None) -
         json.dumps(
             {
                 "schema_version": "goffy.rom-feasibility-probe.v1",
+                "generated_at": PROBE_GENERATED_AT,
                 "device": device,
                 "properties": {"ro.build.fingerprint": BUILD_FINGERPRINT},
             }
@@ -263,6 +272,14 @@ def write_probe(tmp_path: Path, *, extra_device: dict[str, str] | None = None) -
         encoding="utf-8",
     )
     return probe
+
+
+def probe_binding() -> dict[str, str]:
+    return {
+        "source_path": ".goffy-validation/rom-feasibility-current.json",
+        "probe_generated_at": PROBE_GENERATED_AT,
+        "public_target_sha256": public_target_sha256(TARGET_DEVICE),
+    }
 
 
 def test_manual_gates_template_rejects_symlinked_validation_output_root(
