@@ -260,6 +260,27 @@ current public Moto probe identity, writes only under `.goffy-validation`, and
 does not run network, ADB, fastboot, unlock, flash, or root actions. A human must
 review the draft before copying it to `docs/setup/kansas-stock-rollback.md`.
 
+After the reviewed Markdown exists, create stock-restore evidence and verify the
+rollback bundle before seeding manual gates:
+
+```bash
+.venv/bin/python scripts/create_rom_stock_restore_evidence.py \
+  --archive ~/Downloads/exact-firmware-archive-name.zip \
+  --source-url https://en-us.support.motorola.com/app/softwarefix \
+  --rollback-doc docs/setup/kansas-stock-rollback.md \
+  --output .goffy-validation/rom-stock-restore-evidence.json
+
+.venv/bin/python scripts/verify_rom_stock_rollback_bundle.py \
+  --stock-restore-evidence .goffy-validation/rom-stock-restore-evidence.json \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
+  --archive ~/Downloads/exact-firmware-archive-name.zip
+```
+
+The bundle verifier confirms the rollback Markdown contains the exact archive
+name, SHA-256, official Motorola Software Fix source, and current public Moto
+probe identity. It never downloads firmware, invokes Software Fix, reboots,
+unlocks, flashes, or touches the phone.
+
 ## Current Stock Firmware Candidate Evidence
 
 Current stock-candidate scan date: 2026-07-22.

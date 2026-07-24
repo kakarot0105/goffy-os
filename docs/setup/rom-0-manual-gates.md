@@ -61,6 +61,20 @@ non-Motorola restore URLs, invalid archive/checksum/path values, and symlinked
 `.goffy-validation` output roots. It writes only under `.goffy-validation`
 unless `--stdout` is used for review.
 
+Before using stock-restore evidence in manual gates, verify that the reviewed
+rollback Markdown still matches the evidence and the current public ROM probe:
+
+```bash
+.venv/bin/python scripts/verify_rom_stock_rollback_bundle.py \
+  --stock-restore-evidence .goffy-validation/rom-stock-restore-evidence.json \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
+  --archive ~/Downloads/exact-firmware-archive-name.zip
+```
+
+The verifier is local-file validation only. It can rehash the local archive when
+provided, but it never runs Software Fix, downloads firmware, reboots, unlocks,
+flashes, or touches the phone.
+
 ```json
 {
   "schema_version": "goffy.rom-manual-gates.v1",

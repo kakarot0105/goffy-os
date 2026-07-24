@@ -541,6 +541,28 @@ Review the draft for private identifiers before copying it to
 `docs/setup/kansas-stock-rollback.md`; the helper records only archive filename,
 SHA-256, official source URL, and public probe identity.
 
+After the reviewed Markdown exists in `docs/setup/kansas-stock-rollback.md`,
+create the redacted stock-restore evidence and verify the complete rollback
+bundle:
+
+```bash
+.venv/bin/python scripts/create_rom_stock_restore_evidence.py \
+  --archive ~/Downloads/exact-firmware-archive-name.zip \
+  --source-url https://en-us.support.motorola.com/app/softwarefix \
+  --rollback-doc docs/setup/kansas-stock-rollback.md \
+  --output .goffy-validation/rom-stock-restore-evidence.json
+
+.venv/bin/python scripts/verify_rom_stock_rollback_bundle.py \
+  --stock-restore-evidence .goffy-validation/rom-stock-restore-evidence.json \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
+  --archive ~/Downloads/exact-firmware-archive-name.zip
+```
+
+The bundle verifier reads local evidence only. It checks the stock evidence,
+rollback Markdown, public probe identity, and optional local archive rehash
+without running Software Fix, downloading firmware, rebooting, unlocking,
+flashing, or touching the phone.
+
 Include that evidence in the ROM-0 readiness report:
 
 ```bash
