@@ -561,12 +561,15 @@ review Google's official GSI terms yourself. Only after personally accepting
 those terms, download the archive manually outside this repo, copy the SHA-256
 from Google's GSI release page, then run the offline verifier:
 
+Current selected Android 16 ARM64 candidate metadata, refreshed from Google's
+GSI release page on 2026-07-24:
+
 ```bash
 .venv/bin/python scripts/create_rom_gsi_candidate_evidence.py \
-  --artifact /absolute/path/outside/repo/aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip \
+  --artifact /absolute/path/outside/repo/aosp_arm64-exp-CP11.251209.009.A1-14840729-59a822d9.zip \
   --source-url https://developer.android.com/topic/generic-system-image/releases \
-  --download-url https://dl.google.com/developers/android/baklava/images/gsi/aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip \
-  --expected-sha256 2171cf0ea849f8eaa399f4bad2165fab80b0fd9e98d37723a705dca6c41e49ea \
+  --download-url https://dl.google.com/developers/android/baklava/images/gsi/aosp_arm64-exp-CP11.251209.009.A1-14840729-59a822d9.zip \
+  --expected-sha256 59a822d9a4dd09873009f40c4b97003a2f2dab1b284f2c56b0aaa63dde7e19dd \
   --candidate-name "Official Google Android 16 ARM64 GSI" \
   --android-release 16 \
   --architecture arm64 \

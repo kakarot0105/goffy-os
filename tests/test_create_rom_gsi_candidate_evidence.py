@@ -7,17 +7,21 @@ from pathlib import Path
 import pytest
 import scripts.create_rom_gsi_candidate_evidence as gsi_evidence
 from scripts.create_rom_gsi_candidate_evidence import (
+    DEFAULT_ANDROID16_GSI_ARTIFACT_NAME,
+    DEFAULT_ANDROID16_GSI_SHA256,
     JSON_SCHEMA_VERSION,
     OFFICIAL_GSI_RELEASES_URL,
+    build_matches_android_release,
     create_gsi_candidate_evidence,
     main,
     normalize_architecture,
+    parse_gsi_artifact_name,
     render_json,
 )
 
 TEST_CONTENT = b"goffy official gsi"
 TEST_SHA = hashlib.sha256(TEST_CONTENT).hexdigest()
-ARTIFACT_NAME = f"aosp_arm64-exp-BP4A.251205.006-14401865-{TEST_SHA[:8]}.zip"
+ARTIFACT_NAME = f"aosp_arm64-exp-CP11.251209.009.A1-14840729-{TEST_SHA[:8]}.zip"
 DOWNLOAD_URL = f"https://dl.google.com/developers/android/baklava/images/gsi/{ARTIFACT_NAME}"
 
 
@@ -75,6 +79,15 @@ def test_gsi_candidate_evidence_hashes_artifact_without_leaking_path(tmp_path: P
         "local_path_redacted": True,
     }
     assert str(artifact.parent) not in render_json(evidence)
+
+
+def test_default_android16_gsi_candidate_metadata_matches_validator() -> None:
+    metadata = parse_gsi_artifact_name(DEFAULT_ANDROID16_GSI_ARTIFACT_NAME)
+
+    assert metadata is not None
+    assert metadata["family"] == "aosp_arm64"
+    assert metadata["sha_prefix"] == DEFAULT_ANDROID16_GSI_SHA256[:8]
+    assert build_matches_android_release(build_id=metadata["build"], android_release="16")
 
 
 def test_gsi_candidate_evidence_rejects_sha_mismatch(tmp_path: Path) -> None:
@@ -203,7 +216,7 @@ def test_gsi_candidate_evidence_rejects_extra_gsi_path_segments(tmp_path: Path) 
 
 
 def test_gsi_candidate_evidence_rejects_filename_architecture_mismatch(tmp_path: Path) -> None:
-    x86_name = "aosp_x86_64-exp-BP4A.251205.006-14401865-aa5d832e.zip"
+    x86_name = "aosp_x86_64-exp-CP11.251209.009.A1-14840729-aa5d832e.zip"
     root, artifact = external_artifact(tmp_path, name=x86_name)
 
     try:
@@ -226,7 +239,7 @@ def test_gsi_candidate_evidence_rejects_filename_architecture_mismatch(tmp_path:
 def test_gsi_candidate_evidence_rejects_filename_android_release_mismatch(
     tmp_path: Path,
 ) -> None:
-    android17_name = "aosp_arm64-exp-CP31.260623.005-15817740-0ff59a08.zip"
+    android17_name = "aosp_arm64-exp-CP2A.260605.012-15430684-8e545e1e.zip"
     root, artifact = external_artifact(tmp_path, name=android17_name)
 
     try:

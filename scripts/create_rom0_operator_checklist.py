@@ -15,6 +15,15 @@ if __package__ in {None, ""} and str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.create_rom_bootloader_visibility_guide import redact_message  # noqa: E402
+from scripts.create_rom_gsi_candidate_evidence import (  # noqa: E402
+    DEFAULT_ANDROID16_GSI_ARCHITECTURE,
+    DEFAULT_ANDROID16_GSI_ARTIFACT_NAME,
+    DEFAULT_ANDROID16_GSI_CANDIDATE_NAME,
+    DEFAULT_ANDROID16_GSI_DOWNLOAD_URL,
+    DEFAULT_ANDROID16_GSI_RELEASE,
+    DEFAULT_ANDROID16_GSI_SHA256,
+    OFFICIAL_GSI_RELEASES_URL,
+)
 from scripts.create_rom_stock_restore_evidence import write_output  # noqa: E402
 
 JSON_SCHEMA_VERSION = "goffy.rom0-operator-checklist.v1"
@@ -337,14 +346,13 @@ def gsi_candidate_step(
         safe_commands=(
             ".venv/bin/python scripts/create_rom_gsi_candidate_evidence.py "
             "--artifact /absolute/path/outside/repo/"
-            "aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip "
-            "--source-url https://developer.android.com/topic/generic-system-image/releases "
-            "--download-url https://dl.google.com/developers/android/baklava/images/gsi/"
-            "aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip "
-            "--expected-sha256 2171cf0ea849f8eaa399f4bad2165fab80b0fd9e98d37723a705dca6c41e49ea "
-            '--candidate-name "Official Google Android 16 ARM64 GSI" '
-            "--android-release 16 "
-            "--architecture arm64 "
+            f"{DEFAULT_ANDROID16_GSI_ARTIFACT_NAME} "
+            f"--source-url {OFFICIAL_GSI_RELEASES_URL} "
+            f"--download-url {DEFAULT_ANDROID16_GSI_DOWNLOAD_URL} "
+            f"--expected-sha256 {DEFAULT_ANDROID16_GSI_SHA256} "
+            f'--candidate-name "{DEFAULT_ANDROID16_GSI_CANDIDATE_NAME}" '
+            f"--android-release {DEFAULT_ANDROID16_GSI_RELEASE} "
+            f"--architecture {DEFAULT_ANDROID16_GSI_ARCHITECTURE} "
             "--output .goffy-validation/rom-gsi-candidate-evidence.json",
         )
         if not gsi_ready and refresh_succeeded

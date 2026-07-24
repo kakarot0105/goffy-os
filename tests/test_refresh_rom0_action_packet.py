@@ -10,6 +10,11 @@ import scripts.refresh_rom0_action_packet as refresh
 import scripts.rom_feasibility_probe as probe
 from pytest import MonkeyPatch
 from scripts.create_rom0_manual_action_packet import PacketStatus
+from scripts.create_rom_gsi_candidate_evidence import (
+    DEFAULT_ANDROID16_GSI_ARTIFACT_NAME,
+    DEFAULT_ANDROID16_GSI_DOWNLOAD_URL,
+    DEFAULT_ANDROID16_GSI_SHA256,
+)
 from scripts.create_rom_unlock_eligibility_evidence import public_target_sha256
 from scripts.refresh_rom0_action_packet import (
     EvidenceStatus,
@@ -563,19 +568,14 @@ def write_gsi_evidence(root: Path) -> None:
                     "license_note_code": "official_google_gsi_terms",
                 },
                 "artifact": {
-                    "artifact_name": "aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip",
+                    "artifact_name": DEFAULT_ANDROID16_GSI_ARTIFACT_NAME,
                     "byte_count": 123456789,
-                    "sha256": "2171cf0ea849f8eaa399f4bad2165fab80b0fd9e98d37723a705dca6c41e49ea",
-                    "expected_sha256": (
-                        "2171cf0ea849f8eaa399f4bad2165fab80b0fd9e98d37723a705dca6c41e49ea"
-                    ),
+                    "sha256": DEFAULT_ANDROID16_GSI_SHA256,
+                    "expected_sha256": DEFAULT_ANDROID16_GSI_SHA256,
                 },
                 "source": {
                     "source_url": "https://developer.android.com/topic/generic-system-image/releases",
-                    "download_url": (
-                        "https://dl.google.com/developers/android/baklava/images/gsi/"
-                        "aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip"
-                    ),
+                    "download_url": DEFAULT_ANDROID16_GSI_DOWNLOAD_URL,
                 },
                 "safety": {
                     "execution_authority": "OFFLINE_HASH_ONLY",

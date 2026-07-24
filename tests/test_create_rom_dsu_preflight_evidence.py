@@ -13,6 +13,11 @@ from scripts.create_rom_dsu_preflight_evidence import (
     render_json,
 )
 from scripts.create_rom_gsi_candidate_evidence import (
+    DEFAULT_ANDROID16_GSI_ARTIFACT_NAME,
+    DEFAULT_ANDROID16_GSI_DOWNLOAD_URL,
+    DEFAULT_ANDROID16_GSI_SHA256,
+)
+from scripts.create_rom_gsi_candidate_evidence import (
     JSON_SCHEMA_VERSION as GSI_SCHEMA_VERSION,
 )
 from scripts.create_rom_stock_restore_evidence import (
@@ -22,8 +27,8 @@ from scripts.create_rom_stock_restore_evidence import (
 BUILD_FINGERPRINT = (
     "motorola/kansas_g_sys/kansas:16/W1VKS36H.9-12-9-8-2/ebe4e3-2b6752:user/release-keys"
 )
-GSI_SHA256 = "2171cf0ea849f8eaa399f4bad2165fab80b0fd9e98d37723a705dca6c41e49ea"
-GSI_ARTIFACT = f"aosp_arm64-exp-BP4A.251205.006-14401865-{GSI_SHA256[:8]}.zip"
+GSI_SHA256 = DEFAULT_ANDROID16_GSI_SHA256
+GSI_ARTIFACT = DEFAULT_ANDROID16_GSI_ARTIFACT_NAME
 
 
 def test_dsu_preflight_ready_for_manual_review_with_locked_bootloader(tmp_path: Path) -> None:
@@ -241,10 +246,7 @@ def write_gsi_evidence(root: Path) -> Path:
                 },
                 "source": {
                     "source_url": "https://developer.android.com/topic/generic-system-image/releases",
-                    "download_url": (
-                        "https://dl.google.com/developers/android/baklava/images/gsi/"
-                        f"{GSI_ARTIFACT}"
-                    ),
+                    "download_url": DEFAULT_ANDROID16_GSI_DOWNLOAD_URL,
                 },
                 "safety": {
                     "execution_authority": "OFFLINE_HASH_ONLY",

@@ -7,6 +7,11 @@ from pathlib import Path
 import pytest
 from scripts.create_rom_fastboot_evidence import JSON_SCHEMA_VERSION as FASTBOOT_SCHEMA_VERSION
 from scripts.create_rom_gsi_candidate_evidence import (
+    DEFAULT_ANDROID16_GSI_ARTIFACT_NAME,
+    DEFAULT_ANDROID16_GSI_DOWNLOAD_URL,
+    DEFAULT_ANDROID16_GSI_SHA256,
+)
+from scripts.create_rom_gsi_candidate_evidence import (
     JSON_SCHEMA_VERSION as GSI_CANDIDATE_SCHEMA_VERSION,
 )
 from scripts.create_rom_release_signing_plan import JSON_SCHEMA_VERSION as SIGNING_SCHEMA_VERSION
@@ -39,11 +44,9 @@ TARGET_DEVICE = {
     "build_fingerprint": BUILD_FINGERPRINT,
     "carrier": "tracfone",
 }
-GSI_ARTIFACT_NAME = "aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip"
-GSI_SHA256 = "2171cf0ea849f8eaa399f4bad2165fab80b0fd9e98d37723a705dca6c41e49ea"
-GSI_DOWNLOAD_URL = (
-    f"https://dl.google.com/developers/android/baklava/images/gsi/{GSI_ARTIFACT_NAME}"
-)
+GSI_ARTIFACT_NAME = DEFAULT_ANDROID16_GSI_ARTIFACT_NAME
+GSI_SHA256 = DEFAULT_ANDROID16_GSI_SHA256
+GSI_DOWNLOAD_URL = DEFAULT_ANDROID16_GSI_DOWNLOAD_URL
 
 
 def test_rom0_readiness_blocks_without_external_evidence() -> None:

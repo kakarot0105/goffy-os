@@ -15,7 +15,15 @@ if __package__ in {None, ""} and str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.create_rom_dsu_preflight_evidence import load_dsu_preflight_evidence  # noqa: E402
-from scripts.create_rom_gsi_candidate_evidence import OFFICIAL_GSI_RELEASES_URL  # noqa: E402
+from scripts.create_rom_gsi_candidate_evidence import (  # noqa: E402
+    DEFAULT_ANDROID16_GSI_ARCHITECTURE,
+    DEFAULT_ANDROID16_GSI_ARTIFACT_NAME,
+    DEFAULT_ANDROID16_GSI_CANDIDATE_NAME,
+    DEFAULT_ANDROID16_GSI_DOWNLOAD_URL,
+    DEFAULT_ANDROID16_GSI_RELEASE,
+    DEFAULT_ANDROID16_GSI_SHA256,
+    OFFICIAL_GSI_RELEASES_URL,
+)
 from scripts.create_rom_manual_gates_template import load_stock_restore_evidence  # noqa: E402
 from scripts.create_rom_stock_restore_evidence import write_output  # noqa: E402
 from scripts.create_rom_unlock_eligibility_evidence import (  # noqa: E402
@@ -34,12 +42,10 @@ from scripts.verify_rom0_readiness import (  # noqa: E402
 JSON_SCHEMA_VERSION = "goffy.rom0-manual-action-packet.v1"
 DEVICE_SERIAL_PLACEHOLDER = "<device-serial>"
 STOCK_ARCHIVE_PLACEHOLDER = "/absolute/path/outside/repo/<exact-kansas-stock-archive.zip>"
-GSI_ARCHIVE_PLACEHOLDER = (
-    "/absolute/path/outside/repo/aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip"
-)
-GSI_ARCHIVE_NAME = "aosp_arm64-exp-BP4A.251205.006-14401865-2171cf0e.zip"
-GSI_DOWNLOAD_URL = f"https://dl.google.com/developers/android/baklava/images/gsi/{GSI_ARCHIVE_NAME}"
-GSI_SHA256 = "2171cf0ea849f8eaa399f4bad2165fab80b0fd9e98d37723a705dca6c41e49ea"
+GSI_ARCHIVE_PLACEHOLDER = f"/absolute/path/outside/repo/{DEFAULT_ANDROID16_GSI_ARTIFACT_NAME}"
+GSI_ARCHIVE_NAME = DEFAULT_ANDROID16_GSI_ARTIFACT_NAME
+GSI_DOWNLOAD_URL = DEFAULT_ANDROID16_GSI_DOWNLOAD_URL
+GSI_SHA256 = DEFAULT_ANDROID16_GSI_SHA256
 MOTOROLA_SOFTWARE_FIX_URL = "https://en-us.support.motorola.com/app/softwarefix"
 MOTOROLA_BOOTLOADER_SUPPORT_URL = "https://en-us.support.motorola.com/app/answers/detail/a_id/89973"
 
@@ -355,9 +361,9 @@ def gsi_candidate_action(gsi_candidate: Mapping[str, str] | None) -> ManualActio
             f"--source-url {OFFICIAL_GSI_RELEASES_URL} "
             f"--download-url {GSI_DOWNLOAD_URL} "
             f"--expected-sha256 {GSI_SHA256} "
-            '--candidate-name "Official Google Android 16 ARM64 GSI" '
-            "--android-release 16 "
-            "--architecture arm64 "
+            f'--candidate-name "{DEFAULT_ANDROID16_GSI_CANDIDATE_NAME}" '
+            f"--android-release {DEFAULT_ANDROID16_GSI_RELEASE} "
+            f"--architecture {DEFAULT_ANDROID16_GSI_ARCHITECTURE} "
             "--output .goffy-validation/rom-gsi-candidate-evidence.json",
         ),
         evidence_output=".goffy-validation/rom-gsi-candidate-evidence.json",
