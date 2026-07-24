@@ -263,6 +263,21 @@ MAC_ROM_STATUS_COMMAND_TYPED_UI_XML = "\n".join(
 )
 
 
+MAC_ROM_CHECKLIST_COMMAND_TYPED_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="Show GOFFY ROM checklist" class="android.widget.EditText" '
+        'enabled="true" bounds="[60,900][660,1040]" />',
+        '  <node text="Send" class="android.widget.TextView" enabled="true" '
+        'bounds="[520,1100][660,1180]" />',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,1200][260,1240]" />',
+        "</hierarchy>",
+    ]
+)
+
+
 TIMELINE_ONLY_UI_XML = "\n".join(
     [
         "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
@@ -470,6 +485,31 @@ MAC_ROM_STATUS_UI_XML = "\n".join(
         '  <node text="GOFFY ROM-0 / AVAILABLE" class="android.widget.TextView" '
         'enabled="true" bounds="[60,1320][360,1360]" />',
         '  <node text="goffy.rom.status output matched the registered schema." '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1380][660,1420]" />',
+        "</hierarchy>",
+    ]
+)
+
+
+MAC_ROM_CHECKLIST_UI_XML = "\n".join(
+    [
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>",
+        '<hierarchy rotation="0">',
+        '  <node text="" class="android.widget.EditText" enabled="true" '
+        'bounds="[60,900][660,1040]" />',
+        '  <node text="Send" class="android.widget.TextView" enabled="true" '
+        'bounds="[520,1100][660,1180]" />',
+        '  <node text="TASK TIMELINE" class="android.widget.TextView" enabled="true" '
+        'bounds="[60,1200][260,1240]" />',
+        '  <node text="Show GOFFY ROM checklist" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,1200][430,1240]" />',
+        '  <node text="VERIFIED" class="android.widget.TextView" enabled="true" '
+        'bounds="[500,1200][650,1240]" />',
+        '  <node text="MAC  /  goffy.rom.checklist  /  SAFE" '
+        'class="android.widget.TextView" enabled="true" bounds="[60,1260][600,1300]" />',
+        '  <node text="ROM CHECKLIST / AVAILABLE" class="android.widget.TextView" '
+        'enabled="true" bounds="[60,1320][420,1360]" />',
+        '  <node text="goffy.rom.checklist output matched the registered schema." '
         'class="android.widget.TextView" enabled="true" bounds="[60,1380][660,1420]" />',
         "</hierarchy>",
     ]
@@ -2370,6 +2410,96 @@ def test_include_mac_can_smoke_goffy_rom_status_command(
 
     assert report.ok
     assert smoke.mac_tool_for_smoke(smoke.DEFAULT_MAC_ROM_STATUS_COMMAND) == "goffy.rom.status"
+    assert any(
+        step.name == "MAC command smoke" and step.status is StepStatus.OK for step in report.steps
+    )
+
+
+def test_include_mac_can_smoke_goffy_rom_checklist_command(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    adb = tmp_path / "sdk" / "platform-tools" / "adb"
+    apk = tmp_path / DEBUG_APK_RELATIVE_PATH
+    apk.parent.mkdir(parents=True)
+    apk.write_bytes(b"apk")
+    monkeypatch.setattr(smoke, "trusted_adb_path", lambda: adb)
+    monkeypatch.setattr(
+        smoke,
+        "capture_screenshot",
+        lambda **kwargs: DeviceSmokeStep(
+            name="Capture screenshot",
+            status=StepStatus.OK,
+            artifact="final.png",
+        ),
+    )
+    submitted_command: str | None = None
+    result_ready: str | None = None
+    device_map_revealed = False
+
+    def runner(command: Sequence[str], cwd: Path, timeout: int) -> CommandResult:
+        nonlocal device_map_revealed, result_ready, submitted_command
+        target = target_runner(command)
+        if target is not None:
+            return target
+        if (
+            adb_args(command) == ("shell", "input", "swipe", "360", "1450", "360", "900", "350")
+            and submitted_command is None
+        ):
+            device_map_revealed = True
+            return CommandResult(0, "ok", "")
+        if adb_args(command) == ("shell", "input", "text", "check%smy%sbattery%slevel"):
+            submitted_command = "phone"
+            result_ready = None
+            return CommandResult(0, "ok", "")
+        if adb_args(command) == (
+            "shell",
+            "input",
+            "text",
+            "Show%sGOFFY%sROM%schecklist",
+        ):
+            submitted_command = "mac-rom-checklist"
+            result_ready = None
+            return CommandResult(0, "ok", "")
+        if (
+            adb_args(command)[:3] == ("shell", "input", "tap")
+            and submitted_command is not None
+            and result_ready is None
+        ):
+            result_ready = submitted_command
+            return CommandResult(0, "ok", "")
+        if adb_args(command) == ("exec-out", "cat", smoke.REMOTE_UI_XML):
+            if device_map_revealed:
+                device_map_revealed = False
+                return CommandResult(0, DEVICE_MAP_UI_XML, "")
+            if result_ready == "mac-rom-checklist":
+                return CommandResult(0, MAC_ROM_CHECKLIST_UI_XML, "")
+            if result_ready == "phone":
+                return CommandResult(0, PHONE_UI_XML, "")
+            if submitted_command == "mac-rom-checklist":
+                return CommandResult(0, MAC_ROM_CHECKLIST_COMMAND_TYPED_UI_XML, "")
+            if submitted_command == "phone":
+                return CommandResult(0, COMMAND_TYPED_UI_XML, "")
+            return CommandResult(0, BASE_UI_XML, "")
+        if adb_args(command) == ("shell", "pidof", smoke.PACKAGE_NAME):
+            return CommandResult(1, "", "")
+        return CommandResult(0, "ok", "")
+
+    report = build_report(
+        root=tmp_path,
+        execute=True,
+        confirm_device_mutation=True,
+        include_mac=True,
+        mac_command=smoke.DEFAULT_MAC_ROM_CHECKLIST_COMMAND,
+        runner=runner,
+        trusted_root=tmp_path,
+        output_directory=tmp_path / "artifacts",
+    )
+
+    assert report.ok
+    assert (
+        smoke.mac_tool_for_smoke(smoke.DEFAULT_MAC_ROM_CHECKLIST_COMMAND) == "goffy.rom.checklist"
+    )
     assert any(
         step.name == "MAC command smoke" and step.status is StepStatus.OK for step in report.steps
     )

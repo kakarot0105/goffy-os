@@ -103,14 +103,14 @@ def feature_payload() -> dict[str, object]:
                 "rom_status",
                 "hub/src/goffy_hub/tools/rom_status.py",
                 targets=["MAC"],
-                tools=["goffy.rom.status"],
+                tools=["goffy.rom.checklist", "goffy.rom.status"],
             ),
             feature(
                 "secure_mac_hub",
                 "android/app/src/main/java/dev/goffy/os/hub",
                 targets=["MAC"],
                 permissions=["android.permission.INTERNET"],
-                tools=["mac.system_info", "goffy.rom.status"],
+                tools=["mac.system_info", "goffy.rom.checklist", "goffy.rom.status"],
             ),
         ],
         "blocked_rom_actions": [

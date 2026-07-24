@@ -33,6 +33,7 @@ deterministic router
                          |            `-> invoke only after compatibility gate
                          `--------------> FastAPI Hub -> SAFE mac.system_info
                                                       -> SAFE goffy.rom.status
+                                                      -> SAFE goffy.rom.checklist
                                                       -> SAFE mac.processes.list
                                                       -> optional SAFE mac.files.list
                                                       -> optional SAFE mac.files.largest
@@ -148,11 +149,12 @@ approval state, active work, and execution authority are not revived.
     only, and excludes command lines, executable paths, environment variables,
     open files, network data, current working directories, and user names.
     Android rejects path-like names and does not speak process names aloud.
-36. `goffy.rom.status` is a default SAFE metadata tool that reads only fixed
-    `.goffy-validation` ROM-0 artifact names under the configured repo root. It
-    returns bounded status, blocker, stale-report, and next-action fields, and
-    never accepts user-supplied paths or grants unlock, reboot, flash, erase,
-    wipe, boot, or shell authority.
+36. `goffy.rom.status` and `goffy.rom.checklist` are default SAFE metadata
+    tools that read only fixed `.goffy-validation` ROM-0 artifact names under
+    the configured repo root. They return bounded status, count, blocker,
+    stale-report, next-step, and next-action fields, and never accept
+    user-supplied paths, expose raw artifact paths or command strings, or grant
+    unlock, reboot, flash, erase, wipe, boot, or shell authority.
 
 ## Performance posture
 

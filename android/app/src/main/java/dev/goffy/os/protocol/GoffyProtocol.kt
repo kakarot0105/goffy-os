@@ -19,6 +19,7 @@ import kotlinx.serialization.json.put
 
 const val GOFFY_PROTOCOL_VERSION = "0.2.0"
 const val MCP_PROTOCOL_VERSION = "2025-11-25"
+const val GOFFY_ROM_CHECKLIST_TOOL_VERSION = "1.0.0"
 const val GOFFY_ROM_STATUS_TOOL_VERSION = "1.0.0"
 const val MAC_SYSTEM_INFO_TOOL_VERSION = "1.0.0"
 const val MAC_FILES_LARGEST_TOOL_VERSION = "1.0.0"
@@ -153,6 +154,36 @@ data class GoffyRomStatus(
     val nextAction: String,
     val staleReport: Boolean,
     val checkedRefreshReport: Boolean,
+    val checkedOperatorChecklist: Boolean,
+) : ToolResultContent
+
+data class GoffyRomChecklistStep(
+    val stepIndex: Int,
+    val title: String,
+    val kind: String,
+    val status: String,
+    val summary: String,
+    val blocked: Boolean,
+    val blockerCount: Int,
+)
+
+data class GoffyRomChecklist(
+    val status: String,
+    val milestone: String,
+    val generatedAt: String,
+    val checklistStatus: String,
+    val destructiveActions: String,
+    val totalStepCount: Int,
+    val doneStepCount: Int,
+    val remainingStepCount: Int,
+    val nextSteps: List<GoffyRomChecklistStep>,
+    val nextStepsTruncated: Boolean,
+    val blockerCount: Int,
+    val blockers: List<String>,
+    val blockersTruncated: Boolean,
+    val nextStepTitle: String,
+    val nextStepStatus: String,
+    val nextAction: String,
     val checkedOperatorChecklist: Boolean,
 ) : ToolResultContent
 
@@ -614,6 +645,12 @@ class GoffyProtocolCodec(
 
     private fun encodeToolArguments(toolName: String, arguments: ToolArguments): JsonObject =
         when (toolName) {
+            GOFFY_ROM_CHECKLIST_TOOL -> {
+                if (arguments !is NoToolArguments) {
+                    throw ProtocolException("goffy.rom.checklist does not accept arguments")
+                }
+                JsonObject(emptyMap())
+            }
             GOFFY_ROM_STATUS_TOOL -> {
                 if (arguments !is NoToolArguments) {
                     throw ProtocolException("goffy.rom.status does not accept arguments")
@@ -872,6 +909,10 @@ class GoffyProtocolCodec(
         tool.requireBoundedString("title", 1, 128)
         tool.requireBoundedString("description", 1, 512)
         when (toolName) {
+            GOFFY_ROM_CHECKLIST_TOOL -> {
+                validateGoffyRomChecklistInputSchema(tool.requireObject("inputSchema"))
+                validateGoffyRomChecklistOutputSchema(tool.requireObject("outputSchema"))
+            }
             GOFFY_ROM_STATUS_TOOL -> {
                 validateGoffyRomStatusInputSchema(tool.requireObject("inputSchema"))
                 validateGoffyRomStatusOutputSchema(tool.requireObject("outputSchema"))
@@ -914,6 +955,7 @@ class GoffyProtocolCodec(
         metadata.requireKeys(GOFFY_METADATA_KEYS)
         val toolVersion = metadata.requireString("dev.goffy/toolVersion")
         val expectedToolVersion = when (toolName) {
+            GOFFY_ROM_CHECKLIST_TOOL -> GOFFY_ROM_CHECKLIST_TOOL_VERSION
             GOFFY_ROM_STATUS_TOOL -> GOFFY_ROM_STATUS_TOOL_VERSION
             MAC_SYSTEM_INFO_TOOL -> MAC_SYSTEM_INFO_TOOL_VERSION
             MAC_FILES_LARGEST_TOOL -> MAC_FILES_LARGEST_TOOL_VERSION
@@ -978,6 +1020,12 @@ class GoffyProtocolCodec(
     }
 
     private fun validateGoffyRomStatusInputSchema(schema: JsonObject) {
+        schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS)
+        validateObjectSchemaRoot(schema)
+        schema.requireObject("properties").requireKeys(emptySet())
+    }
+
+    private fun validateGoffyRomChecklistInputSchema(schema: JsonObject) {
         schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS)
         validateObjectSchemaRoot(schema)
         schema.requireObject("properties").requireKeys(emptySet())
@@ -1094,6 +1142,148 @@ class GoffyProtocolCodec(
         ).forEach { field ->
             properties.requireObject(field).requireTypeOnly("boolean")
         }
+    }
+
+    private fun validateGoffyRomChecklistOutputSchema(schema: JsonObject) {
+        schema.requireKeys(OUTPUT_SCHEMA_KEYS + "\$defs")
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(GOFFY_ROM_CHECKLIST_OUTPUT_KEYS)
+        schema.requireArray("required").requireExactStrings(
+            GOFFY_ROM_CHECKLIST_OUTPUT_KEYS,
+            "ROM checklist required",
+        )
+
+        properties.requireObject("status").also { status ->
+            status.requireKeys(ENUM_STRING_SCHEMA_KEYS)
+            status.requireType("string")
+            status.requireArray("enum").requireExactStrings(
+                GOFFY_ROM_STATUS_VALUES,
+                "ROM checklist status enum",
+            )
+        }
+        properties.requireObject("milestone").also { milestone ->
+            milestone.requireKeys(setOf("const", "type"))
+            milestone.requireType("string")
+            milestone.requireString("const").requireExactString(GOFFY_ROM_MILESTONE, "milestone")
+        }
+        properties.requireObject("destructiveActions").also { destructive ->
+            destructive.requireKeys(setOf("const", "type"))
+            destructive.requireType("string")
+            destructive.requireString("const").requireExactString(
+                "withheld",
+                "destructiveActions",
+            )
+        }
+        properties.requireObject("generatedAt").validateBoundedStringSchema(
+            "generatedAt",
+            1,
+            MAX_GOFFY_ROM_TIMESTAMP_LENGTH,
+        )
+        properties.requireObject("checklistStatus").validateStringEnumSchema(
+            "checklistStatus",
+            GOFFY_ROM_CHECKLIST_STATUS_VALUES,
+        )
+        properties.requireObject("nextStepTitle").validateBoundedStringSchema(
+            "nextStepTitle",
+            1,
+            MAX_GOFFY_ROM_CHECKLIST_TITLE_LENGTH,
+        )
+        properties.requireObject("nextStepStatus").validateStringEnumSchema(
+            "nextStepStatus",
+            GOFFY_ROM_CHECKLIST_NEXT_STEP_STATUS_VALUES,
+        )
+        properties.requireObject("nextAction").validateBoundedStringSchema(
+            "nextAction",
+            1,
+            MAX_GOFFY_ROM_NEXT_ACTION_LENGTH,
+        )
+        setOf("totalStepCount", "doneStepCount", "remainingStepCount").forEach { field ->
+            properties.requireObject(field).validateBoundedIntInclusiveSchema(
+                field,
+                0,
+                MAX_GOFFY_ROM_CHECKLIST_STEP_COUNT,
+            )
+        }
+        properties.requireObject("nextSteps").also { nextSteps ->
+            nextSteps.requireKeys(ARRAY_REF_SCHEMA_KEYS + "maxItems")
+            nextSteps.requireType("array")
+            nextSteps.requireInt("maxItems").requireExactValue(
+                MAX_GOFFY_ROM_CHECKLIST_STEPS,
+                "nextSteps maxItems",
+            )
+            nextSteps.requireObject("items").requireString("\$ref").requireExactString(
+                "#/\$defs/GoffyRomChecklistStepOutput",
+                "nextSteps ref",
+            )
+        }
+        properties.requireObject("blockers").also { blockers ->
+            blockers.requireKeys(ARRAY_STRING_SCHEMA_KEYS + "maxItems")
+            blockers.requireType("array")
+            blockers.requireInt("maxItems").requireExactValue(
+                MAX_GOFFY_ROM_BLOCKERS,
+                "blockers maxItems",
+            )
+            blockers.requireObject("items").validateBoundedStringSchema(
+                "blocker",
+                1,
+                MAX_GOFFY_ROM_BLOCKER_LENGTH,
+            )
+        }
+        properties.requireObject("blockerCount").validateBoundedIntInclusiveSchema(
+            "blockerCount",
+            0,
+            MAX_GOFFY_ROM_BLOCKER_COUNT,
+        )
+        setOf("nextStepsTruncated", "blockersTruncated", "checkedOperatorChecklist").forEach { field ->
+            properties.requireObject(field).requireTypeOnly("boolean")
+        }
+
+        val definitions = schema.requireObject("\$defs")
+        definitions.requireKeys(setOf("GoffyRomChecklistStepOutput"))
+        validateGoffyRomChecklistStepDefinition(
+            definitions.requireObject("GoffyRomChecklistStepOutput"),
+        )
+    }
+
+    private fun validateGoffyRomChecklistStepDefinition(definition: JsonObject) {
+        definition.requireKeys(OBJECT_DEFINITION_KEYS)
+        validateObjectSchemaRootWithoutDialect(definition)
+        val properties = definition.requireObject("properties")
+        properties.requireKeys(GOFFY_ROM_CHECKLIST_STEP_KEYS)
+        definition.requireArray("required").requireExactStrings(
+            GOFFY_ROM_CHECKLIST_STEP_KEYS,
+            "ROM checklist step required",
+        )
+        properties.requireObject("stepIndex").validateBoundedIntInclusiveSchema(
+            "stepIndex",
+            1,
+            MAX_GOFFY_ROM_CHECKLIST_STEP_COUNT,
+        )
+        properties.requireObject("title").validateBoundedStringSchema(
+            "title",
+            1,
+            MAX_GOFFY_ROM_CHECKLIST_TITLE_LENGTH,
+        )
+        properties.requireObject("kind").validateStringEnumSchema(
+            "kind",
+            GOFFY_ROM_CHECKLIST_STEP_KIND_VALUES,
+        )
+        properties.requireObject("status").validateStringEnumSchema(
+            "status",
+            GOFFY_ROM_CHECKLIST_STEP_STATUS_VALUES,
+        )
+        properties.requireObject("summary").validateBoundedStringSchema(
+            "summary",
+            1,
+            MAX_GOFFY_ROM_CHECKLIST_SUMMARY_LENGTH,
+        )
+        properties.requireObject("blocked").requireTypeOnly("boolean")
+        properties.requireObject("blockerCount").validateBoundedIntInclusiveSchema(
+            "blockerCount",
+            0,
+            MAX_GOFFY_ROM_CHECKLIST_STEP_COUNT,
+        )
     }
 
     private fun validateMacFilesLargestInputSchema(schema: JsonObject) {
@@ -1826,6 +2016,12 @@ class GoffyProtocolCodec(
         val target = payload.requireExecutionTarget()
         val content = payload.requireObject("structuredContent")
         val decodedContent = when (toolName) {
+            GOFFY_ROM_CHECKLIST_TOOL -> {
+                if (target != ExecutionTarget.MAC) {
+                    throw ProtocolException("goffy.rom.checklist returned an unexpected execution target")
+                }
+                decodeGoffyRomChecklist(content)
+            }
             GOFFY_ROM_STATUS_TOOL -> {
                 if (target != ExecutionTarget.MAC) {
                     throw ProtocolException("goffy.rom.status returned an unexpected execution target")
@@ -2001,6 +2197,121 @@ class GoffyProtocolCodec(
             throw ProtocolException("ROM status result failed local policy")
         }
         return result
+    }
+
+    private fun decodeGoffyRomChecklist(content: JsonObject): GoffyRomChecklist {
+        content.requireKeys(GOFFY_ROM_CHECKLIST_OUTPUT_KEYS)
+        val status = content.requireString("status").also { value ->
+            if (value !in GOFFY_ROM_STATUS_VALUES) {
+                throw ProtocolException("unsupported ROM checklist status")
+            }
+        }
+        val nextSteps = content.requireArray("nextSteps").boundedObjects(
+            MAX_GOFFY_ROM_CHECKLIST_STEPS,
+            "ROM checklist next steps",
+            ::decodeGoffyRomChecklistStep,
+        )
+        val blockers = content.requireArray("blockers").map { element ->
+            val blocker = element.stringValueOrNull()
+                ?: throw ProtocolException("ROM checklist blockers must be strings")
+            requireBounded("blocker", blocker, 1, MAX_GOFFY_ROM_BLOCKER_LENGTH)
+            blocker
+        }
+        if (blockers.size > MAX_GOFFY_ROM_BLOCKERS) {
+            throw ProtocolException("ROM checklist has too many blockers")
+        }
+        val result = GoffyRomChecklist(
+            status = status,
+            milestone = content.requireBoundedString("milestone", 1, GOFFY_ROM_MILESTONE.length),
+            generatedAt = content.requireBoundedString(
+                "generatedAt",
+                1,
+                MAX_GOFFY_ROM_TIMESTAMP_LENGTH,
+            ),
+            checklistStatus = content.requireBoundedString(
+                "checklistStatus",
+                1,
+                MAX_GOFFY_ROM_STATUS_LENGTH,
+            ),
+            destructiveActions = content.requireBoundedString("destructiveActions", 1, 16),
+            totalStepCount = content.requireBoundedInt(
+                "totalStepCount",
+                0,
+                MAX_GOFFY_ROM_CHECKLIST_STEP_COUNT,
+            ),
+            doneStepCount = content.requireBoundedInt(
+                "doneStepCount",
+                0,
+                MAX_GOFFY_ROM_CHECKLIST_STEP_COUNT,
+            ),
+            remainingStepCount = content.requireBoundedInt(
+                "remainingStepCount",
+                0,
+                MAX_GOFFY_ROM_CHECKLIST_STEP_COUNT,
+            ),
+            nextSteps = nextSteps,
+            nextStepsTruncated = content.requireBoolean("nextStepsTruncated"),
+            blockerCount = content.requireBoundedInt(
+                "blockerCount",
+                0,
+                MAX_GOFFY_ROM_BLOCKER_COUNT,
+            ),
+            blockers = blockers,
+            blockersTruncated = content.requireBoolean("blockersTruncated"),
+            nextStepTitle = content.requireBoundedString(
+                "nextStepTitle",
+                1,
+                MAX_GOFFY_ROM_CHECKLIST_TITLE_LENGTH,
+            ),
+            nextStepStatus = content.requireBoundedString(
+                "nextStepStatus",
+                1,
+                MAX_GOFFY_ROM_STATUS_LENGTH,
+            ),
+            nextAction = content.requireBoundedString(
+                "nextAction",
+                1,
+                MAX_GOFFY_ROM_NEXT_ACTION_LENGTH,
+            ),
+            checkedOperatorChecklist = content.requireBoolean("checkedOperatorChecklist"),
+        )
+        if (!result.matchesToolContract()) {
+            throw ProtocolException("ROM checklist result failed local policy")
+        }
+        return result
+    }
+
+    private fun decodeGoffyRomChecklistStep(content: JsonObject): GoffyRomChecklistStep {
+        content.requireKeys(GOFFY_ROM_CHECKLIST_STEP_KEYS)
+        return GoffyRomChecklistStep(
+            stepIndex = content.requireBoundedInt(
+                "stepIndex",
+                1,
+                MAX_GOFFY_ROM_CHECKLIST_STEP_COUNT,
+            ),
+            title = content.requireBoundedString(
+                "title",
+                1,
+                MAX_GOFFY_ROM_CHECKLIST_TITLE_LENGTH,
+            ),
+            kind = content.requireBoundedString(
+                "kind",
+                1,
+                MAX_GOFFY_ROM_CHECKLIST_KIND_LENGTH,
+            ),
+            status = content.requireBoundedString("status", 1, MAX_GOFFY_ROM_STATUS_LENGTH),
+            summary = content.requireBoundedString(
+                "summary",
+                1,
+                MAX_GOFFY_ROM_CHECKLIST_SUMMARY_LENGTH,
+            ),
+            blocked = content.requireBoolean("blocked"),
+            blockerCount = content.requireBoundedInt(
+                "blockerCount",
+                0,
+                MAX_GOFFY_ROM_CHECKLIST_STEP_COUNT,
+            ),
+        )
     }
 
     private fun decodeError(payload: JsonObject): ExecutionEvent.Error {
@@ -2474,6 +2785,12 @@ private fun JsonObject.validateBoundedStringSchema(field: String, minimum: Int, 
     requireInt("maxLength").requireExactValue(maximum, "$field maxLength")
 }
 
+private fun JsonObject.validateStringEnumSchema(field: String, expected: Set<String>) {
+    requireKeys(ENUM_STRING_SCHEMA_KEYS)
+    requireType("string")
+    requireArray("enum").requireExactStrings(expected, "$field enum")
+}
+
 private fun JsonObject.validateBoundedIntegerSchema(field: String, minimum: Int, exclusiveMaximum: Int) {
     requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS + "exclusiveMaximum")
     requireType("integer")
@@ -2703,6 +3020,34 @@ private val GOFFY_ROM_STATUS_OUTPUT_KEYS = setOf(
     "staleReport",
     "checkedRefreshReport",
     "checkedOperatorChecklist",
+)
+private val GOFFY_ROM_CHECKLIST_OUTPUT_KEYS = setOf(
+    "status",
+    "milestone",
+    "generatedAt",
+    "checklistStatus",
+    "destructiveActions",
+    "totalStepCount",
+    "doneStepCount",
+    "remainingStepCount",
+    "nextSteps",
+    "nextStepsTruncated",
+    "blockerCount",
+    "blockers",
+    "blockersTruncated",
+    "nextStepTitle",
+    "nextStepStatus",
+    "nextAction",
+    "checkedOperatorChecklist",
+)
+private val GOFFY_ROM_CHECKLIST_STEP_KEYS = setOf(
+    "stepIndex",
+    "title",
+    "kind",
+    "status",
+    "summary",
+    "blocked",
+    "blockerCount",
 )
 private val SYSTEM_INFO_KEYS = setOf("status", "operatingSystem", "architecture")
 private val MAC_FILES_LIST_INPUT_KEYS = setOf(

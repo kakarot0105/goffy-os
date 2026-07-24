@@ -38,6 +38,7 @@ DEFAULT_PHONE_COMMAND = "check my battery level"
 DEFAULT_MAC_COMMAND = "check my Mac status"
 DEFAULT_MAC_PROCESS_COMMAND = "What is running on my Mac"
 DEFAULT_MAC_ROM_STATUS_COMMAND = "Show GOFFY ROM status"
+DEFAULT_MAC_ROM_CHECKLIST_COMMAND = "Show GOFFY ROM checklist"
 DEFAULT_MEMORY_LIST_COMMAND = "what do you remember"
 DEFAULT_MEMORY_TEXT_PREFIX = "goffy memory smoke"
 DEBUG_HUB_ENDPOINT = "ws://127.0.0.1:8787/ws/v1"
@@ -69,6 +70,12 @@ MAC_SMOKE_MARKERS = {
         "GOFFY ROM-0",
         "MAC  /  goffy.rom.status  /  SAFE",
         "goffy.rom.status output matched the registered schema.",
+    ),
+    DEFAULT_MAC_ROM_CHECKLIST_COMMAND.casefold(): (
+        "VERIFIED",
+        "ROM CHECKLIST",
+        "MAC  /  goffy.rom.checklist  /  SAFE",
+        "goffy.rom.checklist output matched the registered schema.",
     ),
 }
 TASK_CARD_STATUS_TEXTS = frozenset(
@@ -961,6 +968,8 @@ def mac_tool_for_smoke(command: str) -> str:
         return "mac.processes.list"
     if normalized == DEFAULT_MAC_ROM_STATUS_COMMAND.casefold():
         return "goffy.rom.status"
+    if normalized == DEFAULT_MAC_ROM_CHECKLIST_COMMAND.casefold():
+        return "goffy.rom.checklist"
     return "mac.system_info"
 
 

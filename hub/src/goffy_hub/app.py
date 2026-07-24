@@ -32,6 +32,7 @@ from goffy_hub.settings import HubSettings
 from goffy_hub.tool_health import ToolHealthMonitor
 from goffy_hub.tools import (
     build_git_status_tool,
+    build_goffy_rom_checklist_tool,
     build_goffy_rom_status_tool,
     build_mac_apps_list_tool,
     build_mac_apps_open_tool,
@@ -99,6 +100,13 @@ def build_registry(settings: HubSettings) -> ToolRegistry:
     )
     registry.register(
         build_goffy_rom_status_tool(
+            settings.rom_status_root,
+            settings.tool_timeout_seconds,
+            settings.tool_health_timeout_seconds,
+        )
+    )
+    registry.register(
+        build_goffy_rom_checklist_tool(
             settings.rom_status_root,
             settings.tool_timeout_seconds,
             settings.tool_health_timeout_seconds,

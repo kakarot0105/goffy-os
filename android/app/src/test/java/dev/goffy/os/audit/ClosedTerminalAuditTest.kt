@@ -6,6 +6,7 @@ import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.agent.TaskTimelineEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
+import dev.goffy.os.protocol.GOFFY_ROM_CHECKLIST_TOOL
 import dev.goffy.os.protocol.GOFFY_ROM_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
@@ -271,6 +272,41 @@ class ClosedTerminalAuditTest {
         val restored = requireNotNull(record).toTimelineEntry()
         assertEquals("Recorded GOFFY ROM status task", restored.command)
         assertEquals(GOFFY_ROM_STATUS_TOOL, restored.toolName)
+        assertEquals(null, restored.result)
+        assertFalse(restored.toString().contains(blockerDetail))
+    }
+
+    @Test
+    fun goffyRomChecklistAuditRoundTripsAsDisplayOnlySafeMacTask() {
+        val blockerDetail = "stock restore evidence must be recorded before DSU decisions advance"
+        val entry = TaskTimelineEntry(
+            id = UUID.fromString("88888888-8888-4888-8888-888888888888"),
+            command = "Show GOFFY ROM checklist",
+            executionTarget = ExecutionTarget.MAC,
+            toolName = GOFFY_ROM_CHECKLIST_TOOL,
+            phase = TaskPhase.VERIFIED,
+            summary = "ROM checklist still has blocker: $blockerDetail",
+            events = listOf(
+                TaskTimelineEvent(TaskEventKind.OBSERVE, "Observed ROM checklist command"),
+                TaskTimelineEvent(TaskEventKind.RESULT, blockerDetail),
+                TaskTimelineEvent(TaskEventKind.VERIFY, "Verified ROM checklist"),
+            ),
+            result = null,
+            permission = PermissionLevel.SAFE,
+            approvalGranted = false,
+        )
+
+        val record = entry.toClosedTerminalAuditRecord(recordedAtEpochMillis = 1_720_000_000_000)
+
+        assertNotNull(record)
+        assertEquals(GOFFY_ROM_CHECKLIST_TOOL, record?.toolName)
+        assertEquals(AuditPermission.SAFE, record?.permission)
+        assertEquals(AuditApprovalOutcome.NOT_REQUIRED, record?.approvalOutcome)
+        assertFalse(record.toString().contains(blockerDetail))
+
+        val restored = requireNotNull(record).toTimelineEntry()
+        assertEquals("Recorded GOFFY ROM checklist task", restored.command)
+        assertEquals(GOFFY_ROM_CHECKLIST_TOOL, restored.toolName)
         assertEquals(null, restored.result)
         assertFalse(restored.toString().contains(blockerDetail))
     }

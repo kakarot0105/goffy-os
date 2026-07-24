@@ -8,6 +8,7 @@ import dev.goffy.os.localmodel.isSafeLocalModelPrompt
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatusArguments
+import dev.goffy.os.protocol.GOFFY_ROM_CHECKLIST_TOOL
 import dev.goffy.os.protocol.GOFFY_ROM_STATUS_TOOL
 import dev.goffy.os.protocol.MAC_APPS_LIST_TOOL
 import dev.goffy.os.protocol.MAC_APPS_OPEN_TOOL
@@ -72,6 +73,13 @@ object GoffyIntentRouter {
                 "is (?:the )?(?:goffy )?rom ready|what are we building now" +
                 "(?: can you explain)?)" +
                 "[.!?]?$",
+        option = RegexOption.IGNORE_CASE,
+    )
+    private val goffyRomChecklistCommand = Regex(
+        pattern =
+            "^(?:(?:show|check|list)(?: me)? (?:the )?(?:goffy )?(?:rom|rom-0) " +
+                "(?:operator )?checklist|what(?:'s| is) left for (?:the )?(?:goffy )?rom|" +
+                "what (?:rom|rom-0) steps remain)[.!?]?$",
         option = RegexOption.IGNORE_CASE,
     )
     private val macStatusCommand = Regex(
@@ -166,6 +174,7 @@ object GoffyIntentRouter {
         val rawCommandRejectedForLocalModel = command.hasUnsafeControlOrFormatCharacters()
         val normalized = command.trim().replace(whitespace, " ")
         val plan = when {
+            goffyRomChecklistCommand.matches(normalized) -> goffyRomChecklistPlan(normalized)
             goffyRomStatusCommand.matches(normalized) -> goffyRomStatusPlan(normalized)
             macStatusCommand.matches(normalized) -> macStatusPlan(normalized)
             macProcessesListCommand.matches(normalized) -> macProcessesListPlan(normalized)
@@ -378,6 +387,18 @@ object GoffyIntentRouter {
             "Hub returns schema-valid ROM-0 status from fixed GOFFY readiness artifacts",
             "Hub emits a successful verification result",
             "The result contains no unlock, reboot, flash, erase, wipe, boot, or shell authority",
+        ),
+    )
+
+    private fun goffyRomChecklistPlan(command: String): GoffyExecutionPlan = GoffyExecutionPlan(
+        command = command,
+        executionTarget = ExecutionTarget.MAC,
+        toolName = GOFFY_ROM_CHECKLIST_TOOL,
+        permission = PermissionLevel.SAFE,
+        successCriteria = listOf(
+            "Hub returns schema-valid ROM-0 operator checklist from fixed GOFFY artifacts",
+            "Hub emits a successful verification result",
+            "The result contains no command strings, artifact paths, unlock, reboot, flash, erase, wipe, boot, or shell authority",
         ),
     )
 

@@ -49,6 +49,7 @@ FOREGROUND_ONLY_PERMISSIONS = {
     "android.permission.RECORD_AUDIO",
 }
 ALLOWED_MCP_TOOLS = {
+    "goffy.rom.checklist",
     "goffy.rom.status",
     "mac.system_info",
     "phone.battery.status",
@@ -110,8 +111,8 @@ EXPECTED_FEATURE_MCP_TOOLS = {
         "phone.qr.read",
         "phone.timer.create",
     },
-    "rom_status": {"goffy.rom.status"},
-    "secure_mac_hub": {"goffy.rom.status", "mac.system_info"},
+    "rom_status": {"goffy.rom.checklist", "goffy.rom.status"},
+    "secure_mac_hub": {"goffy.rom.checklist", "goffy.rom.status", "mac.system_info"},
 }
 EXPECTED_FEATURE_APP_PRIVATE_DESTRUCTIVE_TOOLS = {
     "agent_loop_timeline": set(),

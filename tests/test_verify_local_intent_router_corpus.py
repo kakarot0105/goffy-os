@@ -18,9 +18,9 @@ def test_default_local_intent_router_corpus_passes() -> None:
 
     assert report.ok
     assert report.schema_version == JSON_SCHEMA_VERSION
-    assert report.example_count == 50
-    assert report.eval_counts == {"CLOUD": 4, "MAC": 5, "PHONE": 4, "UNKNOWN": 4}
-    assert report.train_counts == {"CLOUD": 8, "MAC": 9, "PHONE": 8, "UNKNOWN": 8}
+    assert report.example_count == 52
+    assert report.eval_counts == {"CLOUD": 4, "MAC": 6, "PHONE": 4, "UNKNOWN": 4}
+    assert report.train_counts == {"CLOUD": 8, "MAC": 10, "PHONE": 8, "UNKNOWN": 8}
 
 
 def test_corpus_blocks_executable_tool_for_unknown(tmp_path: Path) -> None:

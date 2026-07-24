@@ -141,6 +141,7 @@ async def test_official_client_initializes_lists_and_calls_registry_tool() -> No
     assert initialization.capabilities.tools.listChanged is True
     assert get_session_id() is not None
     assert sorted(tool.name for tool in listed.tools) == [
+        "goffy.rom.checklist",
         "goffy.rom.status",
         "mac.processes.list",
         "mac.system_info",
@@ -209,6 +210,7 @@ async def test_official_client_lists_approved_mac_file_root(tmp_path) -> None:
 
     assert initialization.protocolVersion == MCP_PROTOCOL_VERSION
     assert sorted(tool.name for tool in listed.tools) == [
+        "goffy.rom.checklist",
         "goffy.rom.status",
         "mac.files.largest",
         "mac.files.list",
@@ -281,6 +283,7 @@ async def test_official_client_reads_approved_git_status(
     assert initialization.protocolVersion == MCP_PROTOCOL_VERSION
     assert sorted(tool.name for tool in listed.tools) == [
         "git.status",
+        "goffy.rom.checklist",
         "goffy.rom.status",
         "mac.processes.list",
         "mac.system_info",
@@ -536,16 +539,21 @@ async def test_official_client_relists_after_tool_health_changes(
     assert isinstance(restored_notification.root, types.ToolListChangedNotification)
     assert isinstance(reconnect_resync.root, types.ToolListChangedNotification)
     assert [tool.name for tool in initial_tools.tools] == [
+        "goffy.rom.checklist",
         "goffy.rom.status",
         "mac.processes.list",
         "mac.system_info",
     ]
     assert unavailable.changed is True
-    assert [tool.name for tool in unavailable_tools.tools] == ["goffy.rom.status"]
+    assert [tool.name for tool in unavailable_tools.tools] == [
+        "goffy.rom.checklist",
+        "goffy.rom.status",
+    ]
     assert unavailable_call.value.error.code == types.INVALID_PARAMS
     assert "unauthorized" in unavailable_call.value.error.message.lower()
     assert restored.changed is True
     assert [tool.name for tool in restored_tools.tools] == [
+        "goffy.rom.checklist",
         "goffy.rom.status",
         "mac.processes.list",
         "mac.system_info",
@@ -1053,11 +1061,13 @@ async def test_active_mcp_get_keeps_session_alive_past_idle_deadline(
             after_idle_deadline = await session.list_tools()
 
     assert [tool.name for tool in initial.tools] == [
+        "goffy.rom.checklist",
         "goffy.rom.status",
         "mac.processes.list",
         "mac.system_info",
     ]
     assert [tool.name for tool in after_idle_deadline.tools] == [
+        "goffy.rom.checklist",
         "goffy.rom.status",
         "mac.processes.list",
         "mac.system_info",
@@ -1110,6 +1120,7 @@ async def test_mcp_get_rotates_at_bounded_lifetime(
     assert "id:" in rotated.text
     assert listed.status_code == 200
     assert [tool["name"] for tool in listed.json()["result"]["tools"]] == [
+        "goffy.rom.checklist",
         "goffy.rom.status",
         "mac.processes.list",
         "mac.system_info",

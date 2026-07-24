@@ -3,6 +3,7 @@ package dev.goffy.os
 import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.GoffyRomChecklist
 import dev.goffy.os.protocol.GoffyRomStatus
 import dev.goffy.os.protocol.MacAppOpened
 import dev.goffy.os.protocol.MacAppsList
@@ -50,6 +51,7 @@ private fun ToolResultContent.speakableText(verified: Boolean): String =
                 "Git status for $repoName has " +
                     "${stagedCount + unstagedCount + untrackedCount + conflictCount} changes."
             }
+        is GoffyRomChecklist -> romChecklistSpeech()
         is GoffyRomStatus -> romStatusSpeech()
         is MacClipboardRead -> clipboardSpeech()
         is MacAppsList ->
@@ -110,7 +112,7 @@ private fun GoffyRomStatus.romStatusSpeech(): String =
         val safeNextAction = if (nextAction.isSafeRomStatusSpeechText()) {
             "Next action is $nextAction. "
         } else {
-            "Next action is hidden because it contained unsafe path-like text. "
+            "Next action is hidden because it contained unsafe command or path-like text. "
         }
         "GOFFY ROM zero install decision is $installDecision with $blockerCount blockers. " +
             "DSU preflight is $dsuPreflightGateStatus. " +
@@ -118,11 +120,45 @@ private fun GoffyRomStatus.romStatusSpeech(): String =
             "Destructive actions remain withheld."
     }
 
+private fun GoffyRomChecklist.romChecklistSpeech(): String {
+    val safeNextStep = if (nextStepTitle.isSafeRomStatusSpeechText()) {
+        "Next step is $nextStepTitle. "
+    } else {
+        "Next step is hidden because it contained unsafe command or path-like text. "
+    }
+    return "GOFFY ROM zero checklist has $remainingStepCount steps remaining " +
+        "and $blockerCount blockers. " +
+        safeNextStep +
+        "Destructive actions remain withheld."
+}
+
 private fun String.isSafeRomStatusSpeechText(): Boolean =
     isNotBlank() &&
-        !contains("/", ignoreCase = false) &&
-        !contains("\\", ignoreCase = false) &&
-        !contains("file://", ignoreCase = true)
+        !containsGoffyRomSpeechPathLikeText() &&
+        GoffyRomCommandTextPatterns.none { pattern -> pattern.containsMatchIn(this) }
+
+private fun String.containsGoffyRomSpeechPathLikeText(): Boolean {
+    if (contains("\\", ignoreCase = false) || contains("file://", ignoreCase = true)) {
+        return true
+    }
+    return GoffyRomSafeSlashToken.replace(this, "").contains("/")
+}
+
+private val GoffyRomCommandTextPatterns = listOf(
+    Regex(
+        "\\b(?:adb|fastboot)\\s+" +
+            "(?:reboot|shell|sideload|push|install|uninstall|root|remount|" +
+            "disable-verity|enable-verity|flash|flashing|oem|erase|wipe|boot|getvar|devices)\\b",
+        RegexOption.IGNORE_CASE,
+    ),
+    Regex("\\b(?:avbctl|magisk)\\b", RegexOption.IGNORE_CASE),
+    Regex("\\b(?:sh|su|pm|cmd|am|rm|dd|mkfs)\\s+", RegexOption.IGNORE_CASE),
+    Regex("\\breboot\\s+(?:bootloader|fastboot|recovery)\\b", RegexOption.IGNORE_CASE),
+    Regex("\\bflash\\s+(?:boot|system|vendor|vbmeta|image)\\b", RegexOption.IGNORE_CASE),
+    Regex("\\bboot\\s+\\S+\\.img\\b", RegexOption.IGNORE_CASE),
+    Regex("\\bshell\\b", RegexOption.IGNORE_CASE),
+)
+private val GoffyRomSafeSlashToken = Regex("\\b[A-Z0-9]{2,8}(?:/[A-Z0-9]{2,8})+\\b")
 
 private fun MacClipboardRead.clipboardSpeech(): String = when (status) {
     "available" -> "Mac clipboard returned bounded text. I will not read clipboard contents aloud."

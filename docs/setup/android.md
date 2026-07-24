@@ -75,6 +75,11 @@ review both published checksums during any wrapper upgrade.
   the Hub advertises schema-compatible `SAFE goffy.rom.status`. Android sends no
   arguments, displays bounded ROM-0 status, blockers, and next action, and never
   requests unlock, reboot, flash, erase, wipe, boot, or shell authority.
+- `Show GOFFY ROM checklist`, `What's left for the GOFFY ROM?`, and
+  `What ROM-0 steps remain?` route to MAC only when the Hub advertises
+  schema-compatible `SAFE goffy.rom.checklist`. Android sends no arguments,
+  displays bounded step counts, safe next-step metadata, visible blockers, and
+  next action, and never exposes raw artifact paths or safe command strings.
 - Battery commands such as `Show my battery status` and `What's my phone battery
   level?` run entirely on PHONE without a Hub link.
 - While GOFFY is foregrounded, dock mode keeps the screen awake only when Android
@@ -376,7 +381,8 @@ fresh visible task card. The default is `check my Mac status` for
 `mac.system_info`; the process-list route can be smoked with
 `--mac-command "What is running on my Mac"` for `mac.processes.list`, and the
 ROM-status route can be smoked with `--mac-command "Show GOFFY ROM status"` for
-`goffy.rom.status`. The token
+`goffy.rom.status`, and the ROM checklist route can be smoked with
+`--mac-command "Show GOFFY ROM checklist"` for `goffy.rom.checklist`. The token
 file contains the real raw bearer token; for ADB-safe entry it must be one line,
 24..120 characters, using only
 `A-Z`, `a-z`, `0-9`, `.`, `_`, or `-`. Rendered reports and saved debug-link

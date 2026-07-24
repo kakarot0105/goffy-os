@@ -76,6 +76,7 @@ import dev.goffy.os.ocr.ForegroundOcrScanner
 import dev.goffy.os.qr.ForegroundQrScanner
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GitStatus
+import dev.goffy.os.protocol.GoffyRomChecklist
 import dev.goffy.os.protocol.GoffyRomStatus
 import dev.goffy.os.protocol.MacAppOpened
 import dev.goffy.os.protocol.MacAppsList
@@ -2376,6 +2377,57 @@ private fun TaskResult(result: ToolResultContent) {
                 overflow = TextOverflow.Ellipsis,
             )
             result.blockers.take(3).forEach { blocker ->
+                Text(
+                    text = "BLOCKER / $blocker",
+                    color = Mist,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = "NEXT / ${result.nextAction}",
+                color = Mist,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        is GoffyRomChecklist -> {
+            Text(
+                text = "ROM CHECKLIST / ${result.status.uppercase()}",
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = "${result.checklistStatus} / ${result.remainingStepCount} step(s) remain",
+                color = Signal,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "PROGRESS / ${result.doneStepCount} done / ${result.totalStepCount} total",
+                color = Mist,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            result.nextSteps.take(3).forEach { step ->
+                Text(
+                    text = "STEP ${step.stepIndex} / ${step.status} / ${step.title}",
+                    color = Mist,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            result.blockers.take(2).forEach { blocker ->
                 Text(
                     text = "BLOCKER / $blocker",
                     color = Mist,

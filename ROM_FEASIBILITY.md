@@ -159,15 +159,20 @@ The checklist is non-destructive. It consumes
 `.goffy-validation`, and explicitly blocks any unlock, DSU, flash, or boot
 decision from advancing before exact stock restore evidence exists.
 
-The phone can now ask the Hub for a bounded version of this local state through
-`goffy.rom.status`. In Android, use `Show GOFFY ROM status`, `Check GOFFY ROM
-status`, `Is GOFFY ROM ready?`, or `What are we building now?`. This route is
-read-only status reporting. It does not authorize or perform unlocking,
-rebooting, flashing, erasing, wiping, booting, or shell execution.
-The response includes explicit install-gate statuses for unlock eligibility,
-stock restore, official GSI evidence, DSU preflight, fastboot visibility, and
-destructive approval. The destructive approval field remains `WITHHELD`;
-`romReady` only means ready for manual ROM-0 review, not permission to install.
+The phone can now ask the Hub for bounded versions of this local state through
+`goffy.rom.status` and `goffy.rom.checklist`. In Android, use
+`Show GOFFY ROM status`, `Check GOFFY ROM status`, `Is GOFFY ROM ready?`, or
+`What are we building now?` for gate status, and use
+`Show GOFFY ROM checklist`, `What's left for the GOFFY ROM?`, or
+`What ROM-0 steps remain?` for operator next steps. These routes are read-only
+status reporting. They do not authorize or perform unlocking, rebooting,
+flashing, erasing, wiping, booting, or shell execution, and the checklist route
+does not expose raw artifact paths or safe command strings.
+The status response includes explicit install-gate statuses for unlock
+eligibility, stock restore, official GSI evidence, DSU preflight, fastboot
+visibility, and destructive approval. The destructive approval field remains
+`WITHHELD`; `romReady` only means ready for manual ROM-0 review, not permission
+to install.
 
 To regenerate only the manual bootloader visibility guide without rebooting the
 phone, run:
@@ -398,7 +403,8 @@ phone tools, foreground voice/camera/QR/OCR, disabled-by-default local intent
 fallback, ROM status, and charging dock awake behavior. Its validator blocks
 privileged authority, platform signing, ROM/system destructive actions,
 background camera/microphone, unreviewed Android permissions, unreviewed MCP
-tools, and unlock/flash/root/verity behavior. App-private memory forget tools
+tools, and unlock/flash/root/verity behavior. ROM status/checklist MCP entries
+are read-only metadata surfaces only. App-private memory forget tools
 are recorded separately as exact approval-gated GOFFY SQLite mutations, not ROM
 or phone-data deletion.
 It intentionally targets a non-privileged system app first:

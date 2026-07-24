@@ -1,6 +1,7 @@
 package dev.goffy.os.protocol
 
 const val GIT_STATUS_TOOL = "git.status"
+const val GOFFY_ROM_CHECKLIST_TOOL = "goffy.rom.checklist"
 const val GOFFY_ROM_STATUS_TOOL = "goffy.rom.status"
 const val MAC_APPS_LIST_TOOL = "mac.apps.list"
 const val MAC_APPS_OPEN_TOOL = "mac.apps.open"

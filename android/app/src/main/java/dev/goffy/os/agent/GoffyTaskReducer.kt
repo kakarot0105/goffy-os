@@ -4,6 +4,8 @@ import dev.goffy.os.protocol.ExecutionEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GOFFY_ROM_STATUS_TOOL
+import dev.goffy.os.protocol.GOFFY_ROM_CHECKLIST_TOOL
+import dev.goffy.os.protocol.GoffyRomChecklist
 import dev.goffy.os.protocol.GoffyRomStatus
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.MacAppOpened
@@ -517,6 +519,9 @@ data class TaskTimelineState(
     }
 
     private fun TaskTimelineEntry.acceptsContent(content: ToolResultContent): Boolean = when (toolName) {
+        GOFFY_ROM_CHECKLIST_TOOL -> executionTarget == ExecutionTarget.MAC &&
+            content is GoffyRomChecklist &&
+            content.matchesToolContract()
         GOFFY_ROM_STATUS_TOOL -> executionTarget == ExecutionTarget.MAC &&
             content is GoffyRomStatus &&
             content.matchesToolContract()
@@ -681,6 +686,7 @@ private fun LocalModelIntentObservation.nonExecutableSummary(): String = when (t
 private fun Float.displayConfidence(): String = String.format(Locale.US, "%.2f", this)
 
 private fun ToolResultContent.summaryText(): String = when (this) {
+    is GoffyRomChecklist -> goffyRomChecklistSummary()
     is GoffyRomStatus -> goffyRomStatusSummary()
     is GitStatus -> gitStatusSummary()
     is MacAppsList -> macAppsSummary()
@@ -713,6 +719,16 @@ private fun GoffyRomStatus.goffyRomStatusSummary(): String {
         "GOFFY ROM-0 is ready for manual readiness review only"
     } else {
         "GOFFY ROM-0 $installDecision: $blockerLabel remain; DSU $dsuPreflightGateStatus$staleLabel"
+    }
+}
+
+private fun GoffyRomChecklist.goffyRomChecklistSummary(): String {
+    val stepLabel = if (remainingStepCount == 1) "1 step" else "$remainingStepCount steps"
+    val blockerLabel = if (blockerCount == 1) "1 blocker" else "$blockerCount blockers"
+    return if (remainingStepCount == 0 && status == "available") {
+        "GOFFY ROM-0 checklist complete for manual review only"
+    } else {
+        "GOFFY ROM-0 checklist: $stepLabel remain; $blockerLabel; next $nextStepTitle"
     }
 }
 

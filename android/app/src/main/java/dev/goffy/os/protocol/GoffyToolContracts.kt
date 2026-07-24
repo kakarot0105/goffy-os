@@ -43,6 +43,43 @@ fun GoffyRomStatus.matchesToolContract(): Boolean =
         (romReady || installDecision == "BLOCKED") &&
         (romReady || blockerCount > 0)
 
+fun GoffyRomChecklist.matchesToolContract(): Boolean =
+        status in GOFFY_ROM_STATUS_VALUES &&
+        milestone == GOFFY_ROM_MILESTONE &&
+        generatedAt.isSafeRomStatusField(MAX_GOFFY_ROM_TIMESTAMP_LENGTH) &&
+        checklistStatus in GOFFY_ROM_CHECKLIST_STATUS_VALUES &&
+        destructiveActions == "withheld" &&
+        totalStepCount in 0..MAX_GOFFY_ROM_CHECKLIST_STEP_COUNT &&
+        doneStepCount in 0..totalStepCount &&
+        remainingStepCount == totalStepCount - doneStepCount &&
+        nextSteps.size <= MAX_GOFFY_ROM_CHECKLIST_STEPS &&
+        nextSteps.size <= remainingStepCount &&
+        (if (nextStepsTruncated) nextSteps.size < remainingStepCount else nextSteps.size == remainingStepCount) &&
+        nextSteps.all(GoffyRomChecklistStep::matchesToolContract) &&
+        nextSteps.map { it.stepIndex }.toSet().size == nextSteps.size &&
+        blockerCount in 0..MAX_GOFFY_ROM_BLOCKER_COUNT &&
+        blockers.size <= MAX_GOFFY_ROM_BLOCKERS &&
+        blockers.size <= blockerCount &&
+        (if (blockersTruncated) blockers.size < blockerCount else blockers.size == blockerCount) &&
+        blockers.all { it.isSafeRomStatusField(MAX_GOFFY_ROM_BLOCKER_LENGTH) } &&
+        nextStepTitle.isSafeRomStatusField(MAX_GOFFY_ROM_CHECKLIST_TITLE_LENGTH) &&
+        nextStepStatus in GOFFY_ROM_CHECKLIST_NEXT_STEP_STATUS_VALUES &&
+        nextAction.isSafeRomStatusField(MAX_GOFFY_ROM_NEXT_ACTION_LENGTH) &&
+        (status != "available" || checkedOperatorChecklist) &&
+        (status == "available" || !checkedOperatorChecklist) &&
+        (status != "available" || totalStepCount > 0) &&
+        (status != "available" || checklistStatus in GOFFY_ROM_CHECKLIST_AVAILABLE_STATUS_VALUES) &&
+        (status == "available" || checklistStatus !in GOFFY_ROM_CHECKLIST_AVAILABLE_STATUS_VALUES)
+
+fun GoffyRomChecklistStep.matchesToolContract(): Boolean =
+    stepIndex in 1..MAX_GOFFY_ROM_CHECKLIST_STEP_COUNT &&
+        title.isSafeRomStatusField(MAX_GOFFY_ROM_CHECKLIST_TITLE_LENGTH) &&
+        kind in GOFFY_ROM_CHECKLIST_STEP_KIND_VALUES &&
+        status in GOFFY_ROM_CHECKLIST_STEP_STATUS_VALUES &&
+        summary.isSafeRomStatusField(MAX_GOFFY_ROM_CHECKLIST_SUMMARY_LENGTH) &&
+        blockerCount in 0..MAX_GOFFY_ROM_CHECKLIST_STEP_COUNT &&
+        blocked == (status == "BLOCKED" || blockerCount > 0)
+
 fun PhoneBatteryStatus.matchesToolContract(): Boolean =
     levelPercent in MIN_BATTERY_PERCENT..MAX_BATTERY_PERCENT
 
@@ -424,9 +461,15 @@ private fun String.isSafeDisplayField(maximum: Int): Boolean =
 
 private fun String.isSafeRomStatusField(maximum: Int): Boolean =
     isSafeDisplayField(maximum) &&
-        !contains("/", ignoreCase = false) &&
-        !contains("\\", ignoreCase = false) &&
-        !contains("file://", ignoreCase = true)
+        !containsGoffyRomPathLikeText() &&
+        GOFFY_ROM_COMMAND_TEXT_PATTERNS.none { pattern -> pattern.containsMatchIn(this) }
+
+private fun String.containsGoffyRomPathLikeText(): Boolean {
+    if (contains("\\", ignoreCase = false) || contains("file://", ignoreCase = true)) {
+        return true
+    }
+    return GOFFY_ROM_SAFE_SLASH_TOKEN.replace(this, "").contains("/")
+}
 
 private const val MIN_BATTERY_PERCENT = 0
 private const val MAX_BATTERY_PERCENT = 100
@@ -440,8 +483,47 @@ const val MAX_GOFFY_ROM_BLOCKER_LENGTH = 160
 const val MAX_GOFFY_ROM_NEXT_ACTION_LENGTH = 192
 const val MAX_GOFFY_ROM_BLOCKER_COUNT = 10_000
 const val GOFFY_ROM_READY_STATUS = "READY_FOR_ROM0_READINESS_REVIEW"
+const val MAX_GOFFY_ROM_CHECKLIST_STEPS = 6
+const val MAX_GOFFY_ROM_CHECKLIST_STEP_COUNT = 100
+const val MAX_GOFFY_ROM_CHECKLIST_TITLE_LENGTH = 96
+const val MAX_GOFFY_ROM_CHECKLIST_KIND_LENGTH = 48
+const val MAX_GOFFY_ROM_CHECKLIST_SUMMARY_LENGTH = 192
 val GOFFY_ROM_STATUS_VALUES = setOf("available", "missing", "invalid")
 val GOFFY_ROM_INSTALL_DECISION_VALUES = setOf("BLOCKED", "READY_FOR_MANUAL_REVIEW")
+val GOFFY_ROM_CHECKLIST_AVAILABLE_STATUS_VALUES = setOf(
+    "BLOCKED_EVIDENCE",
+    GOFFY_ROM_READY_STATUS,
+)
+val GOFFY_ROM_CHECKLIST_STATUS_VALUES = GOFFY_ROM_CHECKLIST_AVAILABLE_STATUS_VALUES + setOf(
+    "MISSING",
+    "INVALID",
+)
+val GOFFY_ROM_CHECKLIST_STEP_STATUS_VALUES = setOf("DONE", "READY", "BLOCKED")
+val GOFFY_ROM_CHECKLIST_NEXT_STEP_STATUS_VALUES = GOFFY_ROM_CHECKLIST_STEP_STATUS_VALUES + setOf(
+    "MISSING",
+    "INVALID",
+)
+val GOFFY_ROM_CHECKLIST_STEP_KIND_VALUES = setOf(
+    "LOCAL_READ_ONLY",
+    "HUMAN_ONLY",
+    "TEMPLATE_ONLY",
+    "HUMAN_DECISION",
+)
+private val GOFFY_ROM_COMMAND_TEXT_PATTERNS = listOf(
+    Regex(
+        "\\b(?:adb|fastboot)\\s+" +
+            "(?:reboot|shell|sideload|push|install|uninstall|root|remount|" +
+            "disable-verity|enable-verity|flash|flashing|oem|erase|wipe|boot|getvar|devices)\\b",
+        RegexOption.IGNORE_CASE,
+    ),
+    Regex("\\b(?:avbctl|magisk)\\b", RegexOption.IGNORE_CASE),
+    Regex("\\b(?:sh|su|pm|cmd|am|rm|dd|mkfs)\\s+", RegexOption.IGNORE_CASE),
+    Regex("\\breboot\\s+(?:bootloader|fastboot|recovery)\\b", RegexOption.IGNORE_CASE),
+    Regex("\\bflash\\s+(?:boot|system|vendor|vbmeta|image)\\b", RegexOption.IGNORE_CASE),
+    Regex("\\bboot\\s+\\S+\\.img\\b", RegexOption.IGNORE_CASE),
+    Regex("\\bshell\\b", RegexOption.IGNORE_CASE),
+)
+private val GOFFY_ROM_SAFE_SLASH_TOKEN = Regex("\\b[A-Z0-9]{2,8}(?:/[A-Z0-9]{2,8})+\\b")
 private const val MAX_DEVICE_NAME_LENGTH = 128
 private const val MAX_ANDROID_RELEASE_LENGTH = 64
 private const val MIN_SUPPORTED_SDK = 26

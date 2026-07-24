@@ -919,6 +919,7 @@ def test_paired_credential_runs_websocket_and_mcp_tool_discovery(tmp_path: Path)
     assert process_websocket_response.payload["tools"][0]["name"] == "mac.processes.list"
     assert mcp_response.status_code == 200
     assert {tool["name"] for tool in mcp_response.json()["result"]["tools"]} == {
+        "goffy.rom.checklist",
         "goffy.rom.status",
         "mac.processes.list",
         "mac.system_info",

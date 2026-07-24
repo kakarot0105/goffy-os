@@ -16,6 +16,12 @@ class GoffyToolContractsTest {
         assertFalse(valid.copy(destructiveApprovalStatus = "APPROVED").matchesToolContract())
         assertFalse(valid.copy(installDecision = "INSTALL_NOW").matchesToolContract())
         assertFalse(valid.copy(dsuPreflightGateStatus = "/private/dsu").matchesToolContract())
+        assertTrue(
+            valid.copy(
+                blockers = listOf("DSU/GSI readiness evidence is missing"),
+                nextAction = "DSU/GSI readiness evidence is missing",
+            ).matchesToolContract(),
+        )
         assertFalse(valid.copy(romReady = true, blockerCount = 1).matchesToolContract())
         assertFalse(valid.copy(blockerCount = 0, blockers = emptyList()).matchesToolContract())
         assertFalse(
@@ -116,6 +122,63 @@ class GoffyToolContractsTest {
                     blockers = emptyList(),
                     nextAction = "Review ROM-0 readiness manually",
                 ).matchesToolContract(),
+        )
+    }
+
+    @Test
+    fun goffyRomChecklistContractRequiresBoundedNonAuthorizingMetadata() {
+        val valid = validRomChecklist()
+
+        assertTrue(valid.matchesToolContract())
+        assertFalse(valid.copy(status = "ready").matchesToolContract())
+        assertFalse(valid.copy(milestone = "ROM-1").matchesToolContract())
+        assertFalse(valid.copy(destructiveActions = "allowed").matchesToolContract())
+        assertFalse(valid.copy(totalStepCount = 101).matchesToolContract())
+        assertFalse(valid.copy(doneStepCount = 3).matchesToolContract())
+        assertFalse(valid.copy(remainingStepCount = 1).matchesToolContract())
+        assertFalse(valid.copy(nextStepsTruncated = false, remainingStepCount = 3).matchesToolContract())
+        assertFalse(valid.copy(blockerCount = 3, blockersTruncated = false).matchesToolContract())
+        assertFalse(valid.copy(nextStepTitle = "/Users/example/stock.zip").matchesToolContract())
+        assertFalse(valid.copy(nextStepTitle = "adb reboot bootloader now").matchesToolContract())
+        assertFalse(valid.copy(nextAction = "file:///Users/example/stock.zip").matchesToolContract())
+        assertFalse(valid.copy(nextAction = "Run fastboot flash boot boot.img next").matchesToolContract())
+        assertTrue(
+            valid.copy(
+                blockers = listOf("stock restore evidence must be recorded before DSU/GSI decisions advance"),
+            ).matchesToolContract(),
+        )
+        assertFalse(valid.copy(checklistStatus = "REBOOT_REQUIRED").matchesToolContract())
+        assertFalse(valid.copy(nextStepStatus = "REBOOT_REQUIRED").matchesToolContract())
+        assertFalse(valid.copy(status = "missing", checkedOperatorChecklist = true).matchesToolContract())
+        assertFalse(valid.copy(status = "available", checkedOperatorChecklist = false).matchesToolContract())
+        assertFalse(
+            valid.copy(totalStepCount = 0, doneStepCount = 0, remainingStepCount = 0, nextSteps = emptyList())
+                .matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                nextSteps = listOf(valid.nextSteps[0].copy(summary = "/private/stock.zip")),
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                nextSteps = listOf(valid.nextSteps[0].copy(summary = "Use shell to continue")),
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                nextSteps = listOf(valid.nextSteps[0].copy(kind = "ROOT_SHELL")),
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                nextSteps = listOf(valid.nextSteps[0].copy(status = "REBOOT_REQUIRED")),
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                nextSteps = listOf(valid.nextSteps[0].copy(status = "READY", blocked = true, blockerCount = 0)),
+            ).matchesToolContract(),
         )
     }
 
@@ -363,6 +426,45 @@ class GoffyToolContractsTest {
         nextAction = "exact stock restore evidence is missing",
         staleReport = false,
         checkedRefreshReport = true,
+        checkedOperatorChecklist = true,
+    )
+
+    private fun validRomChecklist(): GoffyRomChecklist = GoffyRomChecklist(
+        status = "available",
+        milestone = GOFFY_ROM_MILESTONE,
+        generatedAt = "2026-07-22T15:00:01Z",
+        checklistStatus = "BLOCKED_EVIDENCE",
+        destructiveActions = "withheld",
+        totalStepCount = 3,
+        doneStepCount = 1,
+        remainingStepCount = 2,
+        nextSteps = listOf(
+            GoffyRomChecklistStep(
+                stepIndex = 2,
+                title = "Record exact stock restore evidence",
+                kind = "HUMAN_ONLY",
+                status = "READY",
+                summary = "Record the official Motorola restore archive name and checksum.",
+                blocked = false,
+                blockerCount = 0,
+            ),
+            GoffyRomChecklistStep(
+                stepIndex = 3,
+                title = "Record read-only DSU preflight",
+                kind = "LOCAL_READ_ONLY",
+                status = "BLOCKED",
+                summary = "Check DSU prerequisites from local evidence only.",
+                blocked = true,
+                blockerCount = 1,
+            ),
+        ),
+        nextStepsTruncated = false,
+        blockerCount = 1,
+        blockers = listOf("exact stock restore evidence is missing"),
+        blockersTruncated = false,
+        nextStepTitle = "Record exact stock restore evidence",
+        nextStepStatus = "READY",
+        nextAction = "Complete Record exact stock restore evidence",
         checkedOperatorChecklist = true,
     )
 

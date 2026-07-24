@@ -214,9 +214,10 @@ network health probe or busy polling is used by the current default Mac tools.
 
 ## GOFFY ROM Status
 
-`goffy.rom.status` is enabled by default as a SAFE, read-only status tool. It
-reads only fixed ROM-0 validation artifact names under the configured GOFFY repo
-root: `.goffy-validation/rom-0-refresh-report.json` and optional
+`goffy.rom.status` and `goffy.rom.checklist` are enabled by default as SAFE,
+read-only ROM-0 tools. They read only fixed ROM-0 validation artifact names
+under the configured GOFFY repo root:
+`.goffy-validation/rom-0-refresh-report.json` and optional
 `.goffy-validation/rom-0-operator-checklist.json`. The default root is the Hub
 process working directory; override it only with an existing absolute directory:
 
@@ -224,12 +225,14 @@ process working directory; override it only with an existing absolute directory:
 export GOFFY_ROM_STATUS_ROOT="$HOME/Documents/GitHub/goffy-os"
 ```
 
-The tool returns bounded status, blocker count, visible blockers, stale-report
-state, and next action. It never accepts user-supplied paths, exposes raw
-artifact paths, executes shell commands, or grants unlock, reboot, flash, erase,
-wipe, boot, or shell authority. Missing, stale, malformed, or unsafe-display
-artifacts produce schema-valid blocked/missing/invalid status instead of a ready
-claim.
+The status tool returns bounded readiness gates, blocker count, visible
+blockers, stale-report state, and next action. The checklist tool returns only
+bounded step counts, safe next-step summaries, visible blockers, and next
+action. Neither tool accepts user-supplied paths, exposes raw artifact paths or
+safe command strings, executes shell commands, or grants unlock, reboot, flash,
+erase, wipe, boot, or shell authority. Missing, stale, malformed, or
+unsafe-display artifacts produce schema-valid blocked/missing/invalid status
+instead of a ready claim.
 
 ## Mac Process List
 

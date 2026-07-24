@@ -8,6 +8,9 @@ import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
+import dev.goffy.os.protocol.GOFFY_ROM_CHECKLIST_TOOL
+import dev.goffy.os.protocol.GoffyRomChecklist
+import dev.goffy.os.protocol.GoffyRomChecklistStep
 import dev.goffy.os.protocol.MAC_APPS_LIST_TOOL
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
@@ -345,6 +348,136 @@ class GoffySpeechTextTest {
         assertTrue(speechText.contains("clipboard returned bounded text"))
         assertTrue(speechText.contains("will not read clipboard contents aloud"))
         assertFalse(speechText.contains(secret))
+    }
+
+    @Test
+    fun goffyRomChecklistSpeechUsesOnlyBoundedNextStepMetadata() {
+        val state = GoffyUiState(
+            hubEndpoint = endpoint,
+            timeline = TaskTimelineState(
+                entries = listOf(
+                    entry(
+                        toolName = GOFFY_ROM_CHECKLIST_TOOL,
+                        target = ExecutionTarget.MAC,
+                        result = GoffyRomChecklist(
+                            status = "available",
+                            milestone = "ROM-0",
+                            generatedAt = "2026-07-22T15:00:01Z",
+                            checklistStatus = "BLOCKED_EVIDENCE",
+                            destructiveActions = "withheld",
+                            totalStepCount = 3,
+                            doneStepCount = 1,
+                            remainingStepCount = 2,
+                            nextSteps = listOf(
+                                GoffyRomChecklistStep(
+                                    stepIndex = 2,
+                                    title = "Record exact stock restore evidence",
+                                    kind = "HUMAN_ONLY",
+                                    status = "READY",
+                                    summary = "Record the official Motorola restore archive name and checksum.",
+                                    blocked = false,
+                                    blockerCount = 0,
+                                ),
+                            ),
+                            nextStepsTruncated = true,
+                            blockerCount = 1,
+                            blockers = listOf("exact stock restore evidence is missing"),
+                            blockersTruncated = false,
+                            nextStepTitle = "Record exact stock restore evidence",
+                            nextStepStatus = "READY",
+                            nextAction = "Complete Record exact stock restore evidence",
+                            checkedOperatorChecklist = true,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val speechText = requireNotNull(state.latestSpeakableText())
+
+        assertTrue(speechText.contains("2 steps remaining"))
+        assertTrue(speechText.contains("1 blockers"))
+        assertTrue(speechText.contains("Record exact stock restore evidence"))
+        assertTrue(speechText.contains("Destructive actions remain withheld"))
+        assertFalse(speechText.contains(".goffy-validation"))
+    }
+
+    @Test
+    fun goffyRomChecklistSpeechHidesCommandLikeNextStep() {
+        val state = GoffyUiState(
+            hubEndpoint = endpoint,
+            timeline = TaskTimelineState(
+                entries = listOf(
+                    entry(
+                        toolName = GOFFY_ROM_CHECKLIST_TOOL,
+                        target = ExecutionTarget.MAC,
+                        result = GoffyRomChecklist(
+                            status = "available",
+                            milestone = "ROM-0",
+                            generatedAt = "2026-07-22T15:00:01Z",
+                            checklistStatus = "BLOCKED_EVIDENCE",
+                            destructiveActions = "withheld",
+                            totalStepCount = 2,
+                            doneStepCount = 0,
+                            remainingStepCount = 2,
+                            nextSteps = emptyList(),
+                            nextStepsTruncated = true,
+                            blockerCount = 1,
+                            blockers = listOf("exact stock restore evidence is missing"),
+                            blockersTruncated = false,
+                            nextStepTitle = "adb reboot bootloader now",
+                            nextStepStatus = "READY",
+                            nextAction = "Complete next step",
+                            checkedOperatorChecklist = true,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val speechText = requireNotNull(state.latestSpeakableText())
+
+        assertTrue(speechText.contains("Next step is hidden"))
+        assertFalse(speechText.contains("adb reboot bootloader"))
+    }
+
+    @Test
+    fun goffyRomChecklistSpeechAllowsSafeAcronymSlashNextStep() {
+        val state = GoffyUiState(
+            hubEndpoint = endpoint,
+            timeline = TaskTimelineState(
+                entries = listOf(
+                    entry(
+                        toolName = GOFFY_ROM_CHECKLIST_TOOL,
+                        target = ExecutionTarget.MAC,
+                        result = GoffyRomChecklist(
+                            status = "available",
+                            milestone = "ROM-0",
+                            generatedAt = "2026-07-22T15:00:01Z",
+                            checklistStatus = "BLOCKED_EVIDENCE",
+                            destructiveActions = "withheld",
+                            totalStepCount = 2,
+                            doneStepCount = 0,
+                            remainingStepCount = 2,
+                            nextSteps = emptyList(),
+                            nextStepsTruncated = true,
+                            blockerCount = 1,
+                            blockers = listOf("DSU/GSI evidence is missing"),
+                            blockersTruncated = false,
+                            nextStepTitle = "Record DSU/GSI readiness evidence",
+                            nextStepStatus = "READY",
+                            nextAction = "Complete Record DSU/GSI readiness evidence",
+                            checkedOperatorChecklist = true,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val speechText = requireNotNull(state.latestSpeakableText())
+
+        assertTrue(speechText.contains("Record DSU/GSI readiness evidence"))
+        assertFalse(speechText.contains("Next step is hidden"))
     }
 
     @Test

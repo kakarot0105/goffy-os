@@ -47,6 +47,7 @@
 - [x] One-command ROM-0 refresh emits the operator checklist and status
 - [x] Android-visible `SAFE goffy.rom.status` route for read-only ROM-0 readiness status
 - [x] Android-visible ROM install-gate statuses with destructive approval withheld
+- [x] Android-visible `SAFE goffy.rom.checklist` route for bounded ROM-0 operator steps
 - [x] Machine-checked ROM-0 feature payload contract for GOFFY system-app insertion
 - [x] Redacted stock rollback draft generator bound to the current public Moto probe
 - [x] Read-only DSU preflight evidence helper for the official GSI-first path

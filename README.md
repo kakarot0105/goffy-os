@@ -136,8 +136,9 @@ the capability boundary.
   routing-quality gate
 - Reuse-first Task Text export-image audit evidence generator that consumes
   Trivy or Grype JSON and blocks critical, high, or medium findings
-- Read-only `SAFE goffy.rom.status` Hub/MCP tool plus Android routes for
-  `Show GOFFY ROM status` and `What are we building now?`
+- Read-only `SAFE goffy.rom.status` and `SAFE goffy.rom.checklist` Hub/MCP
+  tools plus Android routes for `Show GOFFY ROM status`,
+  `Show GOFFY ROM checklist`, and `What are we building now?`
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`
@@ -177,6 +178,9 @@ the capability boundary.
   status from fixed local GOFFY validation artifacts; it exposes no artifact
   paths and grants no unlock, reboot, flash, erase, wipe, boot, or shell
   authority
+- Default read-only `SAFE goffy.rom.checklist` tool for the bounded ROM-0
+  operator checklist; it exposes only counts, safe next-step metadata, and
+  visible blockers, with no raw paths, commands, or install authority
 - macOS-gated, allowlisted, read-only `SAFE mac.processes.list` tool for bounded running
   process metadata, including an Android `What's running on my Mac` route that
   does not request command lines, executable paths, environment variables, open
@@ -781,7 +785,8 @@ provided, types only an allowlisted MAC smoke command, and verifies a fresh
 visible task card. The default is `check my Mac status` for `mac.system_info`;
 the process-list route can be smoked with
 `--mac-command "What is running on my Mac"` for `mac.processes.list`, or
-`--mac-command "Show GOFFY ROM status"` for `goffy.rom.status`. The token
+`--mac-command "Show GOFFY ROM status"` for `goffy.rom.status`, or
+`--mac-command "Show GOFFY ROM checklist"` for `goffy.rom.checklist`. The token
 file contains the real raw bearer token; for ADB-safe entry it must be one line,
 24..120 characters, using only
 `A-Z`, `a-z`, `0-9`, `.`, `_`, or `-`. Rendered reports and saved debug-link
