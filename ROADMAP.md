@@ -36,6 +36,7 @@
 - [x] ROM-0 manual action packet emits probe-bound gate and validation commands
 - [x] ROM-0 stock restore evidence requires the official Motorola Software Fix source
 - [x] Offline official Google GSI candidate evidence verifier with SHA-256 matching
+- [x] Read-only official Android 16 GSI metadata freshness verifier
 - [x] ROM-0 readiness reporter requires non-authorizing official GSI candidate evidence
 - [x] One-command read-only ROM-0 refresh for current probe and manual action packet
 - [x] Read-only host fastboot evidence helper without reboot/unlock/flash authority

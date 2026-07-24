@@ -564,6 +564,17 @@ from Google's GSI release page, then run the offline verifier:
 Current selected Android 16 ARM64 candidate metadata, refreshed from Google's
 GSI release page on 2026-07-24:
 
+To check whether the committed candidate is still the current official Android
+16 ARM64 entry, run the read-only freshness verifier:
+
+```bash
+.venv/bin/python scripts/verify_rom_gsi_metadata_freshness.py
+```
+
+This verifier fetches only Google's release-page metadata. It does not download
+the GSI archive, accept license terms, install DSU, reboot, unlock, flash, or
+touch the phone.
+
 ```bash
 .venv/bin/python scripts/create_rom_gsi_candidate_evidence.py \
   --artifact /absolute/path/outside/repo/aosp_arm64-exp-CP11.251209.009.A1-14840729-59a822d9.zip \

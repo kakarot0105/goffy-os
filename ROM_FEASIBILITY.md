@@ -317,6 +317,16 @@ continue only after you personally accept them.
 Current selected Android 16 ARM64 candidate metadata, refreshed from Google's
 GSI release page on 2026-07-24:
 
+To detect stale committed metadata before any GSI evidence is recorded, run:
+
+```bash
+.venv/bin/python scripts/verify_rom_gsi_metadata_freshness.py
+```
+
+The freshness verifier reads only Google's release-page metadata. It does not
+download a GSI archive, accept license terms, invoke DSU, push files, reboot,
+unlock, flash, or touch the phone.
+
 ```bash
 .venv/bin/python scripts/create_rom_gsi_candidate_evidence.py \
   --artifact /absolute/path/outside/repo/aosp_arm64-exp-CP11.251209.009.A1-14840729-59a822d9.zip \

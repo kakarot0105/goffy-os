@@ -92,6 +92,7 @@ def python_steps(python: str) -> list[tuple[str, tuple[str, ...]]]:
         ("ROM system app", rom_system_app_command(python)),
         ("ROM product overlay", rom_product_overlay_command(python)),
         ("ROM feature payload", rom_feature_payload_command(python)),
+        ("ROM GSI metadata freshness", rom_gsi_metadata_freshness_command(python)),
         ("local intent router corpus", (python, "scripts/verify_local_intent_router_corpus.py")),
         ("local intent candidates", (python, "scripts/verify_local_intent_candidates.py")),
         ("TFLite Task Text dependency", tflite_task_text_dependency_command(python)),
@@ -110,6 +111,14 @@ def rom_product_overlay_command(python: str) -> tuple[str, ...]:
 
 def rom_feature_payload_command(python: str) -> tuple[str, ...]:
     return (python, "scripts/validate_rom_feature_payload.py")
+
+
+def rom_gsi_metadata_freshness_command(python: str) -> tuple[str, ...]:
+    return (
+        python,
+        "scripts/verify_rom_gsi_metadata_freshness.py",
+        "--allow-source-unavailable",
+    )
 
 
 def merged_manifest_security_command(python: str) -> tuple[str, ...]:
