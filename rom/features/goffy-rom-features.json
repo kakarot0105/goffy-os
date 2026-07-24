@@ -58,7 +58,12 @@
       "included_in_rom0": true,
       "source_module": "android/app/src/main/java/dev/goffy/os/hub",
       "execution_targets": ["MAC"],
-      "mcp_tools": ["mac.system_info", "goffy.rom.checklist", "goffy.rom.status"],
+      "mcp_tools": [
+        "mac.system_info",
+        "goffy.rom.checklist",
+        "goffy.rom.features",
+        "goffy.rom.status"
+      ],
       "android_permissions": ["android.permission.INTERNET"],
       "runtime_policy": "paired_loopback_identity_pinned_and_authenticated",
       "audit_policy": "hub_and_phone_operator_audit_visible",
@@ -144,7 +149,11 @@
       "included_in_rom0": true,
       "source_module": "hub/src/goffy_hub/tools/rom_status.py",
       "execution_targets": ["MAC"],
-      "mcp_tools": ["goffy.rom.checklist", "goffy.rom.status"],
+      "mcp_tools": [
+        "goffy.rom.checklist",
+        "goffy.rom.features",
+        "goffy.rom.status"
+      ],
       "android_permissions": [],
       "runtime_policy": "read_only_fixed_validation_artifacts",
       "audit_policy": "hub_operator_audit_visible",

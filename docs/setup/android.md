@@ -382,7 +382,9 @@ fresh visible task card. The default is `check my Mac status` for
 `--mac-command "What is running on my Mac"` for `mac.processes.list`, and the
 ROM-status route can be smoked with `--mac-command "Show GOFFY ROM status"` for
 `goffy.rom.status`, and the ROM checklist route can be smoked with
-`--mac-command "Show GOFFY ROM checklist"` for `goffy.rom.checklist`. The token
+`--mac-command "Show GOFFY ROM checklist"` for `goffy.rom.checklist`; the ROM
+feature-payload route can be smoked with
+`--mac-command "Show GOFFY ROM features"` for `goffy.rom.features`. The token
 file contains the real raw bearer token; for ADB-safe entry it must be one line,
 24..120 characters, using only
 `A-Z`, `a-z`, `0-9`, `.`, `_`, or `-`. Rendered reports and saved debug-link

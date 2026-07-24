@@ -6,6 +6,8 @@ import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GOFFY_ROM_STATUS_TOOL
 import dev.goffy.os.protocol.GOFFY_ROM_CHECKLIST_TOOL
 import dev.goffy.os.protocol.GoffyRomChecklist
+import dev.goffy.os.protocol.GOFFY_ROM_FEATURES_TOOL
+import dev.goffy.os.protocol.GoffyRomFeatures
 import dev.goffy.os.protocol.GoffyRomStatus
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.MacAppOpened
@@ -522,6 +524,9 @@ data class TaskTimelineState(
         GOFFY_ROM_CHECKLIST_TOOL -> executionTarget == ExecutionTarget.MAC &&
             content is GoffyRomChecklist &&
             content.matchesToolContract()
+        GOFFY_ROM_FEATURES_TOOL -> executionTarget == ExecutionTarget.MAC &&
+            content is GoffyRomFeatures &&
+            content.matchesToolContract()
         GOFFY_ROM_STATUS_TOOL -> executionTarget == ExecutionTarget.MAC &&
             content is GoffyRomStatus &&
             content.matchesToolContract()
@@ -687,6 +692,7 @@ private fun Float.displayConfidence(): String = String.format(Locale.US, "%.2f",
 
 private fun ToolResultContent.summaryText(): String = when (this) {
     is GoffyRomChecklist -> goffyRomChecklistSummary()
+    is GoffyRomFeatures -> goffyRomFeaturesSummary()
     is GoffyRomStatus -> goffyRomStatusSummary()
     is GitStatus -> gitStatusSummary()
     is MacAppsList -> macAppsSummary()
@@ -731,6 +737,10 @@ private fun GoffyRomChecklist.goffyRomChecklistSummary(): String {
         "GOFFY ROM-0 checklist: $stepLabel remain; $blockerLabel; next $nextStepTitle"
     }
 }
+
+private fun GoffyRomFeatures.goffyRomFeaturesSummary(): String =
+    "GOFFY ROM-0 features: $featureCount included; $mcpToolCount MCP tools; " +
+        "default $defaultPerformanceMode; destructive ROM actions withheld"
 
 private fun PhoneMemoryList.memoryListSummary(): String =
     if (count == 0) {

@@ -49,6 +49,7 @@
 - [x] Android-visible ROM install-gate statuses with destructive approval withheld
 - [x] Android-visible `SAFE goffy.rom.checklist` route for bounded ROM-0 operator steps
 - [x] Machine-checked ROM-0 feature payload contract for GOFFY system-app insertion
+- [x] Android-visible `SAFE goffy.rom.features` route for the bounded ROM-0 feature payload
 - [x] Redacted stock rollback draft generator bound to the current public Moto probe
 - [x] Read-only DSU preflight evidence helper for the official GSI-first path
 - [x] Android-visible DSU preflight gate in `SAFE goffy.rom.status`

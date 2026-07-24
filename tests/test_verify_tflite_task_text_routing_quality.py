@@ -22,9 +22,9 @@ def test_routing_quality_accepts_complete_eval_evidence(tmp_path: Path) -> None:
     assert report.schema_version == JSON_SCHEMA_VERSION
     assert report.ok
     assert report.status == "ACCEPTED"
-    assert report.expected_examples == 18
-    assert report.evaluated_examples == 18
-    assert report.correct_examples == 18
+    assert report.expected_examples == 19
+    assert report.evaluated_examples == 19
+    assert report.correct_examples == 19
     assert report.route_accuracy == 1.0
     assert report.unknown_rejection_rate == 1.0
 

@@ -80,6 +80,63 @@ fun GoffyRomChecklistStep.matchesToolContract(): Boolean =
         blockerCount in 0..MAX_GOFFY_ROM_CHECKLIST_STEP_COUNT &&
         blocked == (status == "BLOCKED" || blockerCount > 0)
 
+fun GoffyRomFeatures.matchesToolContract(): Boolean =
+    status in GOFFY_ROM_STATUS_VALUES &&
+        payloadName.isSafeRomStatusField(MAX_GOFFY_ROM_FEATURE_PAYLOAD_NAME_LENGTH) &&
+        targetStage == GOFFY_ROM_MILESTONE &&
+        defaultPerformanceMode == "GOFFY LITE" &&
+        !rom0Flashable &&
+        !privileged &&
+        !platformSigned &&
+        !romDestructiveActionsIncluded &&
+        requiresUserSelectedHome &&
+        localModelPolicy == GOFFY_ROM_LOCAL_MODEL_POLICY &&
+        destructiveActions == "withheld" &&
+        featureCount in 0..MAX_GOFFY_ROM_FEATURE_COUNT &&
+        features.size <= MAX_GOFFY_ROM_FEATURES &&
+        features.size <= featureCount &&
+        (if (featuresTruncated) features.size < featureCount else features.size == featureCount) &&
+        features.all(GoffyRomFeature::matchesToolContract) &&
+        features.map { it.featureIndex }.toSet().size == features.size &&
+        appPrivateDestructiveToolsIncluded == features.any { feature ->
+            feature.appPrivateDestructiveToolCount > 0
+        } &&
+        mcpToolCount in 0..MAX_GOFFY_ROM_FEATURE_COUNT &&
+        androidPermissionCount in 0..MAX_GOFFY_ROM_FEATURE_COUNT &&
+        blockedRomActionCount in 0..MAX_GOFFY_ROM_FEATURE_COUNT &&
+        blockedRomActions.size <= MAX_GOFFY_ROM_BLOCKED_ACTIONS &&
+        blockedRomActions.size <= blockedRomActionCount &&
+        (if (blockedRomActionsTruncated) {
+            blockedRomActions.size < blockedRomActionCount
+        } else {
+            blockedRomActions.size == blockedRomActionCount
+        }) &&
+        blockedRomActions.all { action -> action.matches(GOFFY_ROM_SAFE_IDENTIFIER) } &&
+        notes.size <= MAX_GOFFY_ROM_NOTES &&
+        notes.all { note -> note.isSafeRomStatusField(MAX_GOFFY_ROM_NOTE_LENGTH) } &&
+        (if (notesTruncated) notes.size < MAX_GOFFY_ROM_FEATURE_COUNT else true) &&
+        (status != "available" || checkedFeaturePayload) &&
+        (status == "available" || !checkedFeaturePayload) &&
+        (status != "available" || featureCount > 0)
+
+fun GoffyRomFeature.matchesToolContract(): Boolean =
+    featureIndex in 1..MAX_GOFFY_ROM_FEATURE_COUNT &&
+        title.isSafeRomStatusField(MAX_GOFFY_ROM_FEATURE_TITLE_LENGTH) &&
+        executionTargets.isNotEmpty() &&
+        executionTargets.size <= 3 &&
+        executionTargets.all { target -> target in GOFFY_ROM_FEATURE_EXECUTION_TARGET_VALUES } &&
+        mcpTools.size <= MAX_GOFFY_ROM_TOOLS_PER_FEATURE &&
+        mcpTools.size <= mcpToolCount &&
+        mcpTools.all { tool -> tool.matches(GOFFY_ROM_SAFE_TOOL_ID) } &&
+        mcpToolCount in 0..MAX_GOFFY_ROM_FEATURE_COUNT &&
+        androidPermissionCount in 0..MAX_GOFFY_ROM_FEATURE_COUNT &&
+        runtimePolicy.isSafeRomStatusField(MAX_GOFFY_ROM_RUNTIME_POLICY_LENGTH) &&
+        foregroundOnly &&
+        !backgroundAccess &&
+        !privilegedRequired &&
+        !romDestructiveAction &&
+        appPrivateDestructiveToolCount in 0..MAX_GOFFY_ROM_FEATURE_COUNT
+
 fun PhoneBatteryStatus.matchesToolContract(): Boolean =
     levelPercent in MIN_BATTERY_PERCENT..MAX_BATTERY_PERCENT
 
@@ -488,6 +545,20 @@ const val MAX_GOFFY_ROM_CHECKLIST_STEP_COUNT = 100
 const val MAX_GOFFY_ROM_CHECKLIST_TITLE_LENGTH = 96
 const val MAX_GOFFY_ROM_CHECKLIST_KIND_LENGTH = 48
 const val MAX_GOFFY_ROM_CHECKLIST_SUMMARY_LENGTH = 192
+const val MAX_GOFFY_ROM_FEATURES = 8
+const val MAX_GOFFY_ROM_FEATURE_COUNT = 100
+const val MAX_GOFFY_ROM_FEATURE_TITLE_LENGTH = 96
+const val MAX_GOFFY_ROM_FEATURE_PAYLOAD_NAME_LENGTH = 96
+const val MAX_GOFFY_ROM_RUNTIME_POLICY_LENGTH = 128
+const val MAX_GOFFY_ROM_TOOL_ID_LENGTH = 64
+const val MAX_GOFFY_ROM_TOOLS_PER_FEATURE = 12
+const val MAX_GOFFY_ROM_BLOCKED_ACTIONS = 12
+const val MAX_GOFFY_ROM_BLOCKED_ACTION_LENGTH = 64
+const val MAX_GOFFY_ROM_NOTES = 4
+const val MAX_GOFFY_ROM_NOTE_LENGTH = 160
+const val MAX_GOFFY_ROM_PERFORMANCE_MODE_LENGTH = 32
+const val MAX_GOFFY_ROM_POLICY_LENGTH = 96
+const val GOFFY_ROM_LOCAL_MODEL_POLICY = "disabled_by_default_observe_only"
 val GOFFY_ROM_STATUS_VALUES = setOf("available", "missing", "invalid")
 val GOFFY_ROM_INSTALL_DECISION_VALUES = setOf("BLOCKED", "READY_FOR_MANUAL_REVIEW")
 val GOFFY_ROM_CHECKLIST_AVAILABLE_STATUS_VALUES = setOf(
@@ -509,6 +580,7 @@ val GOFFY_ROM_CHECKLIST_STEP_KIND_VALUES = setOf(
     "TEMPLATE_ONLY",
     "HUMAN_DECISION",
 )
+val GOFFY_ROM_FEATURE_EXECUTION_TARGET_VALUES = setOf("PHONE", "MAC", "CLOUD")
 private val GOFFY_ROM_COMMAND_TEXT_PATTERNS = listOf(
     Regex(
         "\\b(?:adb|fastboot)\\s+" +
@@ -523,7 +595,11 @@ private val GOFFY_ROM_COMMAND_TEXT_PATTERNS = listOf(
     Regex("\\bboot\\s+\\S+\\.img\\b", RegexOption.IGNORE_CASE),
     Regex("\\bshell\\b", RegexOption.IGNORE_CASE),
 )
-private val GOFFY_ROM_SAFE_SLASH_TOKEN = Regex("\\b[A-Z0-9]{2,8}(?:/[A-Z0-9]{2,8})+\\b")
+private val GOFFY_ROM_SAFE_SLASH_TOKEN = Regex(
+    "\\b(?:[A-Z0-9]{2,8}(?:/[A-Z0-9]{2,8})+|home/system-app|app/default-launcher)\\b",
+)
+private val GOFFY_ROM_SAFE_IDENTIFIER = Regex("^[a-z][a-z0-9_]{1,63}$")
+private val GOFFY_ROM_SAFE_TOOL_ID = Regex("^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$")
 private const val MAX_DEVICE_NAME_LENGTH = 128
 private const val MAX_ANDROID_RELEASE_LENGTH = 64
 private const val MIN_SUPPORTED_SDK = 26

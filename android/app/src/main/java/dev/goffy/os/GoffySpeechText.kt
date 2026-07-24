@@ -4,6 +4,7 @@ import dev.goffy.os.agent.TaskPhase
 import dev.goffy.os.agent.TaskTimelineEntry
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GoffyRomChecklist
+import dev.goffy.os.protocol.GoffyRomFeatures
 import dev.goffy.os.protocol.GoffyRomStatus
 import dev.goffy.os.protocol.MacAppOpened
 import dev.goffy.os.protocol.MacAppsList
@@ -52,6 +53,7 @@ private fun ToolResultContent.speakableText(verified: Boolean): String =
                     "${stagedCount + unstagedCount + untrackedCount + conflictCount} changes."
             }
         is GoffyRomChecklist -> romChecklistSpeech()
+        is GoffyRomFeatures -> romFeaturesSpeech()
         is GoffyRomStatus -> romStatusSpeech()
         is MacClipboardRead -> clipboardSpeech()
         is MacAppsList ->
@@ -130,6 +132,19 @@ private fun GoffyRomChecklist.romChecklistSpeech(): String {
         "and $blockerCount blockers. " +
         safeNextStep +
         "Destructive actions remain withheld."
+}
+
+private fun GoffyRomFeatures.romFeaturesSpeech(): String {
+    val firstFeature = features.firstOrNull()?.title
+    val featureText = if (firstFeature != null && firstFeature.isSafeRomStatusSpeechText()) {
+        "First visible feature is $firstFeature. "
+    } else {
+        ""
+    }
+    return "GOFFY ROM zero feature payload is $status with $featureCount features, " +
+        "$mcpToolCount MCP tools, and default mode $defaultPerformanceMode. " +
+        featureText +
+        "Flashable, privileged, platform signing, and ROM destructive actions are withheld."
 }
 
 private fun String.isSafeRomStatusSpeechText(): Boolean =

@@ -22,12 +22,13 @@ def test_health_is_typed_and_minimal(client: TestClient) -> None:
         "status": "ok",
         "protocolVersion": PROTOCOL_VERSION,
         "toolAccess": "enabled",
-        "healthyToolCount": 4,
+        "healthyToolCount": 5,
         "unavailableToolCount": 0,
         "toolRegistryRevision": 1,
     }
     assert [tool.name for tool in cast(FastAPI, client.app).state.registry.describe()] == [
         "goffy.rom.checklist",
+        "goffy.rom.features",
         "goffy.rom.status",
         "mac.processes.list",
         "mac.system_info",
@@ -48,7 +49,7 @@ def test_health_counts_optional_mac_file_tools_when_roots_are_configured(tmp_pat
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["healthyToolCount"] == 6
+    assert response.json()["healthyToolCount"] == 7
     assert response.json()["unavailableToolCount"] == 0
 
 
@@ -68,7 +69,7 @@ def test_health_counts_optional_mac_app_catalog_when_configured(
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["healthyToolCount"] == 5
+    assert response.json()["healthyToolCount"] == 6
     assert response.json()["unavailableToolCount"] == 0
     assert "mac.apps.list" in [tool.name for tool in app.state.registry.describe()]
 
@@ -91,7 +92,7 @@ def test_health_counts_optional_mac_app_open_when_explicitly_enabled(
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["healthyToolCount"] == 6
+    assert response.json()["healthyToolCount"] == 7
     assert response.json()["unavailableToolCount"] == 0
     assert "mac.apps.open" in [tool.name for tool in app.state.registry.describe()]
 
@@ -116,10 +117,11 @@ def test_unhealthy_tool_is_removed_before_app_starts_serving(
         assert app.state.registry.is_sealed is True
         assert [tool.name for tool in app.state.registry.describe()] == [
             "goffy.rom.checklist",
+            "goffy.rom.features",
             "goffy.rom.status",
         ]
         assert response.json()["status"] == "degraded"
-        assert response.json()["healthyToolCount"] == 2
+        assert response.json()["healthyToolCount"] == 3
         assert response.json()["unavailableToolCount"] == 1
         assert response.json()["toolRegistryRevision"] == 1
 
@@ -147,10 +149,11 @@ def test_clipboard_tool_is_healthy_when_opt_in_provider_is_available(
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
-    assert response.json()["healthyToolCount"] == 5
+    assert response.json()["healthyToolCount"] == 6
     assert response.json()["unavailableToolCount"] == 0
     assert [tool.name for tool in app.state.registry.describe()] == [
         "goffy.rom.checklist",
+        "goffy.rom.features",
         "goffy.rom.status",
         "mac.clipboard.read",
         "mac.processes.list",
@@ -174,10 +177,11 @@ def test_clipboard_tool_is_unavailable_when_opt_in_provider_is_missing(
 
     assert response.status_code == 200
     assert response.json()["status"] == "degraded"
-    assert response.json()["healthyToolCount"] == 4
+    assert response.json()["healthyToolCount"] == 5
     assert response.json()["unavailableToolCount"] == 1
     assert [tool.name for tool in app.state.registry.describe()] == [
         "goffy.rom.checklist",
+        "goffy.rom.features",
         "goffy.rom.status",
         "mac.processes.list",
         "mac.system_info",

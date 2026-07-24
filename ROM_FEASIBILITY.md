@@ -160,14 +160,17 @@ The checklist is non-destructive. It consumes
 decision from advancing before exact stock restore evidence exists.
 
 The phone can now ask the Hub for bounded versions of this local state through
-`goffy.rom.status` and `goffy.rom.checklist`. In Android, use
+`goffy.rom.status`, `goffy.rom.checklist`, and `goffy.rom.features`. In Android, use
 `Show GOFFY ROM status`, `Check GOFFY ROM status`, `Is GOFFY ROM ready?`, or
 `What are we building now?` for gate status, and use
 `Show GOFFY ROM checklist`, `What's left for the GOFFY ROM?`, or
-`What ROM-0 steps remain?` for operator next steps. These routes are read-only
-status reporting. They do not authorize or perform unlocking, rebooting,
-flashing, erasing, wiping, booting, or shell execution, and the checklist route
-does not expose raw artifact paths or safe command strings.
+`What ROM-0 steps remain?` for operator next steps. Use
+`Show GOFFY ROM features`, `Explain ROM-0 payload`, or
+`What features are inserted into the GOFFY ROM?` for the bounded feature payload.
+These routes are read-only status reporting. They do not authorize or perform
+unlocking, rebooting, flashing, erasing, wiping, booting, or shell execution, and
+the checklist/features routes do not expose raw artifact paths or safe command
+strings.
 The status response includes explicit install-gate statuses for unlock
 eligibility, stock restore, official GSI evidence, DSU preflight, fastboot
 visibility, and destructive approval. The destructive approval field remains

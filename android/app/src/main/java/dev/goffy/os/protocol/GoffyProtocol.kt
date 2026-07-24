@@ -20,6 +20,7 @@ import kotlinx.serialization.json.put
 const val GOFFY_PROTOCOL_VERSION = "0.2.0"
 const val MCP_PROTOCOL_VERSION = "2025-11-25"
 const val GOFFY_ROM_CHECKLIST_TOOL_VERSION = "1.0.0"
+const val GOFFY_ROM_FEATURES_TOOL_VERSION = "1.0.0"
 const val GOFFY_ROM_STATUS_TOOL_VERSION = "1.0.0"
 const val MAC_SYSTEM_INFO_TOOL_VERSION = "1.0.0"
 const val MAC_FILES_LARGEST_TOOL_VERSION = "1.0.0"
@@ -185,6 +186,47 @@ data class GoffyRomChecklist(
     val nextStepStatus: String,
     val nextAction: String,
     val checkedOperatorChecklist: Boolean,
+) : ToolResultContent
+
+data class GoffyRomFeature(
+    val featureIndex: Int,
+    val title: String,
+    val executionTargets: List<String>,
+    val mcpTools: List<String>,
+    val mcpToolCount: Int,
+    val androidPermissionCount: Int,
+    val runtimePolicy: String,
+    val foregroundOnly: Boolean,
+    val backgroundAccess: Boolean,
+    val privilegedRequired: Boolean,
+    val romDestructiveAction: Boolean,
+    val appPrivateDestructiveToolCount: Int,
+)
+
+data class GoffyRomFeatures(
+    val status: String,
+    val payloadName: String,
+    val targetStage: String,
+    val defaultPerformanceMode: String,
+    val rom0Flashable: Boolean,
+    val privileged: Boolean,
+    val platformSigned: Boolean,
+    val romDestructiveActionsIncluded: Boolean,
+    val appPrivateDestructiveToolsIncluded: Boolean,
+    val requiresUserSelectedHome: Boolean,
+    val localModelPolicy: String,
+    val featureCount: Int,
+    val features: List<GoffyRomFeature>,
+    val featuresTruncated: Boolean,
+    val mcpToolCount: Int,
+    val androidPermissionCount: Int,
+    val blockedRomActionCount: Int,
+    val blockedRomActions: List<String>,
+    val blockedRomActionsTruncated: Boolean,
+    val notes: List<String>,
+    val notesTruncated: Boolean,
+    val destructiveActions: String,
+    val checkedFeaturePayload: Boolean,
 ) : ToolResultContent
 
 data class MacProcessesListArguments(
@@ -651,6 +693,12 @@ class GoffyProtocolCodec(
                 }
                 JsonObject(emptyMap())
             }
+            GOFFY_ROM_FEATURES_TOOL -> {
+                if (arguments !is NoToolArguments) {
+                    throw ProtocolException("goffy.rom.features does not accept arguments")
+                }
+                JsonObject(emptyMap())
+            }
             GOFFY_ROM_STATUS_TOOL -> {
                 if (arguments !is NoToolArguments) {
                     throw ProtocolException("goffy.rom.status does not accept arguments")
@@ -913,6 +961,10 @@ class GoffyProtocolCodec(
                 validateGoffyRomChecklistInputSchema(tool.requireObject("inputSchema"))
                 validateGoffyRomChecklistOutputSchema(tool.requireObject("outputSchema"))
             }
+            GOFFY_ROM_FEATURES_TOOL -> {
+                validateGoffyRomFeaturesInputSchema(tool.requireObject("inputSchema"))
+                validateGoffyRomFeaturesOutputSchema(tool.requireObject("outputSchema"))
+            }
             GOFFY_ROM_STATUS_TOOL -> {
                 validateGoffyRomStatusInputSchema(tool.requireObject("inputSchema"))
                 validateGoffyRomStatusOutputSchema(tool.requireObject("outputSchema"))
@@ -956,6 +1008,7 @@ class GoffyProtocolCodec(
         val toolVersion = metadata.requireString("dev.goffy/toolVersion")
         val expectedToolVersion = when (toolName) {
             GOFFY_ROM_CHECKLIST_TOOL -> GOFFY_ROM_CHECKLIST_TOOL_VERSION
+            GOFFY_ROM_FEATURES_TOOL -> GOFFY_ROM_FEATURES_TOOL_VERSION
             GOFFY_ROM_STATUS_TOOL -> GOFFY_ROM_STATUS_TOOL_VERSION
             MAC_SYSTEM_INFO_TOOL -> MAC_SYSTEM_INFO_TOOL_VERSION
             MAC_FILES_LARGEST_TOOL -> MAC_FILES_LARGEST_TOOL_VERSION
@@ -1026,6 +1079,12 @@ class GoffyProtocolCodec(
     }
 
     private fun validateGoffyRomChecklistInputSchema(schema: JsonObject) {
+        schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS)
+        validateObjectSchemaRoot(schema)
+        schema.requireObject("properties").requireKeys(emptySet())
+    }
+
+    private fun validateGoffyRomFeaturesInputSchema(schema: JsonObject) {
         schema.requireKeys(EMPTY_INPUT_SCHEMA_KEYS)
         validateObjectSchemaRoot(schema)
         schema.requireObject("properties").requireKeys(emptySet())
@@ -1244,6 +1303,171 @@ class GoffyProtocolCodec(
         validateGoffyRomChecklistStepDefinition(
             definitions.requireObject("GoffyRomChecklistStepOutput"),
         )
+    }
+
+    private fun validateGoffyRomFeaturesOutputSchema(schema: JsonObject) {
+        schema.requireKeys(OUTPUT_SCHEMA_KEYS + "\$defs")
+        validateObjectSchemaRoot(schema)
+        val properties = schema.requireObject("properties")
+        properties.requireKeys(GOFFY_ROM_FEATURES_OUTPUT_KEYS)
+        schema.requireArray("required").requireExactStrings(
+            GOFFY_ROM_FEATURES_OUTPUT_KEYS,
+            "ROM features required",
+        )
+
+        properties.requireObject("status").validateStringEnumSchema(
+            "status",
+            GOFFY_ROM_STATUS_VALUES,
+        )
+        properties.requireObject("payloadName").validateBoundedStringSchema(
+            "payloadName",
+            1,
+            MAX_GOFFY_ROM_FEATURE_PAYLOAD_NAME_LENGTH,
+        )
+        properties.requireObject("targetStage").validateConstStringSchema("targetStage", "ROM-0")
+        properties.requireObject("defaultPerformanceMode").validateConstStringSchema(
+            "defaultPerformanceMode",
+            "GOFFY LITE",
+        )
+        properties.requireObject("localModelPolicy").validateConstStringSchema(
+            "localModelPolicy",
+            GOFFY_ROM_LOCAL_MODEL_POLICY,
+        )
+        setOf(
+            "rom0Flashable",
+            "privileged",
+            "platformSigned",
+            "romDestructiveActionsIncluded",
+        ).forEach { field ->
+            properties.requireObject(field).validateConstBooleanSchema(field, false)
+        }
+        properties.requireObject("requiresUserSelectedHome").validateConstBooleanSchema(
+            "requiresUserSelectedHome",
+            true,
+        )
+        properties.requireObject("destructiveActions").validateConstStringSchema(
+            "destructiveActions",
+            "withheld",
+        )
+        properties.requireObject("appPrivateDestructiveToolsIncluded").requireTypeOnly("boolean")
+        properties.requireObject("features").also { features ->
+            features.requireKeys(ARRAY_REF_SCHEMA_KEYS + "maxItems")
+            features.requireType("array")
+            features.requireInt("maxItems").requireExactValue(
+                MAX_GOFFY_ROM_FEATURES,
+                "features maxItems",
+            )
+            features.requireObject("items").requireString("\$ref").requireExactString(
+                "#/\$defs/GoffyRomFeatureOutput",
+                "features ref",
+            )
+        }
+        properties.requireObject("blockedRomActions").also { actions ->
+            actions.requireKeys(ARRAY_STRING_SCHEMA_KEYS + "maxItems")
+            actions.requireType("array")
+            actions.requireInt("maxItems").requireExactValue(
+                MAX_GOFFY_ROM_BLOCKED_ACTIONS,
+                "blockedRomActions maxItems",
+            )
+            actions.requireObject("items").validateBoundedStringSchema(
+                "blockedRomAction",
+                1,
+                MAX_GOFFY_ROM_BLOCKED_ACTION_LENGTH,
+            )
+        }
+        properties.requireObject("notes").also { notes ->
+            notes.requireKeys(ARRAY_STRING_SCHEMA_KEYS + "maxItems")
+            notes.requireType("array")
+            notes.requireInt("maxItems").requireExactValue(MAX_GOFFY_ROM_NOTES, "notes maxItems")
+            notes.requireObject("items").validateBoundedStringSchema(
+                "note",
+                1,
+                MAX_GOFFY_ROM_NOTE_LENGTH,
+            )
+        }
+        setOf(
+            "featureCount",
+            "mcpToolCount",
+            "androidPermissionCount",
+            "blockedRomActionCount",
+        ).forEach { field ->
+            properties.requireObject(field).validateBoundedIntInclusiveSchema(
+                field,
+                0,
+                MAX_GOFFY_ROM_FEATURE_COUNT,
+            )
+        }
+        setOf(
+            "featuresTruncated",
+            "blockedRomActionsTruncated",
+            "notesTruncated",
+            "checkedFeaturePayload",
+        ).forEach { field ->
+            properties.requireObject(field).requireTypeOnly("boolean")
+        }
+
+        val definitions = schema.requireObject("\$defs")
+        definitions.requireKeys(setOf("GoffyRomFeatureOutput"))
+        validateGoffyRomFeatureDefinition(definitions.requireObject("GoffyRomFeatureOutput"))
+    }
+
+    private fun validateGoffyRomFeatureDefinition(definition: JsonObject) {
+        definition.requireKeys(OBJECT_DEFINITION_KEYS)
+        validateObjectSchemaRootWithoutDialect(definition)
+        val properties = definition.requireObject("properties")
+        properties.requireKeys(GOFFY_ROM_FEATURE_KEYS)
+        definition.requireArray("required").requireExactStrings(
+            GOFFY_ROM_FEATURE_KEYS,
+            "ROM feature required",
+        )
+        properties.requireObject("featureIndex").validateBoundedIntInclusiveSchema(
+            "featureIndex",
+            1,
+            MAX_GOFFY_ROM_FEATURE_COUNT,
+        )
+        properties.requireObject("title").validateBoundedStringSchema(
+            "title",
+            1,
+            MAX_GOFFY_ROM_FEATURE_TITLE_LENGTH,
+        )
+        properties.requireObject("executionTargets").also { targets ->
+            targets.requireKeys(ARRAY_STRING_SCHEMA_KEYS + "maxItems")
+            targets.requireType("array")
+            targets.requireInt("maxItems").requireExactValue(3, "executionTargets maxItems")
+            targets.requireObject("items").validateStringEnumSchema(
+                "executionTarget",
+                GOFFY_ROM_FEATURE_EXECUTION_TARGET_VALUES,
+            )
+        }
+        properties.requireObject("mcpTools").also { tools ->
+            tools.requireKeys(ARRAY_STRING_SCHEMA_KEYS + "maxItems")
+            tools.requireType("array")
+            tools.requireInt("maxItems").requireExactValue(
+                MAX_GOFFY_ROM_TOOLS_PER_FEATURE,
+                "mcpTools maxItems",
+            )
+            tools.requireObject("items").validateBoundedStringSchema(
+                "mcpTool",
+                1,
+                MAX_GOFFY_ROM_TOOL_ID_LENGTH,
+            )
+        }
+        properties.requireObject("runtimePolicy").validateBoundedStringSchema(
+            "runtimePolicy",
+            1,
+            MAX_GOFFY_ROM_RUNTIME_POLICY_LENGTH,
+        )
+        setOf("mcpToolCount", "androidPermissionCount", "appPrivateDestructiveToolCount").forEach { field ->
+            properties.requireObject(field).validateBoundedIntInclusiveSchema(
+                field,
+                0,
+                MAX_GOFFY_ROM_FEATURE_COUNT,
+            )
+        }
+        properties.requireObject("foregroundOnly").validateConstBooleanSchema("foregroundOnly", true)
+        setOf("backgroundAccess", "privilegedRequired", "romDestructiveAction").forEach { field ->
+            properties.requireObject(field).validateConstBooleanSchema(field, false)
+        }
     }
 
     private fun validateGoffyRomChecklistStepDefinition(definition: JsonObject) {
@@ -2022,6 +2246,12 @@ class GoffyProtocolCodec(
                 }
                 decodeGoffyRomChecklist(content)
             }
+            GOFFY_ROM_FEATURES_TOOL -> {
+                if (target != ExecutionTarget.MAC) {
+                    throw ProtocolException("goffy.rom.features returned an unexpected execution target")
+                }
+                decodeGoffyRomFeatures(content)
+            }
             GOFFY_ROM_STATUS_TOOL -> {
                 if (target != ExecutionTarget.MAC) {
                     throw ProtocolException("goffy.rom.status returned an unexpected execution target")
@@ -2279,6 +2509,157 @@ class GoffyProtocolCodec(
             throw ProtocolException("ROM checklist result failed local policy")
         }
         return result
+    }
+
+    private fun decodeGoffyRomFeatures(content: JsonObject): GoffyRomFeatures {
+        content.requireKeys(GOFFY_ROM_FEATURES_OUTPUT_KEYS)
+        val status = content.requireString("status").also { value ->
+            if (value !in GOFFY_ROM_STATUS_VALUES) {
+                throw ProtocolException("unsupported ROM features status")
+            }
+        }
+        val features = content.requireArray("features").boundedObjects(
+            MAX_GOFFY_ROM_FEATURES,
+            "ROM features",
+            ::decodeGoffyRomFeature,
+        )
+        val blockedActions = content.requireArray("blockedRomActions").map { element ->
+            val action = element.stringValueOrNull()
+                ?: throw ProtocolException("ROM blocked actions must be strings")
+            requireBounded("blockedRomAction", action, 1, MAX_GOFFY_ROM_BLOCKED_ACTION_LENGTH)
+            action
+        }
+        if (blockedActions.size > MAX_GOFFY_ROM_BLOCKED_ACTIONS) {
+            throw ProtocolException("ROM features has too many blocked actions")
+        }
+        val notes = content.requireArray("notes").map { element ->
+            val note = element.stringValueOrNull()
+                ?: throw ProtocolException("ROM feature notes must be strings")
+            requireBounded("note", note, 1, MAX_GOFFY_ROM_NOTE_LENGTH)
+            note
+        }
+        if (notes.size > MAX_GOFFY_ROM_NOTES) {
+            throw ProtocolException("ROM features has too many notes")
+        }
+        val result = GoffyRomFeatures(
+            status = status,
+            payloadName = content.requireBoundedString(
+                "payloadName",
+                1,
+                MAX_GOFFY_ROM_FEATURE_PAYLOAD_NAME_LENGTH,
+            ),
+            targetStage = content.requireBoundedString("targetStage", 1, GOFFY_ROM_MILESTONE.length),
+            defaultPerformanceMode = content.requireBoundedString(
+                "defaultPerformanceMode",
+                1,
+                MAX_GOFFY_ROM_PERFORMANCE_MODE_LENGTH,
+            ),
+            rom0Flashable = content.requireBoolean("rom0Flashable"),
+            privileged = content.requireBoolean("privileged"),
+            platformSigned = content.requireBoolean("platformSigned"),
+            romDestructiveActionsIncluded = content.requireBoolean("romDestructiveActionsIncluded"),
+            appPrivateDestructiveToolsIncluded = content.requireBoolean(
+                "appPrivateDestructiveToolsIncluded",
+            ),
+            requiresUserSelectedHome = content.requireBoolean("requiresUserSelectedHome"),
+            localModelPolicy = content.requireBoundedString(
+                "localModelPolicy",
+                1,
+                MAX_GOFFY_ROM_POLICY_LENGTH,
+            ),
+            featureCount = content.requireBoundedInt(
+                "featureCount",
+                0,
+                MAX_GOFFY_ROM_FEATURE_COUNT,
+            ),
+            features = features,
+            featuresTruncated = content.requireBoolean("featuresTruncated"),
+            mcpToolCount = content.requireBoundedInt(
+                "mcpToolCount",
+                0,
+                MAX_GOFFY_ROM_FEATURE_COUNT,
+            ),
+            androidPermissionCount = content.requireBoundedInt(
+                "androidPermissionCount",
+                0,
+                MAX_GOFFY_ROM_FEATURE_COUNT,
+            ),
+            blockedRomActionCount = content.requireBoundedInt(
+                "blockedRomActionCount",
+                0,
+                MAX_GOFFY_ROM_FEATURE_COUNT,
+            ),
+            blockedRomActions = blockedActions,
+            blockedRomActionsTruncated = content.requireBoolean("blockedRomActionsTruncated"),
+            notes = notes,
+            notesTruncated = content.requireBoolean("notesTruncated"),
+            destructiveActions = content.requireBoundedString("destructiveActions", 1, 16),
+            checkedFeaturePayload = content.requireBoolean("checkedFeaturePayload"),
+        )
+        if (!result.matchesToolContract()) {
+            throw ProtocolException("ROM features result failed local policy")
+        }
+        return result
+    }
+
+    private fun decodeGoffyRomFeature(content: JsonObject): GoffyRomFeature {
+        content.requireKeys(GOFFY_ROM_FEATURE_KEYS)
+        val executionTargets = content.requireArray("executionTargets").map { element ->
+            val target = element.stringValueOrNull()
+                ?: throw ProtocolException("ROM feature execution targets must be strings")
+            requireBounded("executionTarget", target, 1, 8)
+            target
+        }
+        if (executionTargets.size > 3) {
+            throw ProtocolException("ROM feature has too many execution targets")
+        }
+        val mcpTools = content.requireArray("mcpTools").map { element ->
+            val tool = element.stringValueOrNull()
+                ?: throw ProtocolException("ROM feature MCP tools must be strings")
+            requireBounded("mcpTool", tool, 1, MAX_GOFFY_ROM_TOOL_ID_LENGTH)
+            tool
+        }
+        if (mcpTools.size > MAX_GOFFY_ROM_TOOLS_PER_FEATURE) {
+            throw ProtocolException("ROM feature has too many MCP tools")
+        }
+        return GoffyRomFeature(
+            featureIndex = content.requireBoundedInt(
+                "featureIndex",
+                1,
+                MAX_GOFFY_ROM_FEATURE_COUNT,
+            ),
+            title = content.requireBoundedString(
+                "title",
+                1,
+                MAX_GOFFY_ROM_FEATURE_TITLE_LENGTH,
+            ),
+            executionTargets = executionTargets,
+            mcpTools = mcpTools,
+            mcpToolCount = content.requireBoundedInt(
+                "mcpToolCount",
+                0,
+                MAX_GOFFY_ROM_FEATURE_COUNT,
+            ),
+            androidPermissionCount = content.requireBoundedInt(
+                "androidPermissionCount",
+                0,
+                MAX_GOFFY_ROM_FEATURE_COUNT,
+            ),
+            runtimePolicy = content.requireBoundedString(
+                "runtimePolicy",
+                1,
+                MAX_GOFFY_ROM_RUNTIME_POLICY_LENGTH,
+            ),
+            foregroundOnly = content.requireBoolean("foregroundOnly"),
+            backgroundAccess = content.requireBoolean("backgroundAccess"),
+            privilegedRequired = content.requireBoolean("privilegedRequired"),
+            romDestructiveAction = content.requireBoolean("romDestructiveAction"),
+            appPrivateDestructiveToolCount = content.requireBoundedInt(
+                "appPrivateDestructiveToolCount",
+                0,
+                MAX_GOFFY_ROM_FEATURE_COUNT,
+            ),
+        )
     }
 
     private fun decodeGoffyRomChecklistStep(content: JsonObject): GoffyRomChecklistStep {
@@ -2791,6 +3172,20 @@ private fun JsonObject.validateStringEnumSchema(field: String, expected: Set<Str
     requireArray("enum").requireExactStrings(expected, "$field enum")
 }
 
+private fun JsonObject.validateConstStringSchema(field: String, expected: String) {
+    requireKeys(setOf("const", "type"))
+    requireType("string")
+    requireString("const").requireExactString(expected, "$field const")
+}
+
+private fun JsonObject.validateConstBooleanSchema(field: String, expected: Boolean) {
+    requireKeys(setOf("const", "type"))
+    requireType("boolean")
+    if (requireBoolean("const") != expected) {
+        throw ProtocolException("$field const does not match the local contract")
+    }
+}
+
 private fun JsonObject.validateBoundedIntegerSchema(field: String, minimum: Int, exclusiveMaximum: Int) {
     requireKeys(INTEGER_BOUNDED_SCHEMA_KEYS + "exclusiveMaximum")
     requireType("integer")
@@ -3048,6 +3443,45 @@ private val GOFFY_ROM_CHECKLIST_STEP_KEYS = setOf(
     "summary",
     "blocked",
     "blockerCount",
+)
+private val GOFFY_ROM_FEATURES_OUTPUT_KEYS = setOf(
+    "status",
+    "payloadName",
+    "targetStage",
+    "defaultPerformanceMode",
+    "rom0Flashable",
+    "privileged",
+    "platformSigned",
+    "romDestructiveActionsIncluded",
+    "appPrivateDestructiveToolsIncluded",
+    "requiresUserSelectedHome",
+    "localModelPolicy",
+    "featureCount",
+    "features",
+    "featuresTruncated",
+    "mcpToolCount",
+    "androidPermissionCount",
+    "blockedRomActionCount",
+    "blockedRomActions",
+    "blockedRomActionsTruncated",
+    "notes",
+    "notesTruncated",
+    "destructiveActions",
+    "checkedFeaturePayload",
+)
+private val GOFFY_ROM_FEATURE_KEYS = setOf(
+    "featureIndex",
+    "title",
+    "executionTargets",
+    "mcpTools",
+    "mcpToolCount",
+    "androidPermissionCount",
+    "runtimePolicy",
+    "foregroundOnly",
+    "backgroundAccess",
+    "privilegedRequired",
+    "romDestructiveAction",
+    "appPrivateDestructiveToolCount",
 )
 private val SYSTEM_INFO_KEYS = setOf("status", "operatingSystem", "architecture")
 private val MAC_FILES_LIST_INPUT_KEYS = setOf(

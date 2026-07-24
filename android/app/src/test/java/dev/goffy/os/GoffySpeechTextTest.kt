@@ -9,8 +9,11 @@ import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
 import dev.goffy.os.protocol.GitStatusChange
 import dev.goffy.os.protocol.GOFFY_ROM_CHECKLIST_TOOL
+import dev.goffy.os.protocol.GOFFY_ROM_FEATURES_TOOL
 import dev.goffy.os.protocol.GoffyRomChecklist
 import dev.goffy.os.protocol.GoffyRomChecklistStep
+import dev.goffy.os.protocol.GoffyRomFeature
+import dev.goffy.os.protocol.GoffyRomFeatures
 import dev.goffy.os.protocol.MAC_APPS_LIST_TOOL
 import dev.goffy.os.protocol.MAC_CLIPBOARD_READ_TOOL
 import dev.goffy.os.protocol.MAC_FILES_LARGEST_TOOL
@@ -478,6 +481,69 @@ class GoffySpeechTextTest {
 
         assertTrue(speechText.contains("Record DSU/GSI readiness evidence"))
         assertFalse(speechText.contains("Next step is hidden"))
+    }
+
+    @Test
+    fun goffyRomFeaturesSpeechSummarizesPolicyWithoutPaths() {
+        val state = GoffyUiState(
+            hubEndpoint = endpoint,
+            timeline = TaskTimelineState(
+                entries = listOf(
+                    entry(
+                        toolName = GOFFY_ROM_FEATURES_TOOL,
+                        target = ExecutionTarget.MAC,
+                        result = GoffyRomFeatures(
+                            status = "available",
+                            payloadName = "GOFFY ROM-0 Jarvis Payload",
+                            targetStage = "ROM-0",
+                            defaultPerformanceMode = "GOFFY LITE",
+                            rom0Flashable = false,
+                            privileged = false,
+                            platformSigned = false,
+                            romDestructiveActionsIncluded = false,
+                            appPrivateDestructiveToolsIncluded = false,
+                            requiresUserSelectedHome = true,
+                            localModelPolicy = "disabled_by_default_observe_only",
+                            featureCount = 1,
+                            features = listOf(
+                                GoffyRomFeature(
+                                    featureIndex = 1,
+                                    title = "GOFFY Home Surface",
+                                    executionTargets = listOf("PHONE"),
+                                    mcpTools = listOf("phone.device.info"),
+                                    mcpToolCount = 1,
+                                    androidPermissionCount = 0,
+                                    runtimePolicy = "user selected home with no privileged authority",
+                                    foregroundOnly = true,
+                                    backgroundAccess = false,
+                                    privilegedRequired = false,
+                                    romDestructiveAction = false,
+                                    appPrivateDestructiveToolCount = 0,
+                                ),
+                            ),
+                            featuresTruncated = false,
+                            mcpToolCount = 1,
+                            androidPermissionCount = 0,
+                            blockedRomActionCount = 2,
+                            blockedRomActions = listOf("unlock_bootloader", "flash_image"),
+                            blockedRomActionsTruncated = false,
+                            notes = listOf("ROM-0 inserts GOFFY as a safe home payload."),
+                            notesTruncated = false,
+                            destructiveActions = "withheld",
+                            checkedFeaturePayload = true,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val speechText = requireNotNull(state.latestSpeakableText())
+
+        assertTrue(speechText.contains("1 features"))
+        assertTrue(speechText.contains("GOFFY LITE"))
+        assertTrue(speechText.contains("GOFFY Home Surface"))
+        assertTrue(speechText.contains("destructive actions are withheld"))
+        assertFalse(speechText.contains("android/app/src"))
     }
 
     @Test

@@ -319,6 +319,21 @@ class GoffyProtocolCodecTest {
     }
 
     @Test
+    fun createsVersionedGoffyRomFeaturesInvocationWithoutArguments() {
+        val request = codec.createToolInvocation("android-test", "goffy.rom.features")
+
+        assertEquals(messageId, request.messageId)
+        assertEquals("goffy.rom.features", request.toolName)
+        assertEquals(
+            "{\"protocolVersion\":\"0.2.0\",\"messageId\":\"11111111-1111-4111-8111-111111111111\"," +
+                "\"timestamp\":\"2026-07-13T16:00:00Z\",\"deviceId\":\"android-test\"," +
+                "\"messageType\":\"ToolInvocation\",\"payload\":{\"toolName\":\"goffy.rom.features\"," +
+                "\"arguments\":{}},\"correlationId\":null}",
+            request.encodedMessage,
+        )
+    }
+
+    @Test
     fun decodesOnlyTheCompatibleLocallyKnownCapability() {
         val response = codec.decodeCapabilityDiscovery(
             capabilityEnvelope(),
@@ -369,6 +384,26 @@ class GoffyProtocolCodecTest {
         assertEquals(
             DiscoveredToolCapability(
                 name = "goffy.rom.checklist",
+                toolVersion = "1.0.0",
+                executionTarget = ExecutionTarget.MAC,
+                permission = "SAFE",
+                timeoutMillis = 3_000,
+            ),
+            response.capability,
+        )
+    }
+
+    @Test
+    fun decodesCompatibleGoffyRomFeaturesCapability() {
+        val response = codec.decodeCapabilityDiscovery(
+            capabilityEnvelope(goffyRomFeaturesCapabilityTool()),
+            discoveryMessageId,
+            "goffy.rom.features",
+        ) as CapabilityDiscoveryMessage.Response
+
+        assertEquals(
+            DiscoveredToolCapability(
+                name = "goffy.rom.features",
                 toolVersion = "1.0.0",
                 executionTarget = ExecutionTarget.MAC,
                 permission = "SAFE",
@@ -721,6 +756,30 @@ class GoffyProtocolCodecTest {
     }
 
     @Test
+    fun decodesStructuredGoffyRomFeaturesResult() {
+        val event = codec.decodeEvent(
+            goffyRomFeaturesResultEnvelope(),
+            expectedCorrelationId = messageId,
+            expectedToolName = "goffy.rom.features",
+        )
+
+        assertTrue(event is ExecutionEvent.Result)
+        val result = event as ExecutionEvent.Result
+        val content = result.content as GoffyRomFeatures
+        assertEquals(ExecutionTarget.MAC, result.executionTarget)
+        assertEquals("GOFFY ROM-0 Jarvis Payload", content.payloadName)
+        assertEquals("ROM-0", content.targetStage)
+        assertEquals("GOFFY LITE", content.defaultPerformanceMode)
+        assertFalse(content.rom0Flashable)
+        assertFalse(content.privileged)
+        assertFalse(content.platformSigned)
+        assertFalse(content.romDestructiveActionsIncluded)
+        assertEquals(2, content.featureCount)
+        assertEquals("GOFFY Home Surface", content.features[0].title)
+        assertEquals(listOf("unlock_bootloader", "flash_image"), content.blockedRomActions)
+    }
+
+    @Test
     fun decodesStructuredMacFilesListResult() {
         val event = codec.decodeEvent(
             macFilesResultEnvelope(),
@@ -865,6 +924,24 @@ class GoffyProtocolCodecTest {
 
         assertThrows(ProtocolException::class.java) {
             codec.decodeEvent(raw, messageId, "goffy.rom.checklist")
+        }
+    }
+
+    @Test
+    fun rejectsGoffyRomFeaturesPathLikeTitle() {
+        val raw = goffyRomFeaturesResultEnvelope().replace("GOFFY Home Surface", "/Users/example/private")
+
+        assertThrows(ProtocolException::class.java) {
+            codec.decodeEvent(raw, messageId, "goffy.rom.features")
+        }
+    }
+
+    @Test
+    fun rejectsGoffyRomFeaturesPrivilegedClaim() {
+        val raw = goffyRomFeaturesResultEnvelope().replace("\"privileged\":false", "\"privileged\":true")
+
+        assertThrows(ProtocolException::class.java) {
+            codec.decodeEvent(raw, messageId, "goffy.rom.features")
         }
     }
 
@@ -1018,6 +1095,9 @@ class GoffyProtocolCodecTest {
     private fun goffyRomChecklistResultEnvelope(): String =
         """{"protocolVersion":"0.2.0","messageId":"33333333-3333-4333-8333-333333333333","timestamp":"2026-07-13T16:00:01Z","deviceId":"goffy-hub","messageType":"ToolResult","payload":{"toolName":"goffy.rom.checklist","executionTarget":"MAC","structuredContent":{"status":"available","milestone":"ROM-0","generatedAt":"2026-07-22T15:00:01Z","checklistStatus":"BLOCKED_EVIDENCE","destructiveActions":"withheld","totalStepCount":3,"doneStepCount":1,"remainingStepCount":2,"nextSteps":[{"stepIndex":2,"title":"Record exact stock restore evidence","kind":"HUMAN_ONLY","status":"READY","summary":"Record the official Motorola restore archive name and checksum.","blocked":false,"blockerCount":0},{"stepIndex":3,"title":"Record read-only DSU preflight","kind":"LOCAL_READ_ONLY","status":"BLOCKED","summary":"Check DSU prerequisites from local evidence only.","blocked":true,"blockerCount":1}],"nextStepsTruncated":false,"blockerCount":1,"blockers":["exact stock restore evidence is missing"],"blockersTruncated":false,"nextStepTitle":"Record exact stock restore evidence","nextStepStatus":"READY","nextAction":"Complete Record exact stock restore evidence","checkedOperatorChecklist":true}},"correlationId":"$messageId"}"""
 
+    private fun goffyRomFeaturesResultEnvelope(): String =
+        """{"protocolVersion":"0.2.0","messageId":"33333333-3333-4333-8333-333333333333","timestamp":"2026-07-13T16:00:01Z","deviceId":"goffy-hub","messageType":"ToolResult","payload":{"toolName":"goffy.rom.features","executionTarget":"MAC","structuredContent":{"status":"available","payloadName":"GOFFY ROM-0 Jarvis Payload","targetStage":"ROM-0","defaultPerformanceMode":"GOFFY LITE","rom0Flashable":false,"privileged":false,"platformSigned":false,"romDestructiveActionsIncluded":false,"appPrivateDestructiveToolsIncluded":false,"requiresUserSelectedHome":true,"localModelPolicy":"disabled_by_default_observe_only","featureCount":2,"features":[{"featureIndex":1,"title":"GOFFY Home Surface","executionTargets":["PHONE"],"mcpTools":["phone.device.info"],"mcpToolCount":1,"androidPermissionCount":0,"runtimePolicy":"user selected home with no privileged authority","foregroundOnly":true,"backgroundAccess":false,"privilegedRequired":false,"romDestructiveAction":false,"appPrivateDestructiveToolCount":0},{"featureIndex":2,"title":"GOFFY ROM Status","executionTargets":["MAC"],"mcpTools":["goffy.rom.status","goffy.rom.features"],"mcpToolCount":2,"androidPermissionCount":0,"runtimePolicy":"read only fixed validation artifacts","foregroundOnly":true,"backgroundAccess":false,"privilegedRequired":false,"romDestructiveAction":false,"appPrivateDestructiveToolCount":0}],"featuresTruncated":false,"mcpToolCount":3,"androidPermissionCount":0,"blockedRomActionCount":2,"blockedRomActions":["unlock_bootloader","flash_image"],"blockedRomActionsTruncated":false,"notes":["ROM-0 inserts GOFFY as a safe home payload."],"notesTruncated":false,"destructiveActions":"withheld","checkedFeaturePayload":true}},"correlationId":"$messageId"}"""
+
     private fun macFilesResultEnvelope(): String =
         """{"protocolVersion":"0.2.0","messageId":"33333333-3333-4333-8333-333333333333","timestamp":"2026-07-13T16:00:01Z","deviceId":"goffy-hub","messageType":"ToolResult","payload":{"toolName":"mac.files.list","executionTarget":"MAC","structuredContent":{"status":"available","rootIndex":0,"rootName":"goffy","relativePath":"","truncated":false,"approvedRoots":[{"rootIndex":0,"name":"goffy"}],"entries":[{"name":"README.md","nameTruncated":false,"kind":"file","sizeBytes":1024,"modifiedEpochSeconds":1784610000},{"name":"docs","nameTruncated":false,"kind":"directory","sizeBytes":null,"modifiedEpochSeconds":1784610001}]}},"correlationId":"$messageId"}"""
 
@@ -1047,6 +1127,9 @@ class GoffyProtocolCodecTest {
 
     private fun goffyRomStatusCapabilityTool(): String =
         """{"name":"goffy.rom.status","title":"GOFFY ROM status","description":"Read the local GOFFY ROM-0 readiness packet summary without flashing, unlocking, rebooting, or exposing raw artifact paths.","inputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{},"type":"object"},"outputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"blockerCount":{"maximum":10000,"minimum":0,"type":"integer"},"blockers":{"items":{"maxLength":160,"minLength":1,"type":"string"},"maxItems":8,"type":"array"},"blockersTruncated":{"type":"boolean"},"bootloaderVisibilityStatus":{"maxLength":96,"minLength":1,"type":"string"},"checkedOperatorChecklist":{"type":"boolean"},"checkedRefreshReport":{"type":"boolean"},"destructiveActions":{"const":"withheld","type":"string"},"destructiveApprovalStatus":{"const":"WITHHELD","type":"string"},"dsuPreflightGateStatus":{"maxLength":96,"minLength":1,"type":"string"},"fastbootGateStatus":{"maxLength":96,"minLength":1,"type":"string"},"generatedAt":{"maxLength":64,"minLength":1,"type":"string"},"gsiCandidateGateStatus":{"maxLength":96,"minLength":1,"type":"string"},"installDecision":{"enum":["BLOCKED","READY_FOR_MANUAL_REVIEW"],"type":"string"},"milestone":{"const":"ROM-0","type":"string"},"nextAction":{"maxLength":192,"minLength":1,"type":"string"},"operatorChecklistStatus":{"maxLength":96,"minLength":1,"type":"string"},"packetStatus":{"maxLength":96,"minLength":1,"type":"string"},"refreshSchemaVersion":{"maxLength":64,"minLength":1,"type":"string"},"refreshStatus":{"maxLength":96,"minLength":1,"type":"string"},"romReady":{"type":"boolean"},"staleReport":{"type":"boolean"},"status":{"enum":["available","missing","invalid"],"type":"string"},"stockRestoreGateStatus":{"maxLength":96,"minLength":1,"type":"string"},"summary":{"maxLength":192,"minLength":1,"type":"string"},"unlockGateStatus":{"maxLength":96,"minLength":1,"type":"string"}},"required":["status","milestone","summary","generatedAt","refreshSchemaVersion","refreshStatus","packetStatus","bootloaderVisibilityStatus","operatorChecklistStatus","installDecision","unlockGateStatus","stockRestoreGateStatus","gsiCandidateGateStatus","dsuPreflightGateStatus","fastbootGateStatus","destructiveApprovalStatus","romReady","destructiveActions","blockerCount","blockers","blockersTruncated","nextAction","staleReport","checkedRefreshReport","checkedOperatorChecklist"],"type":"object"},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"_meta":{"dev.goffy/toolVersion":"1.0.0","dev.goffy/executionTarget":"MAC","dev.goffy/permission":"SAFE","dev.goffy/timeoutMs":3000}}"""
+
+    private fun goffyRomFeaturesCapabilityTool(): String =
+        """{"name":"goffy.rom.features","title":"GOFFY ROM feature payload","description":"Read the bounded GOFFY ROM-0 feature payload without exposing source paths, commands, signing material, privileged authority, or flash/install controls.","inputSchema":{"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{},"type":"object"},"outputSchema":{"${'$'}defs":{"GoffyRomFeatureOutput":{"additionalProperties":false,"properties":{"androidPermissionCount":{"maximum":100,"minimum":0,"type":"integer"},"appPrivateDestructiveToolCount":{"maximum":100,"minimum":0,"type":"integer"},"backgroundAccess":{"const":false,"type":"boolean"},"executionTargets":{"items":{"enum":["PHONE","MAC","CLOUD"],"type":"string"},"maxItems":3,"type":"array"},"featureIndex":{"maximum":100,"minimum":1,"type":"integer"},"foregroundOnly":{"const":true,"type":"boolean"},"mcpToolCount":{"maximum":100,"minimum":0,"type":"integer"},"mcpTools":{"items":{"maxLength":64,"minLength":1,"type":"string"},"maxItems":12,"type":"array"},"privilegedRequired":{"const":false,"type":"boolean"},"romDestructiveAction":{"const":false,"type":"boolean"},"runtimePolicy":{"maxLength":128,"minLength":1,"type":"string"},"title":{"maxLength":96,"minLength":1,"type":"string"}},"required":["featureIndex","title","executionTargets","mcpTools","mcpToolCount","androidPermissionCount","runtimePolicy","foregroundOnly","backgroundAccess","privilegedRequired","romDestructiveAction","appPrivateDestructiveToolCount"],"type":"object"}},"${'$'}schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"properties":{"androidPermissionCount":{"maximum":100,"minimum":0,"type":"integer"},"appPrivateDestructiveToolsIncluded":{"type":"boolean"},"blockedRomActionCount":{"maximum":100,"minimum":0,"type":"integer"},"blockedRomActions":{"items":{"maxLength":64,"minLength":1,"type":"string"},"maxItems":12,"type":"array"},"blockedRomActionsTruncated":{"type":"boolean"},"checkedFeaturePayload":{"type":"boolean"},"defaultPerformanceMode":{"const":"GOFFY LITE","type":"string"},"destructiveActions":{"const":"withheld","type":"string"},"featureCount":{"maximum":100,"minimum":0,"type":"integer"},"features":{"items":{"${'$'}ref":"#/${'$'}defs/GoffyRomFeatureOutput"},"maxItems":8,"type":"array"},"featuresTruncated":{"type":"boolean"},"localModelPolicy":{"const":"disabled_by_default_observe_only","type":"string"},"mcpToolCount":{"maximum":100,"minimum":0,"type":"integer"},"notes":{"items":{"maxLength":160,"minLength":1,"type":"string"},"maxItems":4,"type":"array"},"notesTruncated":{"type":"boolean"},"payloadName":{"maxLength":96,"minLength":1,"type":"string"},"platformSigned":{"const":false,"type":"boolean"},"privileged":{"const":false,"type":"boolean"},"requiresUserSelectedHome":{"const":true,"type":"boolean"},"rom0Flashable":{"const":false,"type":"boolean"},"romDestructiveActionsIncluded":{"const":false,"type":"boolean"},"status":{"enum":["available","missing","invalid"],"type":"string"},"targetStage":{"const":"ROM-0","type":"string"}},"required":["status","payloadName","targetStage","defaultPerformanceMode","rom0Flashable","privileged","platformSigned","romDestructiveActionsIncluded","appPrivateDestructiveToolsIncluded","requiresUserSelectedHome","localModelPolicy","featureCount","features","featuresTruncated","mcpToolCount","androidPermissionCount","blockedRomActionCount","blockedRomActions","blockedRomActionsTruncated","notes","notesTruncated","destructiveActions","checkedFeaturePayload"],"type":"object"},"annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false},"_meta":{"dev.goffy/toolVersion":"1.0.0","dev.goffy/executionTarget":"MAC","dev.goffy/permission":"SAFE","dev.goffy/timeoutMs":3000}}"""
 
     private fun goffyRomChecklistCapabilityTool(): String =
         """

@@ -136,9 +136,10 @@ the capability boundary.
   routing-quality gate
 - Reuse-first Task Text export-image audit evidence generator that consumes
   Trivy or Grype JSON and blocks critical, high, or medium findings
-- Read-only `SAFE goffy.rom.status` and `SAFE goffy.rom.checklist` Hub/MCP
-  tools plus Android routes for `Show GOFFY ROM status`,
-  `Show GOFFY ROM checklist`, and `What are we building now?`
+- Read-only `SAFE goffy.rom.status`, `SAFE goffy.rom.checklist`, and
+  `SAFE goffy.rom.features` Hub/MCP tools plus Android routes for
+  `Show GOFFY ROM status`, `Show GOFFY ROM checklist`,
+  `Show GOFFY ROM features`, and `What are we building now?`
 - Persistent, user-visible Android audit trail with app-private SQLite retention
   for the newest 50 terminal tasks
 - Invocation-scoped authenticated WebSocket to `/ws/v1`

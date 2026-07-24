@@ -77,6 +77,7 @@ import dev.goffy.os.qr.ForegroundQrScanner
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GoffyRomChecklist
+import dev.goffy.os.protocol.GoffyRomFeatures
 import dev.goffy.os.protocol.GoffyRomStatus
 import dev.goffy.os.protocol.MacAppOpened
 import dev.goffy.os.protocol.MacAppsList
@@ -2443,6 +2444,55 @@ private fun TaskResult(result: ToolResultContent) {
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp,
                 maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        is GoffyRomFeatures -> {
+            Text(
+                text = "ROM FEATURES / ${result.status.uppercase()}",
+                color = Bone,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 13.sp,
+            )
+            Text(
+                text = "${result.targetStage} / ${result.featureCount} feature(s) / ${result.defaultPerformanceMode}",
+                color = Signal,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "POLICY / non-flashable / non-privileged / user-selected home",
+                color = Mist,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            result.features.take(3).forEach { feature ->
+                Text(
+                    text = "FEATURE ${feature.featureIndex} / ${feature.title}",
+                    color = Mist,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = "TOOLS / ${result.mcpToolCount} MCP / ${result.androidPermissionCount} Android permission(s)",
+                color = Mist,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "BLOCKED ROM ACTIONS / ${result.blockedRomActionCount}",
+                color = Mist,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }

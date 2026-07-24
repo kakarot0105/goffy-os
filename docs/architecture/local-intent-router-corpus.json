@@ -172,6 +172,16 @@
       ]
     },
     {
+      "id": "mac_goffy_rom_features_017",
+      "text": "show GOFFY ROM features",
+      "label": "MAC",
+      "split": "train",
+      "capability": "goffy.rom.features",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
       "id": "mac_running_002",
       "text": "tell me what is running on my Mac",
       "label": "MAC",
@@ -297,6 +307,16 @@
       "label": "MAC",
       "split": "eval",
       "capability": "goffy.rom.checklist",
+      "risk_tags": [
+        "safe"
+      ]
+    },
+    {
+      "id": "mac_goffy_rom_payload_018",
+      "text": "what features are inserted into the GOFFY ROM",
+      "label": "MAC",
+      "split": "eval",
+      "capability": "goffy.rom.features",
       "risk_tags": [
         "safe"
       ]

@@ -7,6 +7,7 @@ import dev.goffy.os.agent.TaskTimelineEvent
 import dev.goffy.os.protocol.ExecutionTarget
 import dev.goffy.os.protocol.GIT_STATUS_TOOL
 import dev.goffy.os.protocol.GOFFY_ROM_CHECKLIST_TOOL
+import dev.goffy.os.protocol.GOFFY_ROM_FEATURES_TOOL
 import dev.goffy.os.protocol.GOFFY_ROM_STATUS_TOOL
 import dev.goffy.os.protocol.GitStatus
 import dev.goffy.os.protocol.GitStatusApprovedRepo
@@ -309,6 +310,41 @@ class ClosedTerminalAuditTest {
         assertEquals(GOFFY_ROM_CHECKLIST_TOOL, restored.toolName)
         assertEquals(null, restored.result)
         assertFalse(restored.toString().contains(blockerDetail))
+    }
+
+    @Test
+    fun goffyRomFeaturesAuditRoundTripsAsDisplayOnlySafeMacTask() {
+        val featureDetail = "GOFFY Home Surface"
+        val entry = TaskTimelineEntry(
+            id = UUID.fromString("99999999-9999-4999-8999-999999999999"),
+            command = "Show GOFFY ROM features",
+            executionTarget = ExecutionTarget.MAC,
+            toolName = GOFFY_ROM_FEATURES_TOOL,
+            phase = TaskPhase.VERIFIED,
+            summary = "ROM features include $featureDetail",
+            events = listOf(
+                TaskTimelineEvent(TaskEventKind.OBSERVE, "Observed ROM features command"),
+                TaskTimelineEvent(TaskEventKind.RESULT, featureDetail),
+                TaskTimelineEvent(TaskEventKind.VERIFY, "Verified ROM features"),
+            ),
+            result = null,
+            permission = PermissionLevel.SAFE,
+            approvalGranted = false,
+        )
+
+        val record = entry.toClosedTerminalAuditRecord(recordedAtEpochMillis = 1_720_000_000_000)
+
+        assertNotNull(record)
+        assertEquals(GOFFY_ROM_FEATURES_TOOL, record?.toolName)
+        assertEquals(AuditPermission.SAFE, record?.permission)
+        assertEquals(AuditApprovalOutcome.NOT_REQUIRED, record?.approvalOutcome)
+        assertFalse(record.toString().contains(featureDetail))
+
+        val restored = requireNotNull(record).toTimelineEntry()
+        assertEquals("Recorded GOFFY ROM feature payload task", restored.command)
+        assertEquals(GOFFY_ROM_FEATURES_TOOL, restored.toolName)
+        assertEquals(null, restored.result)
+        assertFalse(restored.toString().contains(featureDetail))
     }
 
     @Test

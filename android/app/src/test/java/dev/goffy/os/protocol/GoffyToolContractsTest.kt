@@ -183,6 +183,47 @@ class GoffyToolContractsTest {
     }
 
     @Test
+    fun goffyRomFeaturesContractRequiresNonPrivilegedNonFlashableMetadata() {
+        val valid = validRomFeatures()
+
+        assertTrue(valid.matchesToolContract())
+        assertFalse(valid.copy(status = "ready").matchesToolContract())
+        assertFalse(valid.copy(targetStage = "ROM-1").matchesToolContract())
+        assertFalse(valid.copy(defaultPerformanceMode = "GOFFY ULTRA").matchesToolContract())
+        assertFalse(valid.copy(rom0Flashable = true).matchesToolContract())
+        assertFalse(valid.copy(privileged = true).matchesToolContract())
+        assertFalse(valid.copy(platformSigned = true).matchesToolContract())
+        assertFalse(valid.copy(romDestructiveActionsIncluded = true).matchesToolContract())
+        assertFalse(valid.copy(appPrivateDestructiveToolsIncluded = true).matchesToolContract())
+        assertFalse(valid.copy(requiresUserSelectedHome = false).matchesToolContract())
+        assertFalse(valid.copy(localModelPolicy = "always_on").matchesToolContract())
+        assertFalse(valid.copy(destructiveActions = "allowed").matchesToolContract())
+        assertFalse(valid.copy(featureCount = 0, features = emptyList()).matchesToolContract())
+        assertFalse(valid.copy(featuresTruncated = false, featureCount = 3).matchesToolContract())
+        assertFalse(
+            valid.copy(
+                blockedRomActions = listOf("unlock-bootloader"),
+            ).matchesToolContract(),
+        )
+        assertFalse(valid.copy(notes = listOf("/Users/example/private")).matchesToolContract())
+        assertFalse(
+            valid.copy(
+                features = listOf(valid.features[0].copy(title = "Run fastboot flash boot boot.img")),
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                features = listOf(valid.features[0].copy(backgroundAccess = true)),
+            ).matchesToolContract(),
+        )
+        assertFalse(
+            valid.copy(
+                features = listOf(valid.features[0].copy(mcpTools = listOf("phone/battery"))),
+            ).matchesToolContract(),
+        )
+    }
+
+    @Test
     fun batteryContractAcceptsOnlyPercentages() {
         assertTrue(PhoneBatteryStatus(0, false).matchesToolContract())
         assertTrue(PhoneBatteryStatus(100, true).matchesToolContract())
@@ -466,6 +507,61 @@ class GoffyToolContractsTest {
         nextStepStatus = "READY",
         nextAction = "Complete Record exact stock restore evidence",
         checkedOperatorChecklist = true,
+    )
+
+    private fun validRomFeatures(): GoffyRomFeatures = GoffyRomFeatures(
+        status = "available",
+        payloadName = "GOFFY ROM-0 Jarvis Payload",
+        targetStage = GOFFY_ROM_MILESTONE,
+        defaultPerformanceMode = "GOFFY LITE",
+        rom0Flashable = false,
+        privileged = false,
+        platformSigned = false,
+        romDestructiveActionsIncluded = false,
+        appPrivateDestructiveToolsIncluded = false,
+        requiresUserSelectedHome = true,
+        localModelPolicy = GOFFY_ROM_LOCAL_MODEL_POLICY,
+        featureCount = 2,
+        features = listOf(
+            GoffyRomFeature(
+                featureIndex = 1,
+                title = "GOFFY Home Surface",
+                executionTargets = listOf("PHONE"),
+                mcpTools = listOf("phone.device.info"),
+                mcpToolCount = 1,
+                androidPermissionCount = 0,
+                runtimePolicy = "user selected home with no privileged authority",
+                foregroundOnly = true,
+                backgroundAccess = false,
+                privilegedRequired = false,
+                romDestructiveAction = false,
+                appPrivateDestructiveToolCount = 0,
+            ),
+            GoffyRomFeature(
+                featureIndex = 2,
+                title = "GOFFY ROM Status",
+                executionTargets = listOf("MAC"),
+                mcpTools = listOf("goffy.rom.status", "goffy.rom.features"),
+                mcpToolCount = 2,
+                androidPermissionCount = 0,
+                runtimePolicy = "read only fixed validation artifacts",
+                foregroundOnly = true,
+                backgroundAccess = false,
+                privilegedRequired = false,
+                romDestructiveAction = false,
+                appPrivateDestructiveToolCount = 0,
+            ),
+        ),
+        featuresTruncated = false,
+        mcpToolCount = 3,
+        androidPermissionCount = 0,
+        blockedRomActionCount = 2,
+        blockedRomActions = listOf("unlock_bootloader", "flash_image"),
+        blockedRomActionsTruncated = false,
+        notes = listOf("ROM-0 inserts GOFFY as a safe home payload."),
+        notesTruncated = false,
+        destructiveActions = "withheld",
+        checkedFeaturePayload = true,
     )
 
     private fun validLargestFiles(): MacFilesLargest = MacFilesLargest(
