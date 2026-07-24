@@ -142,6 +142,7 @@ data class GoffyRomStatus(
     val unlockGateStatus: String,
     val stockRestoreGateStatus: String,
     val gsiCandidateGateStatus: String,
+    val dsuPreflightGateStatus: String,
     val fastbootGateStatus: String,
     val destructiveApprovalStatus: String,
     val romReady: Boolean,
@@ -1052,6 +1053,7 @@ class GoffyProtocolCodec(
             "unlockGateStatus",
             "stockRestoreGateStatus",
             "gsiCandidateGateStatus",
+            "dsuPreflightGateStatus",
             "fastbootGateStatus",
         ).forEach { field ->
             properties.requireObject(field).validateBoundedStringSchema(
@@ -1962,6 +1964,11 @@ class GoffyProtocolCodec(
                 1,
                 MAX_GOFFY_ROM_STATUS_LENGTH,
             ),
+            dsuPreflightGateStatus = content.requireBoundedString(
+                "dsuPreflightGateStatus",
+                1,
+                MAX_GOFFY_ROM_STATUS_LENGTH,
+            ),
             fastbootGateStatus = content.requireBoundedString(
                 "fastbootGateStatus",
                 1,
@@ -2684,6 +2691,7 @@ private val GOFFY_ROM_STATUS_OUTPUT_KEYS = setOf(
     "unlockGateStatus",
     "stockRestoreGateStatus",
     "gsiCandidateGateStatus",
+    "dsuPreflightGateStatus",
     "fastbootGateStatus",
     "destructiveApprovalStatus",
     "romReady",

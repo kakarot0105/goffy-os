@@ -92,7 +92,7 @@ def test_refresh_writes_probe_packet_and_summary_without_mutation(
         )
     ).lower()
 
-    assert report.schema_version == "goffy.rom0-refresh-report.v3"
+    assert report.schema_version == "goffy.rom0-refresh-report.v4"
     assert not report.ok
     assert report.status is RefreshStatus.BLOCKED
     assert report.refresh_succeeded
@@ -104,6 +104,7 @@ def test_refresh_writes_probe_packet_and_summary_without_mutation(
     assert evidence["unlock_eligibility"].status is EvidenceStatus.MISSING
     assert evidence["stock_restore"].status is EvidenceStatus.MISSING
     assert evidence["gsi_candidate"].status is EvidenceStatus.MISSING
+    assert evidence["dsu_preflight"].status is EvidenceStatus.MISSING
     assert evidence["fastboot_evidence"].status is EvidenceStatus.MISSING
     assert evidence["bootloader_visibility_guide"].status is EvidenceStatus.LOADED
     assert evidence["operator_checklist"].status is EvidenceStatus.LOADED
@@ -131,6 +132,7 @@ def test_refresh_consumes_valid_existing_evidence(
     write_unlock_evidence(tmp_path)
     write_stock_evidence(tmp_path)
     write_gsi_evidence(tmp_path)
+    write_dsu_preflight_evidence(tmp_path)
     write_fastboot_evidence(tmp_path, manual_visible=True)
 
     report = refresh_rom0_action_packet(root=tmp_path, runner=runner_for(LOCKED_PROPS))
@@ -146,6 +148,7 @@ def test_refresh_consumes_valid_existing_evidence(
     assert evidence["unlock_eligibility"].status is EvidenceStatus.LOADED
     assert evidence["stock_restore"].status is EvidenceStatus.LOADED
     assert evidence["gsi_candidate"].status is EvidenceStatus.LOADED
+    assert evidence["dsu_preflight"].status is EvidenceStatus.LOADED
     assert evidence["fastboot_evidence"].status is EvidenceStatus.LOADED
     assert evidence["bootloader_visibility_guide"].status is EvidenceStatus.LOADED
     assert evidence["operator_checklist"].status is EvidenceStatus.LOADED
@@ -163,6 +166,7 @@ def test_refresh_blocks_host_only_fastboot_even_with_other_ready_evidence(
     write_unlock_evidence(tmp_path)
     write_stock_evidence(tmp_path)
     write_gsi_evidence(tmp_path)
+    write_dsu_preflight_evidence(tmp_path)
     write_fastboot_evidence(tmp_path)
 
     report = refresh_rom0_action_packet(root=tmp_path, runner=runner_for(props))
@@ -192,6 +196,7 @@ def test_refresh_reports_ready_only_when_probe_and_evidence_are_ready(
     write_unlock_evidence(tmp_path)
     write_stock_evidence(tmp_path)
     write_gsi_evidence(tmp_path)
+    write_dsu_preflight_evidence(tmp_path)
     write_fastboot_evidence(tmp_path, manual_visible=True)
 
     report = refresh_rom0_action_packet(root=tmp_path, runner=runner_for(props))
@@ -205,6 +210,29 @@ def test_refresh_reports_ready_only_when_probe_and_evidence_are_ready(
     assert report.blocked_by == ()
 
 
+def test_refresh_blocks_ready_claim_until_dsu_preflight_exists(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(probe, "trusted_adb_path", lambda: Path("/opt/android/adb"))
+    props = dict(LOCKED_PROPS)
+    props["ro.boot.flash.locked"] = "0"
+    props["ro.boot.vbmeta.device_state"] = "unlocked"
+    write_unlock_evidence(tmp_path)
+    write_stock_evidence(tmp_path)
+    write_gsi_evidence(tmp_path)
+    write_fastboot_evidence(tmp_path, manual_visible=True)
+
+    report = refresh_rom0_action_packet(root=tmp_path, runner=runner_for(props))
+    evidence = {item.name: item for item in report.evidence_inputs}
+
+    assert not report.ok
+    assert report.status is RefreshStatus.BLOCKED
+    assert not report.rom_ready
+    assert evidence["dsu_preflight"].status is EvidenceStatus.MISSING
+    assert "read-only DSU preflight evidence is missing" in report.blocked_by
+
+
 def test_refresh_fails_closed_and_redacts_when_guide_generation_fails(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
@@ -216,6 +244,7 @@ def test_refresh_fails_closed_and_redacts_when_guide_generation_fails(
     write_unlock_evidence(tmp_path)
     write_stock_evidence(tmp_path)
     write_gsi_evidence(tmp_path)
+    write_dsu_preflight_evidence(tmp_path)
     write_fastboot_evidence(tmp_path, manual_visible=True)
     original_write = refresh.write_validation_file
 
@@ -254,6 +283,7 @@ def test_refresh_fails_closed_and_redacts_when_operator_checklist_generation_fai
     write_unlock_evidence(tmp_path)
     write_stock_evidence(tmp_path)
     write_gsi_evidence(tmp_path)
+    write_dsu_preflight_evidence(tmp_path)
     write_fastboot_evidence(tmp_path, manual_visible=True)
     original_write = refresh.write_validation_file
 
@@ -290,6 +320,7 @@ def test_refresh_removes_partial_operator_checklist_when_markdown_write_fails(
     write_unlock_evidence(tmp_path)
     write_stock_evidence(tmp_path)
     write_gsi_evidence(tmp_path)
+    write_dsu_preflight_evidence(tmp_path)
     write_fastboot_evidence(tmp_path, manual_visible=True)
     original_write = refresh.write_validation_file
 
@@ -328,6 +359,7 @@ def test_refresh_report_write_failure_does_not_leave_operator_outputs(
     write_unlock_evidence(tmp_path)
     write_stock_evidence(tmp_path)
     write_gsi_evidence(tmp_path)
+    write_dsu_preflight_evidence(tmp_path)
     write_fastboot_evidence(tmp_path, manual_visible=True)
     validation = tmp_path / ".goffy-validation"
     stale_json = validation / "rom-0-operator-checklist.json"
@@ -551,6 +583,76 @@ def write_gsi_evidence(root: Path) -> None:
                     "authorization": "NON_AUTHORIZING_EVIDENCE",
                     "destructive_actions": "WITHHELD",
                     "local_path_redacted": True,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def write_dsu_preflight_evidence(root: Path) -> None:
+    validation = root / ".goffy-validation"
+    validation.mkdir(exist_ok=True)
+    target_device = {
+        "model": LOCKED_PROPS["ro.product.model"],
+        "codename": LOCKED_PROPS["ro.product.device"],
+        "product": LOCKED_PROPS["ro.product.name"],
+        "hardware_sku": LOCKED_PROPS["ro.boot.hardware.sku"],
+        "build_fingerprint": LOCKED_PROPS["ro.build.fingerprint"],
+        "carrier": LOCKED_PROPS["ro.carrier"],
+    }
+    (validation / "rom-dsu-preflight-evidence.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "goffy.rom-dsu-preflight-evidence.v1",
+                "generated_at": "2026-07-22T00:00:00+00:00",
+                "ok": True,
+                "status": "READY_FOR_MANUAL_DSU_REVIEW",
+                "destructive_actions": "withheld",
+                "target_device": target_device,
+                "probe": {
+                    "generated_at": "2026-07-22T00:00:00+00:00",
+                    "bootloader_state": "locked",
+                    "android_release": "16",
+                    "sdk": "36",
+                    "treble_enabled": "true",
+                    "dynamic_partitions": "true",
+                    "dsu_package_present": "true",
+                    "dsu_start_install_resolves": "true",
+                    "dsu_start_install_activity": "com.android.dynsystem/.VerificationActivity",
+                },
+                "evidence_inputs": [
+                    {
+                        "name": "stock_restore",
+                        "status": "LOADED",
+                        "detail": "validated and consumed",
+                    },
+                    {
+                        "name": "gsi_candidate",
+                        "status": "LOADED",
+                        "detail": "validated and consumed",
+                    },
+                ],
+                "blockers": [],
+                "warnings": [
+                    "DSU preflight does not prove the selected GSI will boot on this Moto"
+                ],
+                "next_steps": ["Review DSU manually through Android system UI"],
+                "official_sources": {
+                    "android_dsu_docs": "https://developer.android.com/topic/dsu",
+                    "android_gsi_releases": (
+                        "https://developer.android.com/topic/generic-system-image/releases"
+                    ),
+                },
+                "reuse_decision": (
+                    "Use Android platform DSU and official Google GSI evidence first."
+                ),
+                "safety": {
+                    "execution_authority": "LOCAL_FILE_VALIDATION_ONLY",
+                    "device_mutation": "NONE",
+                    "install_authority": "WITHHELD",
+                    "destructive_actions": "WITHHELD",
+                    "external_installers_imported": False,
                 },
             }
         ),

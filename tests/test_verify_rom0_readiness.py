@@ -20,6 +20,7 @@ from scripts.verify_rom0_readiness import (
     build_readiness_report,
     main,
     render_markdown,
+    validate_dsu_preflight_evidence,
     validate_fastboot_evidence,
     validate_gsi_candidate_evidence,
     validate_release_apk_verification_evidence,
@@ -69,6 +70,10 @@ def test_rom0_readiness_blocks_without_external_evidence() -> None:
         in section(report, "gsi_candidate").blockers
     )
     assert (
+        "ROM DSU preflight evidence JSON was not supplied"
+        in section(report, "dsu_preflight").blockers
+    )
+    assert (
         "ROM release signing plan JSON was not supplied"
         in section(report, "release_signing_plan").blockers
     )
@@ -85,6 +90,7 @@ def test_rom0_readiness_accepts_complete_non_destructive_evidence(tmp_path: Path
     manual = write_manual_gates(tmp_path, rollback_doc)
     fastboot = write_fastboot_evidence(tmp_path, manual_visible=True)
     gsi_candidate = write_gsi_candidate_evidence(tmp_path)
+    dsu_preflight = write_dsu_preflight_evidence(tmp_path)
     apk = write_signed_apk(tmp_path)
     signing_plan = write_signing_plan(tmp_path, apk)
     apk_verification = write_apk_verification(tmp_path, apk)
@@ -94,6 +100,7 @@ def test_rom0_readiness_accepts_complete_non_destructive_evidence(tmp_path: Path
         manual_gates_json=manual,
         fastboot_evidence_json=fastboot,
         gsi_candidate_evidence_json=gsi_candidate,
+        dsu_preflight_evidence_json=dsu_preflight,
         signed_apk=apk,
         signing_plan_json=signing_plan,
         apk_verification_json=apk_verification,
@@ -106,6 +113,7 @@ def test_rom0_readiness_accepts_complete_non_destructive_evidence(tmp_path: Path
     assert report.destructive_actions == "withheld"
     assert evidence(report, "fastboot_evidence")["manual_bootloader_check_requested"] == "true"
     assert evidence(report, "gsi_candidate")["authorization"] == "NON_AUTHORIZING_EVIDENCE"
+    assert evidence(report, "dsu_preflight")["install_authority"] == "WITHHELD"
     assert evidence(report, "release_signing_plan")["keystore"] == "external"
     assert evidence(report, "release_apk_verification")["apk_signature_schemes"] == "v2"
     assert evidence(report, "aosp_import")["apk_signature_schemes"] == "v2"
@@ -446,6 +454,28 @@ def test_rom0_readiness_rejects_forged_gsi_action_name(tmp_path: Path) -> None:
     )
 
 
+def test_rom0_readiness_accepts_ready_dsu_preflight_evidence(tmp_path: Path) -> None:
+    dsu_preflight = write_dsu_preflight_evidence(tmp_path)
+
+    result = validate_dsu_preflight_evidence(dsu_preflight)
+
+    assert result.ok
+    assert result.evidence
+    assert result.evidence["status"] == "READY_FOR_MANUAL_DSU_REVIEW"
+    assert result.evidence["install_authority"] == "WITHHELD"
+
+
+def test_rom0_readiness_rejects_blocked_dsu_preflight_evidence(tmp_path: Path) -> None:
+    dsu_preflight = write_dsu_preflight_evidence(tmp_path, ready=False)
+
+    result = validate_dsu_preflight_evidence(dsu_preflight)
+
+    assert not result.ok
+    assert any(
+        "DSU preflight is not ready for manual DSU review" in blocker for blocker in result.blockers
+    )
+
+
 def test_rom0_readiness_accepts_host_fastboot_evidence_with_manual_warning(
     tmp_path: Path,
 ) -> None:
@@ -637,6 +667,7 @@ def test_rom0_readiness_cli_wires_gsi_candidate_evidence_flag(
     manual = write_manual_gates(tmp_path, rollback_doc)
     fastboot = write_fastboot_evidence(tmp_path, manual_visible=True)
     gsi_candidate = write_gsi_candidate_evidence(tmp_path)
+    dsu_preflight = write_dsu_preflight_evidence(tmp_path)
     apk = write_signed_apk(tmp_path)
     signing_plan = write_signing_plan(tmp_path, apk)
     apk_verification = write_apk_verification(tmp_path, apk)
@@ -667,12 +698,15 @@ def test_rom0_readiness_cli_wires_gsi_candidate_evidence_flag(
             *base_args,
             "--gsi-candidate-evidence-json",
             str(gsi_candidate),
+            "--dsu-preflight-evidence-json",
+            str(dsu_preflight),
         ]
     )
     ready_payload = json.loads(capsys.readouterr().out)
 
     blocked_gsi = section_payload(blocked_payload, "gsi_candidate")
     ready_gsi = section_payload(ready_payload, "gsi_candidate")
+    ready_dsu = section_payload(ready_payload, "dsu_preflight")
     blocked_gsi_blockers = blocked_gsi["blockers"]
 
     assert blocked_exit == 1
@@ -681,6 +715,7 @@ def test_rom0_readiness_cli_wires_gsi_candidate_evidence_flag(
     assert "ROM GSI candidate evidence JSON was not supplied" in blocked_gsi_blockers
     assert ready_exit == 0
     assert ready_gsi["ok"] is True
+    assert ready_dsu["ok"] is True
 
 
 def test_rom0_readiness_surfaces_signing_plan_blockers(tmp_path: Path) -> None:
@@ -948,6 +983,68 @@ def write_gsi_candidate_evidence(tmp_path: Path) -> Path:
                     "authorization": "NON_AUTHORIZING_EVIDENCE",
                     "destructive_actions": "WITHHELD",
                     "local_path_redacted": True,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def write_dsu_preflight_evidence(tmp_path: Path, *, ready: bool = True) -> Path:
+    path = tmp_path / "rom-dsu-preflight-evidence.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "goffy.rom-dsu-preflight-evidence.v1",
+                "generated_at": "2026-07-22T00:00:00+00:00",
+                "ok": ready,
+                "status": "READY_FOR_MANUAL_DSU_REVIEW" if ready else "BLOCKED_EVIDENCE",
+                "destructive_actions": "withheld",
+                "target_device": TARGET_DEVICE,
+                "probe": {
+                    "generated_at": "2026-07-22T00:00:00+00:00",
+                    "bootloader_state": "locked",
+                    "android_release": "16",
+                    "sdk": "36",
+                    "treble_enabled": "true",
+                    "dynamic_partitions": "true",
+                    "dsu_package_present": "true",
+                    "dsu_start_install_resolves": "true",
+                    "dsu_start_install_activity": "com.android.dynsystem/.VerificationActivity",
+                },
+                "evidence_inputs": [
+                    {
+                        "name": "stock_restore",
+                        "status": "LOADED",
+                        "detail": "validated and consumed",
+                    },
+                    {
+                        "name": "gsi_candidate",
+                        "status": "LOADED",
+                        "detail": "validated and consumed",
+                    },
+                ],
+                "blockers": [] if ready else ["official Google ARM64 GSI evidence is missing"],
+                "warnings": [
+                    "DSU preflight does not prove the selected GSI will boot on this Moto"
+                ],
+                "next_steps": ["Review DSU manually through Android system UI"],
+                "official_sources": {
+                    "android_dsu_docs": "https://developer.android.com/topic/dsu",
+                    "android_gsi_releases": (
+                        "https://developer.android.com/topic/generic-system-image/releases"
+                    ),
+                },
+                "reuse_decision": (
+                    "Use Android platform DSU and official Google GSI evidence first."
+                ),
+                "safety": {
+                    "execution_authority": "LOCAL_FILE_VALIDATION_ONLY",
+                    "device_mutation": "NONE",
+                    "install_authority": "WITHHELD",
+                    "destructive_actions": "WITHHELD",
+                    "external_installers_imported": False,
                 },
             }
         ),

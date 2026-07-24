@@ -165,9 +165,9 @@ status`, `Is GOFFY ROM ready?`, or `What are we building now?`. This route is
 read-only status reporting. It does not authorize or perform unlocking,
 rebooting, flashing, erasing, wiping, booting, or shell execution.
 The response includes explicit install-gate statuses for unlock eligibility,
-stock restore, official GSI evidence, fastboot visibility, and destructive
-approval. The destructive approval field remains `WITHHELD`; `romReady` only
-means ready for manual ROM-0 review, not permission to install.
+stock restore, official GSI evidence, DSU preflight, fastboot visibility, and
+destructive approval. The destructive approval field remains `WITHHELD`;
+`romReady` only means ready for manual ROM-0 review, not permission to install.
 
 To regenerate only the manual bootloader visibility guide without rebooting the
 phone, run:
@@ -466,6 +466,7 @@ phone or an AOSP checkout:
   --manual-gates-json .goffy-validation/rom-0-manual-gates.json \
   --fastboot-evidence-json .goffy-validation/rom-fastboot-evidence.json \
   --gsi-candidate-evidence-json .goffy-validation/rom-gsi-candidate-evidence.json \
+  --dsu-preflight-evidence-json .goffy-validation/rom-dsu-preflight-evidence.json \
   --signing-plan-json .goffy-validation/rom-signing/release-signing-plan.json \
   --apk-verification-json .goffy-validation/rom-signing/release-apk-verification.json \
   --signed-apk .goffy-validation/rom-signing/GoffyOS-signed.apk \

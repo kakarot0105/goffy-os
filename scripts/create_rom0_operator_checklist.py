@@ -19,7 +19,11 @@ from scripts.create_rom_stock_restore_evidence import write_output  # noqa: E402
 
 JSON_SCHEMA_VERSION = "goffy.rom0-operator-checklist.v1"
 SUPPORTED_REFRESH_SCHEMAS = frozenset(
-    ("goffy.rom0-refresh-report.v2", "goffy.rom0-refresh-report.v3")
+    (
+        "goffy.rom0-refresh-report.v2",
+        "goffy.rom0-refresh-report.v3",
+        "goffy.rom0-refresh-report.v4",
+    )
 )
 VALIDATION_DIR = Path(".goffy-validation")
 DEFAULT_REFRESH_REPORT = VALIDATION_DIR / "rom-0-refresh-report.json"
@@ -100,6 +104,7 @@ def build_operator_checklist(
         refresh_report
     )
     gsi_ready = evidence_loaded(evidence, "gsi_candidate")
+    dsu_preflight_ready = evidence_loaded(evidence, "dsu_preflight")
     fastboot_ready = evidence_loaded(evidence, "fastboot_evidence")
     bootloader_status = string_value(refresh_report.get("bootloader_visibility_status"))
     manual_bootloader_visible = bootloader_status == "MANUAL_BOOTLOADER_VISIBLE"
@@ -110,6 +115,7 @@ def build_operator_checklist(
         stock_ready=stock_ready,
         unlock_ready=unlock_ready,
         gsi_ready=gsi_ready,
+        dsu_preflight_ready=dsu_preflight_ready,
         fastboot_ready=fastboot_ready,
         manual_bootloader_visible=manual_bootloader_visible,
     )
@@ -138,6 +144,12 @@ def build_operator_checklist(
                 refresh_succeeded=refresh_succeeded,
                 stock_ready=stock_ready,
                 gsi_ready=gsi_ready,
+            ),
+            dsu_preflight_step(
+                refresh_succeeded=refresh_succeeded,
+                stock_ready=stock_ready,
+                gsi_ready=gsi_ready,
+                dsu_preflight_ready=dsu_preflight_ready,
             ),
             host_fastboot_step(
                 refresh_succeeded=refresh_succeeded,
@@ -179,6 +191,7 @@ def checklist_blockers(
     stock_ready: bool,
     unlock_ready: bool,
     gsi_ready: bool,
+    dsu_preflight_ready: bool,
     fastboot_ready: bool,
     manual_bootloader_visible: bool,
 ) -> tuple[str, ...]:
@@ -197,6 +210,8 @@ def checklist_blockers(
         blockers.append("OEM or Motorola unlock eligibility evidence is missing")
     if not gsi_ready:
         blockers.append("official Google GSI archive evidence is missing")
+    if not dsu_preflight_ready:
+        blockers.append("read-only DSU preflight evidence is missing")
     if not fastboot_ready:
         blockers.append("host fastboot evidence is missing")
     if not manual_bootloader_visible:
@@ -341,6 +356,45 @@ def gsi_candidate_step(
     )
 
 
+def dsu_preflight_step(
+    *,
+    refresh_succeeded: bool,
+    stock_ready: bool,
+    gsi_ready: bool,
+    dsu_preflight_ready: bool,
+) -> OperatorStep:
+    prerequisites_ready = stock_ready and gsi_ready
+    return OperatorStep(
+        step_id="record_dsu_preflight",
+        title="Record read-only DSU preflight",
+        kind=StepKind.LOCAL_READ_ONLY,
+        status=StepStatus.DONE
+        if dsu_preflight_ready
+        else StepStatus.READY
+        if refresh_succeeded and prerequisites_ready
+        else StepStatus.BLOCKED,
+        summary=(
+            "Read-only DSU preflight evidence exists."
+            if dsu_preflight_ready
+            else "Check DSU prerequisites from local evidence without opening DSU or installing."
+        ),
+        must_follow_after=("record_stock_restore", "record_gsi_candidate"),
+        safe_commands=(
+            ".venv/bin/python scripts/create_rom_dsu_preflight_evidence.py "
+            "--probe-json .goffy-validation/rom-feasibility-current.json "
+            "--stock-restore-evidence .goffy-validation/rom-stock-restore-evidence.json "
+            "--gsi-candidate-evidence .goffy-validation/rom-gsi-candidate-evidence.json "
+            "--output .goffy-validation/rom-dsu-preflight-evidence.json",
+        )
+        if not dsu_preflight_ready and refresh_succeeded and prerequisites_ready
+        else (),
+        evidence_paths=(".goffy-validation/rom-dsu-preflight-evidence.json",),
+        blockers=()
+        if dsu_preflight_ready or prerequisites_ready
+        else ("stock restore and official GSI evidence must both exist first",),
+    )
+
+
 def host_fastboot_step(*, refresh_succeeded: bool, fastboot_ready: bool) -> OperatorStep:
     return OperatorStep(
         step_id="record_host_fastboot",
@@ -442,6 +496,7 @@ def readiness_review_step(*, rom_ready: bool) -> OperatorStep:
         must_follow_after=(
             "create_manual_gates",
             "record_gsi_candidate",
+            "record_dsu_preflight",
             "record_manual_bootloader_visibility",
         ),
         safe_commands=(
@@ -450,6 +505,7 @@ def readiness_review_step(*, rom_ready: bool) -> OperatorStep:
             "--manual-gates-json .goffy-validation/rom-0-manual-gates.json "
             "--fastboot-evidence-json .goffy-validation/rom-fastboot-evidence.json "
             "--gsi-candidate-evidence-json .goffy-validation/rom-gsi-candidate-evidence.json "
+            "--dsu-preflight-evidence-json .goffy-validation/rom-dsu-preflight-evidence.json "
             "--signing-plan-json .goffy-validation/rom-signing/release-signing-plan.json "
             "--apk-verification-json .goffy-validation/rom-signing/release-apk-verification.json "
             "--signed-apk .goffy-validation/rom-signing/GoffyOS-signed.apk "

@@ -2350,7 +2350,16 @@ private fun TaskResult(result: ToolResultContent) {
             )
             Text(
                 text = "GATES / unlock ${result.unlockGateStatus} / stock " +
-                    "${result.stockRestoreGateStatus} / gsi ${result.gsiCandidateGateStatus}",
+                    result.stockRestoreGateStatus,
+                color = Mist,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "GSI / ${result.gsiCandidateGateStatus} / DSU " +
+                    result.dsuPreflightGateStatus,
                 color = Mist,
                 fontFamily = FontFamily.Monospace,
                 fontSize = 11.sp,

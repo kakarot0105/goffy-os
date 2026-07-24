@@ -22,9 +22,10 @@ configured GOFFY repo root:
 - `.goffy-validation/rom-0-operator-checklist.json`
 
 The Hub returns bounded structured fields for ROM-0 status, stale-report state,
-blocker count, visible blockers, and next action. Missing, stale, malformed, or
-unsafe-display evidence produces schema-valid not-ready status. The tool rejects
-symlinked validation directories and never accepts user-supplied paths.
+unlock, stock, GSI, DSU preflight, fastboot, approval gates, blocker count,
+visible blockers, and next action. Missing, stale, malformed, or unsafe-display
+evidence produces schema-valid not-ready status. The tool rejects symlinked
+validation directories and never accepts user-supplied paths.
 
 Android exact-checks the capability schema/version/permission before invocation,
 displays the bounded result in the timeline, reads a short speech summary when

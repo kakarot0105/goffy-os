@@ -8,6 +8,7 @@ from scripts.create_rom_dsu_preflight_evidence import (
     JSON_SCHEMA_VERSION,
     DsuPreflightStatus,
     create_dsu_preflight_evidence,
+    load_dsu_preflight_evidence,
     main,
     render_json,
 )
@@ -77,6 +78,33 @@ def test_dsu_preflight_blocks_when_dsu_probe_support_is_missing(tmp_path: Path) 
     assert evidence.ok is False
     assert "Android Dynamic System package is not visible" in evidence.blockers
     assert "Android DSU start install activity is not resolvable" in evidence.blockers
+
+
+def test_load_dsu_preflight_evidence_accepts_ready_non_authorizing_artifact(
+    tmp_path: Path,
+) -> None:
+    write_probe(tmp_path)
+    write_stock_evidence(tmp_path)
+    write_gsi_evidence(tmp_path)
+    evidence = create_dsu_preflight_evidence(root=tmp_path)
+    path = tmp_path / ".goffy-validation" / "rom-dsu-preflight-evidence.json"
+    path.write_text(render_json(evidence), encoding="utf-8")
+
+    loaded = load_dsu_preflight_evidence(path)
+
+    assert loaded["status"] == "READY_FOR_MANUAL_DSU_REVIEW"
+    assert loaded["install_authority"] == "WITHHELD"
+    assert loaded["destructive_actions"] == "withheld"
+
+
+def test_load_dsu_preflight_evidence_rejects_blocked_artifact(tmp_path: Path) -> None:
+    write_probe(tmp_path)
+    evidence = create_dsu_preflight_evidence(root=tmp_path)
+    path = tmp_path / ".goffy-validation" / "rom-dsu-preflight-evidence.json"
+    path.write_text(render_json(evidence), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="DSU preflight is not ready"):
+        load_dsu_preflight_evidence(path)
 
 
 def test_dsu_preflight_rejects_sensitive_probe_keys(tmp_path: Path) -> None:

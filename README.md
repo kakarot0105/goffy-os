@@ -544,6 +544,7 @@ Include that evidence in the ROM-0 readiness report:
   --manual-gates-json .goffy-validation/rom-0-manual-gates.json \
   --fastboot-evidence-json .goffy-validation/rom-fastboot-evidence.json \
   --gsi-candidate-evidence-json .goffy-validation/rom-gsi-candidate-evidence.json \
+  --dsu-preflight-evidence-json .goffy-validation/rom-dsu-preflight-evidence.json \
   --signing-plan-json .goffy-validation/rom-signing/release-signing-plan.json \
   --apk-verification-json .goffy-validation/rom-signing/release-apk-verification.json \
   --signed-apk .goffy-validation/rom-signing/GoffyOS-signed.apk \

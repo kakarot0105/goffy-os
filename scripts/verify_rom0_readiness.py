@@ -19,6 +19,9 @@ from scripts.create_aosp_product_import import (  # noqa: E402
     AospProductImportError,
     create_aosp_product_import_report,
 )
+from scripts.create_rom_dsu_preflight_evidence import (  # noqa: E402
+    load_dsu_preflight_evidence,
+)
 from scripts.create_rom_fastboot_evidence import (  # noqa: E402
     ABSOLUTE_POSIX_PATH,
     ABSOLUTE_WINDOWS_PATH,
@@ -167,6 +170,7 @@ def build_readiness_report(
     signed_apk: Path | None,
     fastboot_evidence_json: Path | None = None,
     gsi_candidate_evidence_json: Path | None = None,
+    dsu_preflight_evidence_json: Path | None = None,
     signing_plan_json: Path | None = None,
     apk_verification_json: Path | None = None,
     aosp_root: Path = DEFAULT_AOSP_ROOT,
@@ -189,6 +193,7 @@ def build_readiness_report(
             require_manual_visibility=True,
         ),
         validate_gsi_candidate_evidence(gsi_candidate_evidence_json),
+        validate_dsu_preflight_evidence(dsu_preflight_evidence_json),
         validate_release_signing_plan_evidence(
             signing_plan_json,
             signed_apk=signed_apk,
@@ -617,6 +622,26 @@ def validate_gsi_candidate_evidence(path: Path | None) -> ReadinessSection:
     )
 
 
+def validate_dsu_preflight_evidence(path: Path | None) -> ReadinessSection:
+    if path is None:
+        return ReadinessSection(
+            name="dsu_preflight",
+            ok=False,
+            blockers=("ROM DSU preflight evidence JSON was not supplied",),
+        )
+    try:
+        evidence = load_dsu_preflight_evidence(path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return ReadinessSection(name="dsu_preflight", ok=False, blockers=(str(exc),))
+    return ReadinessSection(
+        name="dsu_preflight",
+        ok=True,
+        blockers=(),
+        warnings=("DSU preflight is non-authorizing and does not prove the GSI will boot",),
+        evidence=evidence,
+    )
+
+
 def validate_gsi_candidate(candidate: Mapping[str, str], blockers: list[str]) -> None:
     append_unsupported_key_blockers(
         candidate,
@@ -918,6 +943,11 @@ def next_steps(sections: tuple[ReadinessSection, ...]) -> tuple[str, ...]:
                 "Create ROM GSI candidate evidence from a downloaded official Google "
                 "ARM64 GSI archive."
             )
+        elif section.name == "dsu_preflight":
+            steps.append(
+                "Create read-only DSU preflight evidence after stock restore and GSI "
+                "checksum evidence exist."
+            )
         elif section.name == "release_signing_plan":
             steps.append("Create a ROM release signing plan with an external keystore.")
         elif section.name == "release_apk_verification":
@@ -1024,6 +1054,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--manual-gates-json", type=Path)
     parser.add_argument("--fastboot-evidence-json", type=Path)
     parser.add_argument("--gsi-candidate-evidence-json", type=Path)
+    parser.add_argument("--dsu-preflight-evidence-json", type=Path)
     parser.add_argument("--signing-plan-json", type=Path)
     parser.add_argument("--apk-verification-json", type=Path)
     parser.add_argument("--signed-apk", type=Path)
@@ -1045,6 +1076,7 @@ def main(argv: list[str] | None = None) -> int:
         manual_gates_json=args.manual_gates_json,
         fastboot_evidence_json=args.fastboot_evidence_json,
         gsi_candidate_evidence_json=args.gsi_candidate_evidence_json,
+        dsu_preflight_evidence_json=args.dsu_preflight_evidence_json,
         signing_plan_json=args.signing_plan_json,
         apk_verification_json=args.apk_verification_json,
         signed_apk=args.signed_apk,

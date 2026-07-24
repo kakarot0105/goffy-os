@@ -712,7 +712,7 @@ private fun GoffyRomStatus.goffyRomStatusSummary(): String {
     return if (romReady) {
         "GOFFY ROM-0 is ready for manual readiness review only"
     } else {
-        "GOFFY ROM-0 $installDecision: $blockerLabel remain$staleLabel"
+        "GOFFY ROM-0 $installDecision: $blockerLabel remain; DSU $dsuPreflightGateStatus$staleLabel"
     }
 }
 

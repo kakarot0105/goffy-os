@@ -45,6 +45,7 @@ from scripts.create_rom_bootloader_visibility_guide import (  # noqa: E402
 from scripts.create_rom_bootloader_visibility_guide import (  # noqa: E402
     render_markdown as render_guide_markdown,
 )
+from scripts.create_rom_dsu_preflight_evidence import load_dsu_preflight_evidence  # noqa: E402
 from scripts.create_rom_manual_gates_template import load_stock_restore_evidence  # noqa: E402
 from scripts.create_rom_stock_restore_evidence import write_output  # noqa: E402
 from scripts.create_rom_unlock_eligibility_evidence import (  # noqa: E402
@@ -55,7 +56,7 @@ from scripts.run_moto_g_device_smoke import (  # noqa: E402
     default_command_runner,
 )
 
-JSON_SCHEMA_VERSION = "goffy.rom0-refresh-report.v3"
+JSON_SCHEMA_VERSION = "goffy.rom0-refresh-report.v4"
 VALIDATION_DIR = Path(".goffy-validation")
 PROBE_FILENAME = "rom-feasibility-current.json"
 PACKET_MARKDOWN_FILENAME = "rom-0-manual-action-packet.md"
@@ -68,6 +69,7 @@ OPERATOR_CHECKLIST_JSON_FILENAME = "rom-0-operator-checklist.json"
 UNLOCK_EVIDENCE_FILENAME = "rom-unlock-eligibility-evidence.json"
 STOCK_EVIDENCE_FILENAME = "rom-stock-restore-evidence.json"
 GSI_EVIDENCE_FILENAME = "rom-gsi-candidate-evidence.json"
+DSU_PREFLIGHT_EVIDENCE_FILENAME = "rom-dsu-preflight-evidence.json"
 FASTBOOT_EVIDENCE_FILENAME = "rom-fastboot-evidence.json"
 
 
@@ -166,6 +168,12 @@ def refresh_rom0_action_packet(
         load_gsi_candidate_evidence,
         root=root,
     )
+    dsu_preflight, dsu_input = load_optional_evidence(
+        "dsu_preflight",
+        paths["dsu_preflight_evidence"],
+        load_dsu_preflight_evidence,
+        root=root,
+    )
     fastboot_evidence, fastboot_input = load_optional_evidence(
         "fastboot_evidence",
         paths["fastboot_evidence"],
@@ -178,6 +186,7 @@ def refresh_rom0_action_packet(
         unlock_eligibility=unlock,
         stock_restore=stock,
         gsi_candidate=gsi_candidate,
+        dsu_preflight=dsu_preflight,
         fastboot_evidence=fastboot_evidence,
     )
     write_validation_file(
@@ -195,6 +204,7 @@ def refresh_rom0_action_packet(
         unlock_input,
         stock_input,
         gsi_input,
+        dsu_input,
         fastboot_input,
         bootloader_guide_input,
     )
@@ -257,7 +267,12 @@ def build_refresh_report(
 ) -> Rom0RefreshReport:
     refresh_succeeded = not errors
     packet_ready = packet.status is PacketStatus.READY_FOR_ROM0_READINESS_REVIEW
-    rom_ready = refresh_succeeded and packet_ready
+    dsu_preflight_ready = evidence_status(evidence_inputs, "dsu_preflight") is EvidenceStatus.LOADED
+    blocked_by = refresh_blocked_by(
+        packet_blocked_by=packet.blocked_by,
+        dsu_preflight_ready=dsu_preflight_ready,
+    )
+    rom_ready = refresh_succeeded and packet_ready and dsu_preflight_ready
     return Rom0RefreshReport(
         schema_version=JSON_SCHEMA_VERSION,
         generated_at=datetime.now(UTC).isoformat(),
@@ -277,7 +292,7 @@ def build_refresh_report(
         packet_status=str(packet.status),
         bootloader_visibility_status=bootloader_status_from_inputs(evidence_inputs),
         operator_checklist_status=operator_checklist_status,
-        blocked_by=packet.blocked_by,
+        blocked_by=blocked_by,
         evidence_inputs=evidence_inputs,
         errors=errors,
     )
@@ -296,6 +311,7 @@ def output_paths(validation_dir: Path) -> dict[str, Path]:
         "unlock_evidence": validation_dir / UNLOCK_EVIDENCE_FILENAME,
         "stock_evidence": validation_dir / STOCK_EVIDENCE_FILENAME,
         "gsi_evidence": validation_dir / GSI_EVIDENCE_FILENAME,
+        "dsu_preflight_evidence": validation_dir / DSU_PREFLIGHT_EVIDENCE_FILENAME,
         "fastboot_evidence": validation_dir / FASTBOOT_EVIDENCE_FILENAME,
     }
 
@@ -471,6 +487,24 @@ def bootloader_status_from_inputs(evidence_inputs: Sequence[EvidenceInput]) -> s
         if evidence_input.name == "bootloader_visibility_guide":
             return bootloader_status_from_input(evidence_input)
     return EvidenceStatus.MISSING.value
+
+
+def evidence_status(evidence_inputs: Sequence[EvidenceInput], name: str) -> EvidenceStatus:
+    for evidence_input in evidence_inputs:
+        if evidence_input.name == name:
+            return evidence_input.status
+    return EvidenceStatus.MISSING
+
+
+def refresh_blocked_by(
+    *,
+    packet_blocked_by: tuple[str, ...],
+    dsu_preflight_ready: bool,
+) -> tuple[str, ...]:
+    blockers = list(packet_blocked_by)
+    if not dsu_preflight_ready:
+        blockers.append("read-only DSU preflight evidence is missing")
+    return tuple(dict.fromkeys(blockers))
 
 
 def operator_checklist_status_from_input(evidence_input: EvidenceInput) -> str:

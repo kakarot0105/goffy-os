@@ -17,11 +17,12 @@ TOOL_VERSION = "1.0.0"
 VALIDATION_DIR = Path(".goffy-validation")
 REFRESH_REPORT_FILENAME = "rom-0-refresh-report.json"
 OPERATOR_CHECKLIST_FILENAME = "rom-0-operator-checklist.json"
-LATEST_REFRESH_SCHEMA = "goffy.rom0-refresh-report.v3"
+LATEST_REFRESH_SCHEMA = "goffy.rom0-refresh-report.v4"
 SUPPORTED_REFRESH_SCHEMAS = frozenset(
     (
         "goffy.rom0-refresh-report.v1",
         "goffy.rom0-refresh-report.v2",
+        "goffy.rom0-refresh-report.v3",
         LATEST_REFRESH_SCHEMA,
     )
 )
@@ -64,6 +65,7 @@ class GoffyRomStatusOutput(BaseModel):
     unlock_gate_status: str = Field(min_length=1, max_length=MAX_STATUS_LENGTH)
     stock_restore_gate_status: str = Field(min_length=1, max_length=MAX_STATUS_LENGTH)
     gsi_candidate_gate_status: str = Field(min_length=1, max_length=MAX_STATUS_LENGTH)
+    dsu_preflight_gate_status: str = Field(min_length=1, max_length=MAX_STATUS_LENGTH)
     fastboot_gate_status: str = Field(min_length=1, max_length=MAX_STATUS_LENGTH)
     destructive_approval_status: Literal["WITHHELD"]
     rom_ready: bool
@@ -87,6 +89,7 @@ class GoffyRomStatusOutput(BaseModel):
         "unlock_gate_status",
         "stock_restore_gate_status",
         "gsi_candidate_gate_status",
+        "dsu_preflight_gate_status",
         "fastboot_gate_status",
         "next_action",
     )
@@ -178,6 +181,10 @@ def goffy_rom_status_snapshot(*, root: Path) -> dict[str, Any]:
             evidence_statuses,
             "gsi_candidate",
         )
+        dsu_preflight_gate_status = _gate_status_from_evidence(
+            evidence_statuses,
+            "dsu_preflight",
+        )
         fastboot_gate_status = _fastboot_gate_status(
             evidence_statuses,
             bootloader_status=bootloader_status,
@@ -206,6 +213,7 @@ def goffy_rom_status_snapshot(*, root: Path) -> dict[str, Any]:
             unlock_gate_status == "READY"
             and stock_restore_gate_status == "READY"
             and gsi_candidate_gate_status == "READY"
+            and dsu_preflight_gate_status == "READY"
             and fastboot_gate_status == "READY"
         )
         if refresh_claims_ready and not gate_statuses_ready:
@@ -254,6 +262,7 @@ def goffy_rom_status_snapshot(*, root: Path) -> dict[str, Any]:
             unlock_gate_status=unlock_gate_status,
             stock_restore_gate_status=stock_restore_gate_status,
             gsi_candidate_gate_status=gsi_candidate_gate_status,
+            dsu_preflight_gate_status=dsu_preflight_gate_status,
             fastboot_gate_status=fastboot_gate_status,
             destructive_approval_status="WITHHELD",
             rom_ready=rom_ready,
@@ -324,6 +333,7 @@ def _missing_status() -> dict[str, Any]:
         unlock_gate_status="MISSING",
         stock_restore_gate_status="MISSING",
         gsi_candidate_gate_status="MISSING",
+        dsu_preflight_gate_status="MISSING",
         fastboot_gate_status="MISSING",
         destructive_approval_status="WITHHELD",
         rom_ready=False,
@@ -354,6 +364,7 @@ def _invalid_status(summary: str) -> dict[str, Any]:
         unlock_gate_status="INVALID",
         stock_restore_gate_status="INVALID",
         gsi_candidate_gate_status="INVALID",
+        dsu_preflight_gate_status="INVALID",
         fastboot_gate_status="INVALID",
         destructive_approval_status="WITHHELD",
         rom_ready=False,

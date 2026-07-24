@@ -72,6 +72,7 @@ def test_operator_checklist_ready_for_readiness_review_without_destructive_autho
         stock=True,
         unlock=True,
         gsi=True,
+        dsu=True,
         fastboot=True,
         bootloader_status="MANUAL_BOOTLOADER_VISIBLE",
         rom_ready=True,
@@ -85,6 +86,7 @@ def test_operator_checklist_ready_for_readiness_review_without_destructive_autho
     assert checklist.ok
     assert checklist.status is ChecklistStatus.READY_FOR_ROM0_READINESS_REVIEW
     assert checklist.destructive_actions == "withheld"
+    assert steps["record_dsu_preflight"].status is StepStatus.DONE
     assert steps["rom0_readiness_review"].status is StepStatus.READY
     assert steps["destructive_unlock_or_boot_decision"].status is StepStatus.BLOCKED
     assert "fastboot flashing unlock" not in markdown
@@ -112,9 +114,9 @@ def test_operator_checklist_keeps_semantically_rejected_unlock_required() -> Non
     assert steps["create_manual_gates"].status is StepStatus.BLOCKED
 
 
-def test_operator_checklist_accepts_refresh_report_v3() -> None:
+def test_operator_checklist_accepts_refresh_report_v4() -> None:
     report = refresh_report()
-    report["schema_version"] = "goffy.rom0-refresh-report.v3"
+    report["schema_version"] = "goffy.rom0-refresh-report.v4"
 
     checklist = build_operator_checklist(report)
 
@@ -153,6 +155,7 @@ def test_operator_checklist_cli_writes_outputs_only_under_validation_dir(
                 stock=True,
                 unlock=True,
                 gsi=True,
+                dsu=True,
                 fastboot=True,
                 bootloader_status="MANUAL_BOOTLOADER_VISIBLE",
                 rom_ready=True,
@@ -202,6 +205,7 @@ def refresh_report(
     stock: bool = False,
     unlock: bool = False,
     gsi: bool = False,
+    dsu: bool = False,
     fastboot: bool = False,
     bootloader_status: str = "HOST_EVIDENCE_MISSING",
     rom_ready: bool = False,
@@ -212,6 +216,7 @@ def refresh_report(
         evidence_input("unlock_eligibility", unlock),
         evidence_input("stock_restore", stock),
         evidence_input("gsi_candidate", gsi),
+        evidence_input("dsu_preflight", dsu),
         evidence_input("fastboot_evidence", fastboot),
         evidence_input("bootloader_visibility_guide", True),
     ]

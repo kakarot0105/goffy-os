@@ -113,6 +113,7 @@ private fun GoffyRomStatus.romStatusSpeech(): String =
             "Next action is hidden because it contained unsafe path-like text. "
         }
         "GOFFY ROM zero install decision is $installDecision with $blockerCount blockers. " +
+            "DSU preflight is $dsuPreflightGateStatus. " +
             safeNextAction +
             "Destructive actions remain withheld."
     }

@@ -15,6 +15,7 @@ class GoffyToolContractsTest {
         assertFalse(valid.copy(destructiveActions = "allowed").matchesToolContract())
         assertFalse(valid.copy(destructiveApprovalStatus = "APPROVED").matchesToolContract())
         assertFalse(valid.copy(installDecision = "INSTALL_NOW").matchesToolContract())
+        assertFalse(valid.copy(dsuPreflightGateStatus = "/private/dsu").matchesToolContract())
         assertFalse(valid.copy(romReady = true, blockerCount = 1).matchesToolContract())
         assertFalse(valid.copy(blockerCount = 0, blockers = emptyList()).matchesToolContract())
         assertFalse(
@@ -78,6 +79,25 @@ class GoffyToolContractsTest {
         )
         assertFalse(valid.copy(blockerCount = 3, blockersTruncated = false).matchesToolContract())
         assertFalse(valid.copy(blockers = listOf("safe", "bad\u202Eblocker")).matchesToolContract())
+        assertFalse(
+            valid
+                .copy(
+                    summary = "ROM-0 is ready for a manual readiness review",
+                    refreshStatus = GOFFY_ROM_READY_STATUS,
+                    packetStatus = GOFFY_ROM_READY_STATUS,
+                    operatorChecklistStatus = GOFFY_ROM_READY_STATUS,
+                    installDecision = "READY_FOR_MANUAL_REVIEW",
+                    unlockGateStatus = "READY",
+                    stockRestoreGateStatus = "READY",
+                    gsiCandidateGateStatus = "READY",
+                    dsuPreflightGateStatus = "MISSING",
+                    fastbootGateStatus = "READY",
+                    romReady = true,
+                    blockerCount = 0,
+                    blockers = emptyList(),
+                    nextAction = "Review ROM-0 readiness manually",
+                ).matchesToolContract(),
+        )
         assertTrue(
             valid
                 .copy(
@@ -89,6 +109,7 @@ class GoffyToolContractsTest {
                     unlockGateStatus = "READY",
                     stockRestoreGateStatus = "READY",
                     gsiCandidateGateStatus = "READY",
+                    dsuPreflightGateStatus = "READY",
                     fastbootGateStatus = "READY",
                     romReady = true,
                     blockerCount = 0,
@@ -322,7 +343,7 @@ class GoffyToolContractsTest {
         milestone = GOFFY_ROM_MILESTONE,
         summary = "ROM-0 is BLOCKED; 1 blocker remains",
         generatedAt = "2026-07-22T15:00:00Z",
-        refreshSchemaVersion = "goffy.rom0-refresh-report.v3",
+        refreshSchemaVersion = "goffy.rom0-refresh-report.v4",
         refreshStatus = "BLOCKED",
         packetStatus = "BLOCKED_MANUAL_EVIDENCE",
         bootloaderVisibilityStatus = "READY_FOR_MANUAL_BOOTLOADER_CHECK",
@@ -331,6 +352,7 @@ class GoffyToolContractsTest {
         unlockGateStatus = "MISSING",
         stockRestoreGateStatus = "MISSING",
         gsiCandidateGateStatus = "MISSING",
+        dsuPreflightGateStatus = "MISSING",
         fastbootGateStatus = "MISSING",
         destructiveApprovalStatus = "WITHHELD",
         romReady = false,

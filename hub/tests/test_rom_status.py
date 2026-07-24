@@ -60,6 +60,7 @@ def refresh_payload(
             evidence_input("unlock_eligibility", default_evidence_status),
             evidence_input("stock_restore", default_evidence_status),
             evidence_input("gsi_candidate", default_evidence_status),
+            evidence_input("dsu_preflight", default_evidence_status),
             evidence_input("fastboot_evidence", default_evidence_status),
         ],
         "errors": [],
@@ -115,6 +116,7 @@ def test_rom_status_summarizes_current_refresh_and_operator_artifacts(tmp_path: 
     assert result["unlockGateStatus"] == "MISSING"
     assert result["stockRestoreGateStatus"] == "MISSING"
     assert result["gsiCandidateGateStatus"] == "MISSING"
+    assert result["dsuPreflightGateStatus"] == "MISSING"
     assert result["fastbootGateStatus"] == "MISSING"
     assert result["destructiveApprovalStatus"] == "WITHHELD"
     assert result["blockerCount"] == 2
@@ -218,6 +220,7 @@ def test_rom_status_allows_ready_only_when_refresh_and_operator_are_ready(
     assert result["unlockGateStatus"] == "READY"
     assert result["stockRestoreGateStatus"] == "READY"
     assert result["gsiCandidateGateStatus"] == "READY"
+    assert result["dsuPreflightGateStatus"] == "READY"
     assert result["fastbootGateStatus"] == "READY"
     assert result["destructiveApprovalStatus"] == "WITHHELD"
     assert result["checkedOperatorChecklist"] is True
@@ -248,6 +251,34 @@ def test_rom_status_rejects_ready_claim_without_gate_evidence(tmp_path: Path) ->
     assert "ROM-0 install gate statuses are incomplete" in result["blockers"]
 
 
+def test_rom_status_rejects_ready_claim_without_dsu_preflight(tmp_path: Path) -> None:
+    validation_dir = tmp_path / ".goffy-validation"
+    write_json(
+        validation_dir / "rom-0-refresh-report.json",
+        refresh_payload(
+            rom_ready=True,
+            blocked_by=[],
+            evidence_inputs=[
+                evidence_input("unlock_eligibility", "LOADED"),
+                evidence_input("stock_restore", "LOADED"),
+                evidence_input("gsi_candidate", "LOADED"),
+                evidence_input("fastboot_evidence", "LOADED"),
+            ],
+        ),
+    )
+    write_json(
+        validation_dir / "rom-0-operator-checklist.json",
+        operator_payload(status="READY_FOR_ROM0_READINESS_REVIEW"),
+    )
+
+    result = goffy_rom_status_snapshot(root=tmp_path)
+
+    assert result["romReady"] is False
+    assert result["dsuPreflightGateStatus"] == "MISSING"
+    assert result["installDecision"] == "BLOCKED"
+    assert "ROM-0 install gate statuses are incomplete" in result["blockers"]
+
+
 def test_rom_status_marks_loaded_fastboot_without_manual_visibility_as_host_only(
     tmp_path: Path,
 ) -> None:
@@ -260,6 +291,7 @@ def test_rom_status_marks_loaded_fastboot_without_manual_visibility_as_host_only
                 evidence_input("unlock_eligibility", "LOADED"),
                 evidence_input("stock_restore", "LOADED"),
                 evidence_input("gsi_candidate", "LOADED"),
+                evidence_input("dsu_preflight", "LOADED"),
                 evidence_input("fastboot_evidence", "LOADED"),
             ],
         ),
@@ -284,6 +316,7 @@ def test_rom_status_marks_semantically_rejected_unlock_as_blocked(tmp_path: Path
                 evidence_input("unlock_eligibility", "LOADED"),
                 evidence_input("stock_restore", "LOADED"),
                 evidence_input("gsi_candidate", "LOADED"),
+                evidence_input("dsu_preflight", "LOADED"),
                 evidence_input("fastboot_evidence", "LOADED"),
             ],
         ),

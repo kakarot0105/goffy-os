@@ -98,6 +98,7 @@ def test_packet_records_safe_evidence_without_approving_unlock() -> None:
         "rollback_doc": "docs/setup/kansas-stock-rollback.md",
     }
     gsi_candidate = gsi_candidate_summary()
+    dsu_preflight = dsu_preflight_summary()
     fastboot = fastboot_summary(manual_visible=True)
 
     packet = build_packet(
@@ -105,6 +106,7 @@ def test_packet_records_safe_evidence_without_approving_unlock() -> None:
         unlock_eligibility=unlock,
         stock_restore=stock,
         gsi_candidate=gsi_candidate,
+        dsu_preflight=dsu_preflight,
         fastboot_evidence=fastboot,
     )
     actions = {action.action_id: action for action in packet.actions}
@@ -114,7 +116,7 @@ def test_packet_records_safe_evidence_without_approving_unlock() -> None:
     assert actions["record_unlock_eligibility"].status is ActionStatus.RECORDED
     assert actions["record_stock_restore"].status is ActionStatus.RECORDED
     assert actions["record_gsi_candidate"].status is ActionStatus.RECORDED
-    assert actions["record_dsu_preflight"].status is ActionStatus.READY
+    assert actions["record_dsu_preflight"].status is ActionStatus.RECORDED
     assert actions["record_fastboot_evidence"].status is ActionStatus.RECORDED
     assert actions["create_manual_gates"].status is ActionStatus.READY
     assert actions["summarize_rom0_readiness"].status is ActionStatus.READY
@@ -124,6 +126,10 @@ def test_packet_records_safe_evidence_without_approving_unlock() -> None:
     )
     assert any(
         "--gsi-candidate-evidence-json .goffy-validation/rom-gsi-candidate-evidence.json" in command
+        for command in actions["summarize_rom0_readiness"].safe_commands
+    )
+    assert any(
+        "--dsu-preflight-evidence-json .goffy-validation/rom-dsu-preflight-evidence.json" in command
         for command in actions["summarize_rom0_readiness"].safe_commands
     )
     assert any(
@@ -366,6 +372,40 @@ def test_cli_loads_gsi_candidate_evidence(
     assert actions["record_gsi_candidate"]["status"] == "RECORDED"
 
 
+def test_cli_loads_dsu_preflight_evidence(
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    probe = tmp_path / "probe.json"
+    probe.write_text(json.dumps(LOCKED_PROBE), encoding="utf-8")
+    output = tmp_path / ".goffy-validation" / "rom-0-manual-action-packet.json"
+    dsu_preflight = write_dsu_preflight_evidence(tmp_path)
+
+    def temp_write(path: Path, text: str) -> None:
+        from scripts.create_rom_stock_restore_evidence import write_output
+
+        write_output(path, text, root=tmp_path)
+
+    monkeypatch.setattr("scripts.create_rom0_manual_action_packet.write_output", temp_write)
+
+    assert (
+        main(
+            [
+                str(probe),
+                "--dsu-preflight-evidence",
+                str(dsu_preflight),
+                "--json",
+                "--output",
+                str(output),
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    actions = {action["action_id"]: action for action in payload["actions"]}
+    assert actions["record_dsu_preflight"]["status"] == "RECORDED"
+
+
 def test_cli_loads_fastboot_evidence(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
@@ -512,6 +552,68 @@ def write_fastboot_evidence(tmp_path: Path) -> Path:
     return path
 
 
+def write_dsu_preflight_evidence(tmp_path: Path) -> Path:
+    path = tmp_path / "rom-dsu-preflight-evidence.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "goffy.rom-dsu-preflight-evidence.v1",
+                "generated_at": "2026-07-22T00:00:00+00:00",
+                "ok": True,
+                "status": "READY_FOR_MANUAL_DSU_REVIEW",
+                "destructive_actions": "withheld",
+                "target_device": target_device_summary(),
+                "probe": {
+                    "generated_at": "2026-07-22T00:00:00+00:00",
+                    "bootloader_state": "locked",
+                    "android_release": "16",
+                    "sdk": "36",
+                    "treble_enabled": "true",
+                    "dynamic_partitions": "true",
+                    "dsu_package_present": "true",
+                    "dsu_start_install_resolves": "true",
+                    "dsu_start_install_activity": "com.android.dynsystem/.VerificationActivity",
+                },
+                "evidence_inputs": [
+                    {
+                        "name": "stock_restore",
+                        "status": "LOADED",
+                        "detail": "validated and consumed",
+                    },
+                    {
+                        "name": "gsi_candidate",
+                        "status": "LOADED",
+                        "detail": "validated and consumed",
+                    },
+                ],
+                "blockers": [],
+                "warnings": [
+                    "DSU preflight does not prove the selected GSI will boot on this Moto"
+                ],
+                "next_steps": ["Review DSU manually through Android system UI"],
+                "official_sources": {
+                    "android_dsu_docs": "https://developer.android.com/topic/dsu",
+                    "android_gsi_releases": (
+                        "https://developer.android.com/topic/generic-system-image/releases"
+                    ),
+                },
+                "reuse_decision": (
+                    "Use Android platform DSU and official Google GSI evidence first."
+                ),
+                "safety": {
+                    "execution_authority": "LOCAL_FILE_VALIDATION_ONLY",
+                    "device_mutation": "NONE",
+                    "install_authority": "WITHHELD",
+                    "destructive_actions": "WITHHELD",
+                    "external_installers_imported": False,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
 def gsi_candidate_summary() -> dict[str, str]:
     return {
         "status": "ARTIFACT_CHECKSUM_VERIFIED",
@@ -522,6 +624,19 @@ def gsi_candidate_summary() -> dict[str, str]:
         "sha256": "2171cf0ea849f8eaa399f4bad2165fab80b0fd9e98d37723a705dca6c41e49ea",
         "source_url": "https://developer.android.com/topic/generic-system-image/releases",
         "authorization": "NON_AUTHORIZING_EVIDENCE",
+    }
+
+
+def dsu_preflight_summary() -> dict[str, str]:
+    return {
+        "status": "READY_FOR_MANUAL_DSU_REVIEW",
+        "bootloader_state": "locked",
+        "treble_enabled": "true",
+        "dynamic_partitions": "true",
+        "dsu_package_present": "true",
+        "dsu_start_install_resolves": "true",
+        "install_authority": "WITHHELD",
+        "destructive_actions": "withheld",
     }
 
 

@@ -16,6 +16,7 @@ fun GoffyRomStatus.matchesToolContract(): Boolean =
         unlockGateStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
         stockRestoreGateStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
         gsiCandidateGateStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
+        dsuPreflightGateStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
         fastbootGateStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
         destructiveApprovalStatus == "WITHHELD" &&
         destructiveActions == "withheld" &&
@@ -37,6 +38,7 @@ fun GoffyRomStatus.matchesToolContract(): Boolean =
         (!romReady || unlockGateStatus == "READY") &&
         (!romReady || stockRestoreGateStatus == "READY") &&
         (!romReady || gsiCandidateGateStatus == "READY") &&
+        (!romReady || dsuPreflightGateStatus == "READY") &&
         (!romReady || fastbootGateStatus == "READY") &&
         (romReady || installDecision == "BLOCKED") &&
         (romReady || blockerCount > 0)

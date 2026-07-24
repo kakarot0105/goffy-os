@@ -14,7 +14,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if __package__ in {None, ""} and str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.create_rom0_manual_action_packet import load_gsi_candidate_evidence  # noqa: E402
+from scripts.create_rom_gsi_candidate_evidence import (  # noqa: E402
+    JSON_SCHEMA_VERSION as GSI_SCHEMA_VERSION,
+)
+from scripts.create_rom_gsi_candidate_evidence import GsiCandidateStatus  # noqa: E402
 from scripts.create_rom_manual_gates_template import load_stock_restore_evidence  # noqa: E402
 from scripts.create_rom_stock_restore_evidence import write_output  # noqa: E402
 from scripts.rom_feasibility_probe import JSON_SCHEMA_VERSION as PROBE_SCHEMA_VERSION  # noqa: E402
@@ -33,6 +36,33 @@ DEFAULT_GSI_EVIDENCE = Path(".goffy-validation/rom-gsi-candidate-evidence.json")
 DEFAULT_OUTPUT = Path(".goffy-validation/rom-dsu-preflight-evidence.json")
 ANDROID_DSU_DOCS_URL = "https://developer.android.com/topic/dsu"
 ANDROID_GSI_RELEASES_URL = "https://developer.android.com/topic/generic-system-image/releases"
+DSU_TOP_LEVEL_KEYS = frozenset(
+    (
+        "schema_version",
+        "generated_at",
+        "ok",
+        "status",
+        "destructive_actions",
+        "target_device",
+        "probe",
+        "evidence_inputs",
+        "blockers",
+        "warnings",
+        "next_steps",
+        "official_sources",
+        "reuse_decision",
+        "safety",
+    )
+)
+DSU_SAFETY_KEYS = frozenset(
+    (
+        "execution_authority",
+        "device_mutation",
+        "install_authority",
+        "destructive_actions",
+        "external_installers_imported",
+    )
+)
 
 
 class DsuPreflightStatus(StrEnum):
@@ -154,6 +184,71 @@ def create_dsu_preflight_evidence(
             external_installers_imported=False,
         ),
     )
+
+
+def load_dsu_preflight_evidence(path: Path) -> dict[str, str]:
+    payload = load_json_mapping(path)
+    blockers: list[str] = []
+    extra_keys = sorted(set(payload) - DSU_TOP_LEVEL_KEYS)
+    if extra_keys:
+        blockers.append(f"DSU preflight evidence contains unsupported keys: {extra_keys}")
+    if payload.get("schema_version") != JSON_SCHEMA_VERSION:
+        blockers.append("DSU preflight evidence schema_version mismatch")
+    if payload.get("destructive_actions") != "withheld":
+        blockers.append("DSU preflight evidence destructive_actions must be withheld")
+    status = str(payload.get("status", ""))
+    if status not in {item.value for item in DsuPreflightStatus}:
+        blockers.append("DSU preflight evidence status is unsupported")
+
+    safety = payload.get("safety")
+    if not isinstance(safety, Mapping):
+        blockers.append("DSU preflight evidence safety must be an object")
+        safety = {}
+    else:
+        safety_extra_keys = sorted(set(safety) - DSU_SAFETY_KEYS)
+        if safety_extra_keys:
+            blockers.append(
+                f"DSU preflight evidence safety contains unsupported keys: {safety_extra_keys}"
+            )
+    if safety.get("execution_authority") != "LOCAL_FILE_VALIDATION_ONLY":
+        blockers.append("DSU preflight evidence execution_authority must be local-only")
+    if safety.get("device_mutation") != "NONE":
+        blockers.append("DSU preflight evidence device_mutation must be NONE")
+    if safety.get("install_authority") != "WITHHELD":
+        blockers.append("DSU preflight evidence install_authority must be WITHHELD")
+    if safety.get("destructive_actions") != "WITHHELD":
+        blockers.append("DSU preflight evidence safety destructive_actions must be WITHHELD")
+    if safety.get("external_installers_imported") is not False:
+        blockers.append("DSU preflight evidence must not import external installers")
+
+    target_device = mapping_value(payload.get("target_device"))
+    blockers.extend(validate_target_device(target_device))
+    if payload.get("ok") is not True:
+        blockers.extend(string_items(payload.get("blockers")) or ("DSU preflight is not ready",))
+    if status != DsuPreflightStatus.READY_FOR_MANUAL_DSU_REVIEW:
+        blockers.append("DSU preflight is not ready for manual DSU review")
+
+    if blockers:
+        raise ValueError("; ".join(tuple(dict.fromkeys(blockers))))
+
+    probe = mapping_value(payload.get("probe"))
+    return {
+        "status": status,
+        "bootloader_state": probe.get("bootloader_state", ""),
+        "treble_enabled": probe.get("treble_enabled", ""),
+        "dynamic_partitions": probe.get("dynamic_partitions", ""),
+        "dsu_package_present": probe.get("dsu_package_present", ""),
+        "dsu_start_install_resolves": probe.get("dsu_start_install_resolves", ""),
+        "install_authority": str(safety.get("install_authority", "")),
+        "destructive_actions": str(payload.get("destructive_actions", "")),
+    }
+
+
+def load_json_mapping(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("DSU preflight evidence must be a JSON object")
+    return payload
 
 
 def load_probe_payload(path: Path) -> dict[str, Any]:
@@ -312,6 +407,39 @@ def load_optional_gsi_evidence(
     )
 
 
+def load_gsi_candidate_evidence(path: Path) -> dict[str, str]:
+    payload = load_json_mapping(path)
+    blockers: list[str] = []
+    if payload.get("schema_version") != GSI_SCHEMA_VERSION:
+        blockers.append("GSI candidate evidence schema_version mismatch")
+    if payload.get("ok") is not True:
+        blockers.append("GSI candidate evidence is not OK")
+    if payload.get("status") != GsiCandidateStatus.ARTIFACT_CHECKSUM_VERIFIED:
+        blockers.append("GSI candidate evidence status is not ARTIFACT_CHECKSUM_VERIFIED")
+    artifact = mapping_value(payload.get("artifact"))
+    source = mapping_value(payload.get("source"))
+    safety = mapping_value(payload.get("safety"))
+    if not artifact.get("artifact_name"):
+        blockers.append("GSI candidate evidence artifact_name is missing")
+    if not artifact.get("sha256"):
+        blockers.append("GSI candidate evidence sha256 is missing")
+    if not source.get("source_url"):
+        blockers.append("GSI candidate evidence source_url is missing")
+    if safety.get("authorization") != "NON_AUTHORIZING_EVIDENCE":
+        blockers.append("GSI candidate evidence authorization must be non-authorizing")
+    if safety.get("destructive_actions") != "WITHHELD":
+        blockers.append("GSI candidate evidence destructive_actions must be WITHHELD")
+    if blockers:
+        raise ValueError("; ".join(tuple(dict.fromkeys(blockers))))
+    return {
+        "status": str(payload.get("status", "")),
+        "authorization": safety.get("authorization", ""),
+        "artifact_name": artifact.get("artifact_name", ""),
+        "sha256": artifact.get("sha256", ""),
+        "source_url": source.get("source_url", ""),
+    }
+
+
 def confined_existing_validation_path(path: Path, *, root: Path) -> Path | None:
     repo_root = root.expanduser().resolve(strict=False)
     validation_root = repo_root / ".goffy-validation"
@@ -345,6 +473,12 @@ def mapping_value(value: object) -> dict[str, str]:
     if not isinstance(value, Mapping):
         return {}
     return {str(key): str(item) for key, item in value.items()}
+
+
+def string_items(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list | tuple):
+        return ()
+    return tuple(item for item in value if isinstance(item, str) and item.strip())
 
 
 def bool_value_text(value: object) -> str:
