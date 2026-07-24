@@ -105,14 +105,14 @@ private fun ToolResultContent.speakableText(verified: Boolean): String =
 
 private fun GoffyRomStatus.romStatusSpeech(): String =
     if (romReady) {
-        "GOFFY ROM zero is ready for manual readiness review. Destructive actions remain withheld."
+        "GOFFY ROM zero is ready for manual readiness review only. Destructive actions remain withheld."
     } else {
         val safeNextAction = if (nextAction.isSafeRomStatusSpeechText()) {
             "Next action is $nextAction. "
         } else {
             "Next action is hidden because it contained unsafe path-like text. "
         }
-        "GOFFY ROM zero status is $refreshStatus with $blockerCount blockers. " +
+        "GOFFY ROM zero install decision is $installDecision with $blockerCount blockers. " +
             safeNextAction +
             "Destructive actions remain withheld."
     }

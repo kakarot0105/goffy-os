@@ -2341,15 +2341,29 @@ private fun TaskResult(result: ToolResultContent) {
                 fontSize = 13.sp,
             )
             Text(
-                text = if (result.romReady) {
-                    "ready for manual review / destructive actions withheld"
-                } else {
-                    "${result.refreshStatus} / ${result.blockerCount} blocker(s)" +
-                        if (result.staleReport) " / stale" else ""
-                },
+                text = "${result.installDecision} / ${result.blockerCount} blocker(s)" +
+                    if (result.staleReport) " / stale" else "",
                 color = Signal,
                 fontSize = 11.sp,
                 maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "GATES / unlock ${result.unlockGateStatus} / stock " +
+                    "${result.stockRestoreGateStatus} / gsi ${result.gsiCandidateGateStatus}",
+                color = Mist,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "FASTBOOT / ${result.fastbootGateStatus} / APPROVAL " +
+                    result.destructiveApprovalStatus,
+                color = Mist,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 11.sp,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             result.blockers.take(3).forEach { blocker ->

@@ -27,12 +27,18 @@ def refresh_payload(
     status: str | None = None,
     refresh_succeeded: bool = True,
     packet_status: str | None = None,
+    bootloader_visibility_status: str | None = None,
     blocked_by: list[str] | None = None,
+    evidence_inputs: list[dict[str, str]] | None = None,
 ) -> dict[str, object]:
     refresh_status = status or ("BLOCKED" if not rom_ready else "READY_FOR_ROM0_READINESS_REVIEW")
     packet_status_value = packet_status or (
         "BLOCKED_MANUAL_EVIDENCE" if not rom_ready else "READY_FOR_ROM0_READINESS_REVIEW"
     )
+    bootloader_status = bootloader_visibility_status or (
+        "READY_FOR_MANUAL_BOOTLOADER_CHECK" if not rom_ready else "MANUAL_BOOTLOADER_VISIBLE"
+    )
+    default_evidence_status = "LOADED" if rom_ready else "MISSING"
     return {
         "schema_version": schema_version,
         "generated_at": "2026-07-22T15:00:00+00:00",
@@ -41,14 +47,31 @@ def refresh_payload(
         "rom_ready": rom_ready,
         "destructive_actions": destructive_actions,
         "packet_status": packet_status_value,
-        "bootloader_visibility_status": "READY_FOR_MANUAL_BOOTLOADER_CHECK",
+        "bootloader_visibility_status": bootloader_status,
         "operator_checklist_status": "BLOCKED_EVIDENCE"
         if not rom_ready
         else "READY_FOR_ROM0_READINESS_REVIEW",
         "blocked_by": blocked_by
         if blocked_by is not None
         else ["exact stock restore evidence is missing"],
+        "evidence_inputs": evidence_inputs
+        if evidence_inputs is not None
+        else [
+            evidence_input("unlock_eligibility", default_evidence_status),
+            evidence_input("stock_restore", default_evidence_status),
+            evidence_input("gsi_candidate", default_evidence_status),
+            evidence_input("fastboot_evidence", default_evidence_status),
+        ],
         "errors": [],
+    }
+
+
+def evidence_input(name: str, status: str) -> dict[str, str]:
+    return {
+        "name": name,
+        "path": f".goffy-validation/{name}.json",
+        "status": status,
+        "detail": "test fixture",
     }
 
 
@@ -88,6 +111,12 @@ def test_rom_status_summarizes_current_refresh_and_operator_artifacts(tmp_path: 
     assert result["milestone"] == "ROM-0"
     assert result["refreshSchemaVersion"] == LATEST_REFRESH_SCHEMA
     assert result["operatorChecklistStatus"] == "BLOCKED_EVIDENCE"
+    assert result["installDecision"] == "BLOCKED"
+    assert result["unlockGateStatus"] == "MISSING"
+    assert result["stockRestoreGateStatus"] == "MISSING"
+    assert result["gsiCandidateGateStatus"] == "MISSING"
+    assert result["fastbootGateStatus"] == "MISSING"
+    assert result["destructiveApprovalStatus"] == "WITHHELD"
     assert result["blockerCount"] == 2
     assert result["blockers"] == [
         "exact stock restore evidence is missing",
@@ -185,10 +214,86 @@ def test_rom_status_allows_ready_only_when_refresh_and_operator_are_ready(
 
     assert result["status"] == "available"
     assert result["romReady"] is True
+    assert result["installDecision"] == "READY_FOR_MANUAL_REVIEW"
+    assert result["unlockGateStatus"] == "READY"
+    assert result["stockRestoreGateStatus"] == "READY"
+    assert result["gsiCandidateGateStatus"] == "READY"
+    assert result["fastbootGateStatus"] == "READY"
+    assert result["destructiveApprovalStatus"] == "WITHHELD"
     assert result["checkedOperatorChecklist"] is True
     assert result["operatorChecklistStatus"] == "READY_FOR_ROM0_READINESS_REVIEW"
     assert result["blockerCount"] == 0
     assert result["blockers"] == []
+
+
+def test_rom_status_rejects_ready_claim_without_gate_evidence(tmp_path: Path) -> None:
+    validation_dir = tmp_path / ".goffy-validation"
+    write_json(
+        validation_dir / "rom-0-refresh-report.json",
+        refresh_payload(
+            rom_ready=True,
+            blocked_by=[],
+            evidence_inputs=[],
+        ),
+    )
+    write_json(
+        validation_dir / "rom-0-operator-checklist.json",
+        operator_payload(status="READY_FOR_ROM0_READINESS_REVIEW"),
+    )
+
+    result = goffy_rom_status_snapshot(root=tmp_path)
+
+    assert result["romReady"] is False
+    assert result["installDecision"] == "BLOCKED"
+    assert "ROM-0 install gate statuses are incomplete" in result["blockers"]
+
+
+def test_rom_status_marks_loaded_fastboot_without_manual_visibility_as_host_only(
+    tmp_path: Path,
+) -> None:
+    validation_dir = tmp_path / ".goffy-validation"
+    write_json(
+        validation_dir / "rom-0-refresh-report.json",
+        refresh_payload(
+            bootloader_visibility_status="READY_FOR_MANUAL_BOOTLOADER_CHECK",
+            evidence_inputs=[
+                evidence_input("unlock_eligibility", "LOADED"),
+                evidence_input("stock_restore", "LOADED"),
+                evidence_input("gsi_candidate", "LOADED"),
+                evidence_input("fastboot_evidence", "LOADED"),
+            ],
+        ),
+    )
+    write_json(validation_dir / "rom-0-operator-checklist.json", operator_payload())
+
+    result = goffy_rom_status_snapshot(root=tmp_path)
+
+    assert result["fastbootGateStatus"] == "HOST_READY_ONLY"
+    assert result["installDecision"] == "BLOCKED"
+
+
+def test_rom_status_marks_semantically_rejected_unlock_as_blocked(tmp_path: Path) -> None:
+    validation_dir = tmp_path / ".goffy-validation"
+    write_json(
+        validation_dir / "rom-0-refresh-report.json",
+        refresh_payload(
+            blocked_by=[
+                "manual OEM or Motorola unlock eligibility evidence is missing or not eligible"
+            ],
+            evidence_inputs=[
+                evidence_input("unlock_eligibility", "LOADED"),
+                evidence_input("stock_restore", "LOADED"),
+                evidence_input("gsi_candidate", "LOADED"),
+                evidence_input("fastboot_evidence", "LOADED"),
+            ],
+        ),
+    )
+    write_json(validation_dir / "rom-0-operator-checklist.json", operator_payload())
+
+    result = goffy_rom_status_snapshot(root=tmp_path)
+
+    assert result["unlockGateStatus"] == "BLOCKED"
+    assert result["installDecision"] == "BLOCKED"
 
 
 def test_rom_status_rejects_contradictory_refresh_ready_fields(tmp_path: Path) -> None:

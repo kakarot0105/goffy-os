@@ -26,7 +26,7 @@ DEFAULT_REFRESH_REPORT = VALIDATION_DIR / "rom-0-refresh-report.json"
 DEFAULT_JSON_OUTPUT = VALIDATION_DIR / "rom-0-operator-checklist.json"
 DEFAULT_MARKDOWN_OUTPUT = VALIDATION_DIR / "rom-0-operator-checklist.md"
 UNLOCK_NOT_ACCEPTED_BLOCKER = (
-    "manual OEM/Motorola unlock eligibility evidence is missing or not eligible"
+    "manual OEM or Motorola unlock eligibility evidence is missing or not eligible"
 )
 
 FORBIDDEN_COMMAND_TERMS = (
@@ -194,7 +194,7 @@ def checklist_blockers(
             "or boot decision"
         )
     if not unlock_ready:
-        blockers.append("OEM/Motorola unlock eligibility evidence is missing")
+        blockers.append("OEM or Motorola unlock eligibility evidence is missing")
     if not gsi_ready:
         blockers.append("official Google GSI archive evidence is missing")
     if not fastboot_ready:
@@ -271,7 +271,7 @@ def unlock_eligibility_step(
         status = StepStatus.BLOCKED
     return OperatorStep(
         step_id="record_unlock_eligibility",
-        title="Record OEM/Motorola unlock eligibility",
+        title="Record OEM or Motorola unlock eligibility",
         kind=StepKind.HUMAN_ONLY,
         status=status,
         summary=(

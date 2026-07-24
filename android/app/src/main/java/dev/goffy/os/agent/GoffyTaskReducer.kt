@@ -710,9 +710,9 @@ private fun GoffyRomStatus.goffyRomStatusSummary(): String {
     val blockerLabel = if (blockerCount == 1) "1 blocker" else "$blockerCount blockers"
     val staleLabel = if (staleReport) "; refresh stale" else ""
     return if (romReady) {
-        "GOFFY ROM-0 is ready for manual readiness review"
+        "GOFFY ROM-0 is ready for manual readiness review only"
     } else {
-        "GOFFY ROM-0 $refreshStatus: $blockerLabel remain$staleLabel"
+        "GOFFY ROM-0 $installDecision: $blockerLabel remain$staleLabel"
     }
 }
 

@@ -137,7 +137,7 @@ next?" packet for the human checks, run:
 .venv/bin/python scripts/refresh_rom0_action_packet.py
 ```
 
-The packet is read-only/template-only. It summarizes missing OEM/Motorola
+The packet is read-only/template-only. It summarizes missing OEM or Motorola
 unlock eligibility, stock-restore evidence, read-only fastboot evidence, and
 official GSI candidate evidence, links those actions to the typed GOFFY evidence
 helpers, regenerates the manual bootloader visibility guide and ordered operator
@@ -164,6 +164,10 @@ The phone can now ask the Hub for a bounded version of this local state through
 status`, `Is GOFFY ROM ready?`, or `What are we building now?`. This route is
 read-only status reporting. It does not authorize or perform unlocking,
 rebooting, flashing, erasing, wiping, booting, or shell execution.
+The response includes explicit install-gate statuses for unlock eligibility,
+stock restore, official GSI evidence, fastboot visibility, and destructive
+approval. The destructive approval field remains `WITHHELD`; `romReady` only
+means ready for manual ROM-0 review, not permission to install.
 
 To regenerate only the manual bootloader visibility guide without rebooting the
 phone, run:

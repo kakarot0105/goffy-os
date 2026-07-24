@@ -28,7 +28,7 @@
 - [x] Android Home-shell intent declared, security-scanned, and physically queried
 - [x] Public installed-build provenance recorded; exact stock archive still missing
 - [x] Non-destructive stock archive-name candidate matcher keeps filename matches out of manual gates
-- [x] Redacted unlock-eligibility evidence helper for manual OEM/Motorola checks
+- [x] Redacted unlock-eligibility evidence helper for manual OEM or Motorola checks
 - [x] ROM-0 unlock eligibility evidence bound to the current public Moto probe
 - [x] Read-only probe surfaces missing or disallowing OEM unlock property evidence
 - [x] Non-destructive ROM-0 manual action packet for restore/unlock/GSI evidence collection
@@ -46,6 +46,7 @@
 - [x] Ordered ROM-0 operator checklist blocks skipped stock-restore and bootloader gates
 - [x] One-command ROM-0 refresh emits the operator checklist and status
 - [x] Android-visible `SAFE goffy.rom.status` route for read-only ROM-0 readiness status
+- [x] Android-visible ROM install-gate statuses with destructive approval withheld
 - [x] Machine-checked ROM-0 feature payload contract for GOFFY system-app insertion
 - [x] Redacted stock rollback draft generator bound to the current public Moto probe
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result

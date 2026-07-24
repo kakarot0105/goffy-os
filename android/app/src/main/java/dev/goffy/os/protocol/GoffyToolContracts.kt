@@ -12,6 +12,12 @@ fun GoffyRomStatus.matchesToolContract(): Boolean =
         packetStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
         bootloaderVisibilityStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
         operatorChecklistStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
+        installDecision in GOFFY_ROM_INSTALL_DECISION_VALUES &&
+        unlockGateStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
+        stockRestoreGateStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
+        gsiCandidateGateStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
+        fastbootGateStatus.isSafeRomStatusField(MAX_GOFFY_ROM_STATUS_LENGTH) &&
+        destructiveApprovalStatus == "WITHHELD" &&
         destructiveActions == "withheld" &&
         blockerCount in 0..MAX_GOFFY_ROM_BLOCKER_COUNT &&
         blockers.size <= MAX_GOFFY_ROM_BLOCKERS &&
@@ -27,6 +33,12 @@ fun GoffyRomStatus.matchesToolContract(): Boolean =
         (!romReady || refreshStatus == GOFFY_ROM_READY_STATUS) &&
         (!romReady || packetStatus == GOFFY_ROM_READY_STATUS) &&
         (!romReady || operatorChecklistStatus == GOFFY_ROM_READY_STATUS) &&
+        (!romReady || installDecision == "READY_FOR_MANUAL_REVIEW") &&
+        (!romReady || unlockGateStatus == "READY") &&
+        (!romReady || stockRestoreGateStatus == "READY") &&
+        (!romReady || gsiCandidateGateStatus == "READY") &&
+        (!romReady || fastbootGateStatus == "READY") &&
+        (romReady || installDecision == "BLOCKED") &&
         (romReady || blockerCount > 0)
 
 fun PhoneBatteryStatus.matchesToolContract(): Boolean =
@@ -427,6 +439,7 @@ const val MAX_GOFFY_ROM_NEXT_ACTION_LENGTH = 192
 const val MAX_GOFFY_ROM_BLOCKER_COUNT = 10_000
 const val GOFFY_ROM_READY_STATUS = "READY_FOR_ROM0_READINESS_REVIEW"
 val GOFFY_ROM_STATUS_VALUES = setOf("available", "missing", "invalid")
+val GOFFY_ROM_INSTALL_DECISION_VALUES = setOf("BLOCKED", "READY_FOR_MANUAL_REVIEW")
 private const val MAX_DEVICE_NAME_LENGTH = 128
 private const val MAX_ANDROID_RELEASE_LENGTH = 64
 private const val MIN_SUPPORTED_SDK = 26

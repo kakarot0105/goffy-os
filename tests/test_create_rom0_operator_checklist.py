@@ -98,7 +98,9 @@ def test_operator_checklist_keeps_semantically_rejected_unlock_required() -> Non
         gsi=True,
         fastboot=True,
         bootloader_status="MANUAL_BOOTLOADER_VISIBLE",
-        blocked_by=("manual OEM/Motorola unlock eligibility evidence is missing or not eligible",),
+        blocked_by=(
+            "manual OEM or Motorola unlock eligibility evidence is missing or not eligible",
+        ),
     )
 
     checklist = build_operator_checklist(report)

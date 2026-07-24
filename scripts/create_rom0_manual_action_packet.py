@@ -367,7 +367,7 @@ def unlock_eligibility_action(
     ):
         return ManualAction(
             action_id="record_unlock_eligibility",
-            title="Record OEM/Motorola unlock eligibility",
+            title="Record OEM or Motorola unlock eligibility",
             kind=ActionKind.HUMAN_ONLY,
             status=ActionStatus.RECORDED,
             summary="Redacted OEM toggle and Motorola eligibility evidence is available.",
@@ -379,7 +379,7 @@ def unlock_eligibility_action(
         )
     return ManualAction(
         action_id="record_unlock_eligibility",
-        title="Record OEM/Motorola unlock eligibility",
+        title="Record OEM or Motorola unlock eligibility",
         kind=ActionKind.HUMAN_ONLY,
         status=ActionStatus.REQUIRED,
         summary="The exact phone must prove OEM unlocking and Motorola eligibility manually.",
@@ -586,7 +586,9 @@ def blocked_reasons(
     reasons: list[str] = []
     reasons.extend(probe_blockers)
     if not unlock_ready:
-        reasons.append("manual OEM/Motorola unlock eligibility evidence is missing or not eligible")
+        reasons.append(
+            "manual OEM or Motorola unlock eligibility evidence is missing or not eligible"
+        )
     if not stock_ready:
         reasons.append("exact stock restore evidence is missing")
     if not gsi_ready:

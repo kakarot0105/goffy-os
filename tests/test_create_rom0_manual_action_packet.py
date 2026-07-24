@@ -259,7 +259,7 @@ def test_unlock_evidence_target_must_match_probe() -> None:
     actions = {action.action_id: action for action in packet.actions}
 
     assert packet.status is PacketStatus.BLOCKED_MANUAL_EVIDENCE
-    assert "manual OEM/Motorola unlock eligibility evidence is missing or not eligible" in (
+    assert "manual OEM or Motorola unlock eligibility evidence is missing or not eligible" in (
         packet.blocked_by
     )
     assert actions["record_unlock_eligibility"].status is ActionStatus.REQUIRED
@@ -288,7 +288,7 @@ def test_stale_same_device_unlock_evidence_does_not_advance_readiness() -> None:
     actions = {action.action_id: action for action in packet.actions}
 
     assert packet.status is PacketStatus.BLOCKED_MANUAL_EVIDENCE
-    assert "manual OEM/Motorola unlock eligibility evidence is missing or not eligible" in (
+    assert "manual OEM or Motorola unlock eligibility evidence is missing or not eligible" in (
         packet.blocked_by
     )
     assert actions["record_unlock_eligibility"].status is ActionStatus.REQUIRED

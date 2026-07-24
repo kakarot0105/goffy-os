@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import unicodedata
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 
@@ -26,6 +27,9 @@ SUPPORTED_REFRESH_SCHEMAS = frozenset(
 )
 SUPPORTED_OPERATOR_SCHEMA = "goffy.rom0-operator-checklist.v1"
 READY_FOR_ROM0_REVIEW = "READY_FOR_ROM0_READINESS_REVIEW"
+UNLOCK_NOT_ACCEPTED_BLOCKER = (
+    "manual OEM or Motorola unlock eligibility evidence is missing or not eligible"
+)
 MAX_ARTIFACT_BYTES = 64_000
 MAX_BLOCKERS = 8
 MAX_BLOCKER_LENGTH = 160
@@ -56,6 +60,12 @@ class GoffyRomStatusOutput(BaseModel):
     packet_status: str = Field(min_length=1, max_length=MAX_STATUS_LENGTH)
     bootloader_visibility_status: str = Field(min_length=1, max_length=MAX_STATUS_LENGTH)
     operator_checklist_status: str = Field(min_length=1, max_length=MAX_STATUS_LENGTH)
+    install_decision: Literal["BLOCKED", "READY_FOR_MANUAL_REVIEW"]
+    unlock_gate_status: str = Field(min_length=1, max_length=MAX_STATUS_LENGTH)
+    stock_restore_gate_status: str = Field(min_length=1, max_length=MAX_STATUS_LENGTH)
+    gsi_candidate_gate_status: str = Field(min_length=1, max_length=MAX_STATUS_LENGTH)
+    fastboot_gate_status: str = Field(min_length=1, max_length=MAX_STATUS_LENGTH)
+    destructive_approval_status: Literal["WITHHELD"]
     rom_ready: bool
     destructive_actions: Literal["withheld"]
     blocker_count: int = Field(ge=0, le=10_000)
@@ -74,6 +84,10 @@ class GoffyRomStatusOutput(BaseModel):
         "packet_status",
         "bootloader_visibility_status",
         "operator_checklist_status",
+        "unlock_gate_status",
+        "stock_restore_gate_status",
+        "gsi_candidate_gate_status",
+        "fastboot_gate_status",
         "next_action",
     )
     @classmethod
@@ -151,6 +165,23 @@ def goffy_rom_status_snapshot(*, root: Path) -> dict[str, Any]:
         )
         generated_at = _string_value(refresh_report.get("generated_at"), default="unknown")
         raw_blockers = _string_items(refresh_report.get("blocked_by"))
+        evidence_statuses = _evidence_statuses(refresh_report)
+        unlock_gate_status = _unlock_gate_status(
+            evidence_statuses,
+            refresh_blockers=raw_blockers,
+        )
+        stock_restore_gate_status = _gate_status_from_evidence(
+            evidence_statuses,
+            "stock_restore",
+        )
+        gsi_candidate_gate_status = _gate_status_from_evidence(
+            evidence_statuses,
+            "gsi_candidate",
+        )
+        fastboot_gate_status = _fastboot_gate_status(
+            evidence_statuses,
+            bootloader_status=bootloader_status,
+        )
         blockers = [_bounded_text(item, maximum=MAX_BLOCKER_LENGTH) for item in raw_blockers]
         blockers.extend(
             _bounded_text(item, maximum=MAX_BLOCKER_LENGTH) for item in operator_blockers
@@ -171,9 +202,18 @@ def goffy_rom_status_snapshot(*, root: Path) -> dict[str, Any]:
             blockers.append(f"ROM-0 operator checklist status is {operator_status}")
         elif not operator_ok:
             blockers.append("ROM-0 operator checklist readiness is not verified")
+        gate_statuses_ready = (
+            unlock_gate_status == "READY"
+            and stock_restore_gate_status == "READY"
+            and gsi_candidate_gate_status == "READY"
+            and fastboot_gate_status == "READY"
+        )
+        if refresh_claims_ready and not gate_statuses_ready:
+            blockers.append("ROM-0 install gate statuses are incomplete")
         rom_ready = (
             refresh_claims_ready
             and refresh_report.get("refresh_succeeded") is True
+            and gate_statuses_ready
             and not stale_report
             and refresh_status == READY_FOR_ROM0_REVIEW
             and packet_status == READY_FOR_ROM0_REVIEW
@@ -181,6 +221,9 @@ def goffy_rom_status_snapshot(*, root: Path) -> dict[str, Any]:
             and operator_status == READY_FOR_ROM0_REVIEW
             and operator_ok
             and not blockers
+        )
+        install_decision: Literal["BLOCKED", "READY_FOR_MANUAL_REVIEW"] = (
+            "READY_FOR_MANUAL_REVIEW" if rom_ready else "BLOCKED"
         )
         if not rom_ready and not blockers:
             blockers.append("ROM-0 readiness evidence is incomplete")
@@ -207,6 +250,12 @@ def goffy_rom_status_snapshot(*, root: Path) -> dict[str, Any]:
             packet_status=packet_status,
             bootloader_visibility_status=bootloader_status,
             operator_checklist_status=operator_status,
+            install_decision=install_decision,
+            unlock_gate_status=unlock_gate_status,
+            stock_restore_gate_status=stock_restore_gate_status,
+            gsi_candidate_gate_status=gsi_candidate_gate_status,
+            fastboot_gate_status=fastboot_gate_status,
+            destructive_approval_status="WITHHELD",
             rom_ready=rom_ready,
             destructive_actions="withheld",
             blocker_count=blocker_count,
@@ -271,6 +320,12 @@ def _missing_status() -> dict[str, Any]:
         packet_status="MISSING",
         bootloader_visibility_status="MISSING",
         operator_checklist_status="MISSING",
+        install_decision="BLOCKED",
+        unlock_gate_status="MISSING",
+        stock_restore_gate_status="MISSING",
+        gsi_candidate_gate_status="MISSING",
+        fastboot_gate_status="MISSING",
+        destructive_approval_status="WITHHELD",
         rom_ready=False,
         destructive_actions="withheld",
         blocker_count=1,
@@ -295,6 +350,12 @@ def _invalid_status(summary: str) -> dict[str, Any]:
         packet_status="INVALID",
         bootloader_visibility_status="INVALID",
         operator_checklist_status="INVALID",
+        install_decision="BLOCKED",
+        unlock_gate_status="INVALID",
+        stock_restore_gate_status="INVALID",
+        gsi_candidate_gate_status="INVALID",
+        fastboot_gate_status="INVALID",
+        destructive_approval_status="WITHHELD",
         rom_ready=False,
         destructive_actions="withheld",
         blocker_count=1,
@@ -326,6 +387,57 @@ def _string_items(value: object) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
     return tuple(item for item in value if isinstance(item, str) and item.strip())
+
+
+def _evidence_statuses(refresh_report: Mapping[str, Any]) -> dict[str, str]:
+    raw_inputs = refresh_report.get("evidence_inputs")
+    if not isinstance(raw_inputs, list):
+        return {}
+    statuses: dict[str, str] = {}
+    for item in raw_inputs:
+        if not isinstance(item, Mapping):
+            continue
+        name = item.get("name")
+        status = item.get("status")
+        if isinstance(name, str) and name and isinstance(status, str) and status:
+            statuses[name] = _bounded_text(status, maximum=MAX_STATUS_LENGTH)
+    return statuses
+
+
+def _gate_status_from_evidence(evidence_statuses: Mapping[str, str], name: str) -> str:
+    match evidence_statuses.get(name):
+        case "LOADED":
+            return "READY"
+        case "MISSING":
+            return "MISSING"
+        case "INVALID":
+            return "INVALID"
+        case _:
+            return "MISSING"
+
+
+def _unlock_gate_status(
+    evidence_statuses: Mapping[str, str],
+    *,
+    refresh_blockers: tuple[str, ...],
+) -> str:
+    status = _gate_status_from_evidence(evidence_statuses, "unlock_eligibility")
+    if status == "READY" and UNLOCK_NOT_ACCEPTED_BLOCKER in refresh_blockers:
+        return "BLOCKED"
+    return status
+
+
+def _fastboot_gate_status(
+    evidence_statuses: Mapping[str, str],
+    *,
+    bootloader_status: str,
+) -> str:
+    if bootloader_status == "MANUAL_BOOTLOADER_VISIBLE":
+        return "READY"
+    status = _gate_status_from_evidence(evidence_statuses, "fastboot_evidence")
+    if status == "READY":
+        return "HOST_READY_ONLY"
+    return status
 
 
 def _bounded_text(value: str, *, maximum: int) -> str:

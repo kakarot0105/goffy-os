@@ -17,7 +17,7 @@ Start with a packet generated from the latest read-only ROM probe:
 ```
 
 The packet is a local checklist for the human operator. It identifies missing
-stock-restore and OEM/Motorola unlock-eligibility evidence, gives the exact
+stock-restore and OEM or Motorola unlock-eligibility evidence, gives the exact
 GOFFY evidence-helper commands to run after manual checks, and refuses to emit
 unlock, flash, erase, fastboot-reboot, root, or boot-image mutation commands.
 It may also consume already-created redacted evidence:

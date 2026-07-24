@@ -138,6 +138,12 @@ data class GoffyRomStatus(
     val packetStatus: String,
     val bootloaderVisibilityStatus: String,
     val operatorChecklistStatus: String,
+    val installDecision: String,
+    val unlockGateStatus: String,
+    val stockRestoreGateStatus: String,
+    val gsiCandidateGateStatus: String,
+    val fastbootGateStatus: String,
+    val destructiveApprovalStatus: String,
     val romReady: Boolean,
     val destructiveActions: String,
     val blockerCount: Int,
@@ -1007,6 +1013,22 @@ class GoffyProtocolCodec(
                 "destructiveActions",
             )
         }
+        properties.requireObject("destructiveApprovalStatus").also { approval ->
+            approval.requireKeys(setOf("const", "type"))
+            approval.requireType("string")
+            approval.requireString("const").requireExactString(
+                "WITHHELD",
+                "destructiveApprovalStatus",
+            )
+        }
+        properties.requireObject("installDecision").also { decision ->
+            decision.requireKeys(ENUM_STRING_SCHEMA_KEYS)
+            decision.requireType("string")
+            decision.requireArray("enum").requireExactStrings(
+                GOFFY_ROM_INSTALL_DECISION_VALUES,
+                "ROM install decision enum",
+            )
+        }
         properties.requireObject("summary").validateBoundedStringSchema(
             "summary",
             1,
@@ -1027,6 +1049,10 @@ class GoffyProtocolCodec(
             "packetStatus",
             "bootloaderVisibilityStatus",
             "operatorChecklistStatus",
+            "unlockGateStatus",
+            "stockRestoreGateStatus",
+            "gsiCandidateGateStatus",
+            "fastbootGateStatus",
         ).forEach { field ->
             properties.requireObject(field).validateBoundedStringSchema(
                 field,
@@ -1916,6 +1942,36 @@ class GoffyProtocolCodec(
                 1,
                 MAX_GOFFY_ROM_STATUS_LENGTH,
             ),
+            installDecision = content.requireString("installDecision").also { value ->
+                if (value !in GOFFY_ROM_INSTALL_DECISION_VALUES) {
+                    throw ProtocolException("unsupported ROM install decision")
+                }
+            },
+            unlockGateStatus = content.requireBoundedString(
+                "unlockGateStatus",
+                1,
+                MAX_GOFFY_ROM_STATUS_LENGTH,
+            ),
+            stockRestoreGateStatus = content.requireBoundedString(
+                "stockRestoreGateStatus",
+                1,
+                MAX_GOFFY_ROM_STATUS_LENGTH,
+            ),
+            gsiCandidateGateStatus = content.requireBoundedString(
+                "gsiCandidateGateStatus",
+                1,
+                MAX_GOFFY_ROM_STATUS_LENGTH,
+            ),
+            fastbootGateStatus = content.requireBoundedString(
+                "fastbootGateStatus",
+                1,
+                MAX_GOFFY_ROM_STATUS_LENGTH,
+            ),
+            destructiveApprovalStatus = content.requireBoundedString(
+                "destructiveApprovalStatus",
+                1,
+                MAX_GOFFY_ROM_STATUS_LENGTH,
+            ),
             romReady = content.requireBoolean("romReady"),
             destructiveActions = content.requireBoundedString("destructiveActions", 1, 16),
             blockerCount = content.requireBoundedInt(
@@ -2624,6 +2680,12 @@ private val GOFFY_ROM_STATUS_OUTPUT_KEYS = setOf(
     "packetStatus",
     "bootloaderVisibilityStatus",
     "operatorChecklistStatus",
+    "installDecision",
+    "unlockGateStatus",
+    "stockRestoreGateStatus",
+    "gsiCandidateGateStatus",
+    "fastbootGateStatus",
+    "destructiveApprovalStatus",
     "romReady",
     "destructiveActions",
     "blockerCount",

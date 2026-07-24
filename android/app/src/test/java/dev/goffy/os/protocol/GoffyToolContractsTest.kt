@@ -13,6 +13,8 @@ class GoffyToolContractsTest {
         assertFalse(valid.copy(status = "ready").matchesToolContract())
         assertFalse(valid.copy(milestone = "ROM-1").matchesToolContract())
         assertFalse(valid.copy(destructiveActions = "allowed").matchesToolContract())
+        assertFalse(valid.copy(destructiveApprovalStatus = "APPROVED").matchesToolContract())
+        assertFalse(valid.copy(installDecision = "INSTALL_NOW").matchesToolContract())
         assertFalse(valid.copy(romReady = true, blockerCount = 1).matchesToolContract())
         assertFalse(valid.copy(blockerCount = 0, blockers = emptyList()).matchesToolContract())
         assertFalse(
@@ -30,6 +32,7 @@ class GoffyToolContractsTest {
                 refreshStatus = "BLOCKED",
                 packetStatus = GOFFY_ROM_READY_STATUS,
                 operatorChecklistStatus = GOFFY_ROM_READY_STATUS,
+                installDecision = "BLOCKED",
                 romReady = true,
                 blockerCount = 0,
                 blockers = emptyList(),
@@ -82,6 +85,11 @@ class GoffyToolContractsTest {
                     refreshStatus = GOFFY_ROM_READY_STATUS,
                     packetStatus = GOFFY_ROM_READY_STATUS,
                     operatorChecklistStatus = GOFFY_ROM_READY_STATUS,
+                    installDecision = "READY_FOR_MANUAL_REVIEW",
+                    unlockGateStatus = "READY",
+                    stockRestoreGateStatus = "READY",
+                    gsiCandidateGateStatus = "READY",
+                    fastbootGateStatus = "READY",
                     romReady = true,
                     blockerCount = 0,
                     blockers = emptyList(),
@@ -319,6 +327,12 @@ class GoffyToolContractsTest {
         packetStatus = "BLOCKED_MANUAL_EVIDENCE",
         bootloaderVisibilityStatus = "READY_FOR_MANUAL_BOOTLOADER_CHECK",
         operatorChecklistStatus = "BLOCKED_EVIDENCE",
+        installDecision = "BLOCKED",
+        unlockGateStatus = "MISSING",
+        stockRestoreGateStatus = "MISSING",
+        gsiCandidateGateStatus = "MISSING",
+        fastbootGateStatus = "MISSING",
+        destructiveApprovalStatus = "WITHHELD",
         romReady = false,
         destructiveActions = "withheld",
         blockerCount = 1,
