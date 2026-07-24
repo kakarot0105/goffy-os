@@ -49,6 +49,7 @@
 - [x] Android-visible ROM install-gate statuses with destructive approval withheld
 - [x] Machine-checked ROM-0 feature payload contract for GOFFY system-app insertion
 - [x] Redacted stock rollback draft generator bound to the current public Moto probe
+- [x] Read-only DSU preflight evidence helper for the official GSI-first path
 - [ ] Manual OEM-unlocking and Motorola unlock-token eligibility result
 - [ ] Manual bootloader-mode fastboot visibility result
 - [ ] Exact stock firmware/recovery archive, checksum, and rollback checklist

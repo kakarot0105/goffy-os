@@ -322,6 +322,23 @@ The resulting JSON is candidate integrity evidence only. ROM-0 still requires
 manual OEM-unlock eligibility, exact stock restore evidence, and a live
 user-approved destructive decision before any bootloader or DSU action.
 
+After exact stock restore evidence and official GSI checksum evidence exist,
+create read-only DSU preflight evidence:
+
+```bash
+.venv/bin/python scripts/create_rom_dsu_preflight_evidence.py \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
+  --stock-restore-evidence .goffy-validation/rom-stock-restore-evidence.json \
+  --gsi-candidate-evidence .goffy-validation/rom-gsi-candidate-evidence.json \
+  --output .goffy-validation/rom-dsu-preflight-evidence.json
+```
+
+The preflight uses official Android DSU and GSI documentation as the operating
+path, records whether the current probe still shows Treble, dynamic partitions,
+the Android Dynamic System package, and a DSU start-install activity, and keeps
+install authority `WITHHELD`. It does not import DSU Sideloader or ADB installer
+scripts, open DSU, push images, install, reboot, unlock, flash, wipe, or root.
+
 ## Current Reuse Prior Art Decisions
 
 Current reuse scan date: 2026-07-22.

@@ -58,6 +58,7 @@ ALLOWED_COMMAND_PREFIXES = (
     ".venv/bin/python scripts/rom_feasibility_probe.py ",
     ".venv/bin/python scripts/create_rom_stock_restore_evidence.py ",
     ".venv/bin/python scripts/create_rom_gsi_candidate_evidence.py ",
+    ".venv/bin/python scripts/create_rom_dsu_preflight_evidence.py ",
     ".venv/bin/python scripts/create_rom_bootloader_visibility_guide.py",
     ".venv/bin/python scripts/create_rom_fastboot_evidence.py",
     ".venv/bin/python scripts/create_rom_unlock_eligibility_evidence.py ",
@@ -155,6 +156,7 @@ def build_packet(
         fastboot_evidence_action(fastboot_evidence),
         stock_restore_action(stock_restore),
         gsi_candidate_action(gsi_candidate),
+        dsu_preflight_action(stock_ready=stock_ready, gsi_ready=gsi_ready),
         unlock_eligibility_action(
             unlock_eligibility,
             target_device=device,
@@ -351,6 +353,34 @@ def gsi_candidate_action(gsi_candidate: Mapping[str, str] | None) -> ManualActio
         ),
         evidence_output=".goffy-validation/rom-gsi-candidate-evidence.json",
         blockers=("official Google ARM64 GSI evidence is missing",),
+    )
+
+
+def dsu_preflight_action(*, stock_ready: bool, gsi_ready: bool) -> ManualAction:
+    ready = stock_ready and gsi_ready
+    return ManualAction(
+        action_id="record_dsu_preflight",
+        title="Record read-only DSU preflight evidence",
+        kind=ActionKind.LOCAL_READ_ONLY,
+        status=ActionStatus.READY if ready else ActionStatus.BLOCKED,
+        summary=("Check DSU/GSI review prerequisites from local evidence without opening DSU."),
+        instructions=(
+            "Run only after exact stock restore and official GSI checksum evidence exist.",
+            "Use this as manual-review evidence only; it does not authorize DSU use.",
+            "Do not push images, install, reboot, unlock, flash, wipe, root, "
+            "or import DSU installers.",
+        ),
+        safe_commands=(
+            ".venv/bin/python scripts/create_rom_dsu_preflight_evidence.py "
+            "--probe-json .goffy-validation/rom-feasibility-current.json "
+            "--stock-restore-evidence .goffy-validation/rom-stock-restore-evidence.json "
+            "--gsi-candidate-evidence .goffy-validation/rom-gsi-candidate-evidence.json "
+            "--output .goffy-validation/rom-dsu-preflight-evidence.json",
+        ),
+        evidence_output=".goffy-validation/rom-dsu-preflight-evidence.json",
+        blockers=()
+        if ready
+        else ("stock restore and official GSI evidence must both exist first",),
     )
 
 

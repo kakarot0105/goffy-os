@@ -214,6 +214,24 @@ build ID on filename token boundaries. A filename match is still not exact
 variant proof; manual gates still require the official Motorola Software Fix
 URL, local archive, SHA-256, and rollback document.
 
+## DSU Preflight Evidence
+
+After stock restore and official GSI checksum evidence exist, create DSU
+preflight evidence before any DSU review:
+
+```bash
+.venv/bin/python scripts/create_rom_dsu_preflight_evidence.py \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
+  --stock-restore-evidence .goffy-validation/rom-stock-restore-evidence.json \
+  --gsi-candidate-evidence .goffy-validation/rom-gsi-candidate-evidence.json \
+  --output .goffy-validation/rom-dsu-preflight-evidence.json
+```
+
+The helper reads local evidence only. It records DSU package/activity,
+Treble/dynamic-partition readiness, and whether the required stock and GSI
+evidence files validate. It does not open DSU, push images, install, reboot,
+unlock, flash, wipe, root, or approve a destructive action.
+
 ## Rollback Doc Requirements
 
 Start from [`kansas-stock-rollback.template.md`](kansas-stock-rollback.template.md).

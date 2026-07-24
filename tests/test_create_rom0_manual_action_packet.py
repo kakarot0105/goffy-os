@@ -65,6 +65,7 @@ def test_locked_probe_packet_withholds_destructive_authority() -> None:
     assert "create_rom_unlock_eligibility_evidence.py" in markdown
     assert "create_rom_stock_restore_evidence.py" in markdown
     assert "create_rom_gsi_candidate_evidence.py" in markdown
+    assert "create_rom_dsu_preflight_evidence.py" in markdown
     assert "create_rom_bootloader_visibility_guide.py" in markdown
     assert "create_rom_fastboot_evidence.py" in markdown
     assert "verify_rom0_readiness.py" in markdown
@@ -113,6 +114,7 @@ def test_packet_records_safe_evidence_without_approving_unlock() -> None:
     assert actions["record_unlock_eligibility"].status is ActionStatus.RECORDED
     assert actions["record_stock_restore"].status is ActionStatus.RECORDED
     assert actions["record_gsi_candidate"].status is ActionStatus.RECORDED
+    assert actions["record_dsu_preflight"].status is ActionStatus.READY
     assert actions["record_fastboot_evidence"].status is ActionStatus.RECORDED
     assert actions["create_manual_gates"].status is ActionStatus.READY
     assert actions["summarize_rom0_readiness"].status is ActionStatus.READY
@@ -148,6 +150,7 @@ def test_locked_probe_with_evidence_is_ready_for_manual_template_only() -> None:
     assert "official Google ARM64 GSI evidence is missing" in packet.blocked_by
     assert packet.destructive_actions == "withheld"
     assert actions["record_gsi_candidate"].status is ActionStatus.REQUIRED
+    assert actions["record_dsu_preflight"].status is ActionStatus.BLOCKED
     assert actions["summarize_rom0_readiness"].status is ActionStatus.BLOCKED
 
 

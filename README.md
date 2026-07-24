@@ -570,6 +570,20 @@ from Google's GSI release page, then run the offline verifier:
 This creates redacted evidence only; it does not download, install, unlock,
 flash, reboot, or authorize DSU use.
 
+After stock restore and GSI checksum evidence exist, create a read-only DSU
+preflight artifact. This checks whether the current probe still shows Treble,
+dynamic partitions, the Android Dynamic System package, and a DSU start-install
+activity. It does not open DSU, push images, install, reboot, unlock, flash, or
+grant approval:
+
+```bash
+.venv/bin/python scripts/create_rom_dsu_preflight_evidence.py \
+  --probe-json .goffy-validation/rom-feasibility-current.json \
+  --stock-restore-evidence .goffy-validation/rom-stock-restore-evidence.json \
+  --gsi-candidate-evidence .goffy-validation/rom-gsi-candidate-evidence.json \
+  --output .goffy-validation/rom-dsu-preflight-evidence.json
+```
+
 For ROM APK packaging, keep release keys outside the repo, generate a dry-run
 signing plan before producing any `GoffyOS-signed.apk`, then verify the signed
 artifact after the human-run signing command succeeds:
